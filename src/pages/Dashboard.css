@@ -1,0 +1,1672 @@
+/* ==========================================================================
+   FOODYPAY RESTAURANT CRM - PREMIUM SPACIOUS SAAS STYLING (Bigger & Bolder)
+   High-end, spacious typography, larger cards, comfortable padding & touch targets
+   ========================================================================== */
+
+:root {
+  --crm-bg: #F8FAFC;
+  --crm-card: #FFFFFF;
+  --crm-border: #E2E8F0;
+  --crm-border-subtle: #F1F5F9;
+  --crm-text-primary: #0F172A;
+  --crm-text-secondary: #334155;
+  --crm-text-muted: #64748B;
+  --crm-primary-blue: #1D4ED8;
+  --crm-primary-blue-bg: #EFF6FF;
+  --crm-primary-blue-hover: #DBEAFE;
+  --crm-primary-orange: #FF5E14;
+  --crm-primary-orange-bg: #FFF0EB;
+  --crm-primary-orange-hover: #E04D0B;
+  --crm-success: #059669;
+  --crm-success-bg: #ECFDF5;
+  --crm-warning: #D97706;
+  --crm-warning-bg: #FFFBEB;
+  --crm-danger: #DC2626;
+  --crm-font: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+}
+
+/* Base Dashboard Container */
+.crm-layout {
+  display: flex;
+  min-height: 100vh;
+  background-color: var(--crm-bg);
+  font-family: var(--crm-font);
+  color: var(--crm-text-primary);
+  overflow-x: hidden;
+  font-size: 15px;
+}
+
+/* ==========================================================================
+   1. SPACIOUS CLEAN WHITE SIDEBAR (Ref: Image 1 & 3)
+   ========================================================================== */
+.crm-sidebar {
+  width: 290px;
+  background-color: #FFFFFF;
+  border-right: 1px solid var(--crm-border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  transition: all 0.25s ease;
+  z-index: 100;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.02);
+}
+
+.crm-sidebar-brand {
+  padding: 24px 22px;
+  border-bottom: 1px solid var(--crm-border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.crm-brand-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.crm-brand-img {
+  height: 42px;
+  width: auto;
+  border-radius: 8px;
+}
+
+.crm-brand-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--crm-text-primary);
+  letter-spacing: -0.3px;
+  line-height: 1.2;
+}
+
+.crm-brand-subtitle {
+  font-size: 12.5px;
+  color: var(--crm-text-muted);
+  font-weight: 500;
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.crm-brand-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #10B981;
+  display: inline-block;
+  box-shadow: 0 0 8px #10B981;
+}
+
+/* Sidebar Nav Links - Bigger & More Spacious */
+.crm-sidebar-menu {
+  padding: 20px 16px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.crm-menu-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 16px;
+  border-radius: 12px;
+  color: var(--crm-text-secondary);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  background: transparent;
+  border: none;
+  width: 100%;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  text-align: left;
+}
+
+.crm-menu-link:hover {
+  background-color: #F1F5F9;
+  color: var(--crm-text-primary);
+  transform: translateX(2px);
+}
+
+/* Active State matching Screenshot 1 */
+.crm-menu-link.active {
+  background-color: var(--crm-primary-blue-bg);
+  color: var(--crm-primary-blue);
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(29, 78, 216, 0.08);
+}
+
+.crm-menu-link-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.crm-menu-icon {
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+}
+
+.crm-menu-chevron {
+  font-size: 16px;
+  color: #94A3B8;
+  font-weight: 700;
+}
+
+.crm-menu-link.active .crm-menu-chevron {
+  color: var(--crm-primary-blue);
+}
+
+/* Submenu expandable (Ref: Image 3) */
+.crm-submenu-list {
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 10px 0;
+  border-left: 2.5px solid #E2E8F0;
+  margin-left: 28px;
+}
+
+.crm-submenu-item {
+  padding: 9px 16px;
+  font-size: 14px;
+  color: var(--crm-text-secondary);
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+
+.crm-submenu-item:hover {
+  background: #F1F5F9;
+  color: var(--crm-text-primary);
+}
+
+.crm-submenu-item.active {
+  color: var(--crm-primary-blue);
+  font-weight: 700;
+  background: var(--crm-primary-blue-bg);
+}
+
+.crm-badge-new {
+  background: #1D4ED8;
+  color: #FFFFFF;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 12px;
+  letter-spacing: 0.02em;
+}
+
+/* Bottom Sidebar Card: FoodyPay Credits (Ref: Image 1) */
+.crm-sidebar-credits-card {
+  margin: 16px;
+  padding: 16px 18px;
+  background: #FFFFFF;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+}
+
+.crm-credits-icon-box {
+  width: 44px;
+  height: 44px;
+  background: #F1F5F9;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.crm-credits-info {
+  flex: 1;
+}
+
+.crm-credits-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1D4ED8;
+  background: #EFF6FF;
+  padding: 3px 8px;
+  border-radius: 6px;
+  display: inline-block;
+  margin-bottom: 4px;
+}
+
+.crm-credits-amount {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--crm-text-primary);
+}
+
+/* ==========================================================================
+   2. MAIN CONTENT & TOPBAR (Spacious, Crisp Header)
+   ========================================================================== */
+.crm-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background-color: #FFFFFF;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+/* Top Universal Bar */
+.crm-header-bar {
+  padding: 18px 36px;
+  border-bottom: 1px solid var(--crm-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #FFFFFF;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+}
+
+.crm-header-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.crm-page-heading {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--crm-text-primary);
+  margin: 0;
+  letter-spacing: -0.4px;
+}
+
+.crm-header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Action Buttons & Pills - Bigger & Punchier */
+.btn-view-shop {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  border-radius: 30px;
+  border: 2px solid #0F172A;
+  background: #FFFFFF;
+  color: #0F172A;
+  font-size: 13.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-view-shop:hover {
+  background: #0F172A;
+  color: #FFFFFF;
+  transform: translateY(-1px);
+}
+
+.btn-create-order-primary {
+  background: #0F172A;
+  color: #FFFFFF;
+  border: none;
+  padding: 11px 24px;
+  border-radius: 30px;
+  font-size: 14.5px;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+}
+
+.btn-create-order-primary:hover {
+  background: var(--crm-primary-orange);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(255, 94, 20, 0.3);
+}
+
+/* Search Box */
+.crm-search-box {
+  display: flex;
+  align-items: center;
+  background: #F8FAFC;
+  border: 1.5px solid var(--crm-border);
+  border-radius: 24px;
+  padding: 10px 18px;
+  width: 320px;
+  gap: 10px;
+  transition: all 0.2s;
+}
+
+.crm-search-box:focus-within {
+  border-color: var(--crm-primary-blue);
+  background: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.1);
+}
+
+.crm-search-box input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 14.5px;
+  color: var(--crm-text-primary);
+  width: 100%;
+}
+
+/* ==========================================================================
+   3. ORDERS VIEW (Bigger Cards & Clear Progress)
+   ========================================================================== */
+.crm-orders-page-wrap {
+  padding: 30px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+/* KPI Banner Row */
+.crm-kpi-banner-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 20px;
+}
+
+.crm-kpi-card {
+  background: #FFFFFF;
+  border: 1.5px solid var(--crm-border);
+  border-radius: 20px;
+  padding: 22px 26px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.03);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.crm-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+}
+
+.crm-kpi-label {
+  font-size: 13.5px;
+  color: var(--crm-text-muted);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.crm-kpi-value {
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--crm-text-primary);
+  letter-spacing: -0.5px;
+}
+
+.crm-kpi-icon-box {
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+}
+
+/* Filter bar */
+.crm-filter-bar {
+  background: #FFFFFF;
+  border: 1.5px solid var(--crm-border);
+  border-radius: 18px;
+  padding: 14px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+
+.crm-filter-tabs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-x: auto;
+}
+
+.crm-filter-tab {
+  background: transparent;
+  border: 1.5px solid transparent;
+  padding: 9px 18px;
+  border-radius: 10px;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--crm-text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.crm-filter-tab:hover {
+  background: #F1F5F9;
+  color: var(--crm-text-primary);
+}
+
+.crm-filter-tab.active {
+  background: #0F172A;
+  color: #FFFFFF;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.2);
+}
+
+/* Orders Cards Grid - Generous & Big */
+.crm-orders-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 26px;
+}
+
+.crm-order-card {
+  background: #FFFFFF;
+  border: 1.5px solid var(--crm-border);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.crm-order-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+}
+
+.crm-order-card-header {
+  padding: 18px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #F8FAFC;
+  border-bottom: 1px solid var(--crm-border-subtle);
+}
+
+.crm-order-id-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.crm-order-id {
+  font-weight: 800;
+  font-size: 17px;
+  color: var(--crm-text-primary);
+}
+
+.crm-table-tag {
+  background: #EFF6FF;
+  color: #1D4ED8;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 4px 12px;
+  border-radius: 8px;
+  border: 1px solid #BFDBFE;
+}
+
+.crm-table-tag.highlight {
+  background: #FFF0EB;
+  color: #FF5E14;
+  border-color: #FED7AA;
+}
+
+.crm-status-pill {
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 12px;
+  border-radius: 20px;
+  letter-spacing: 0.04em;
+}
+
+.crm-status-pill.new {
+  background: #FEF3C7;
+  color: #92400E;
+}
+
+.crm-status-pill.preparing {
+  background: #EFF6FF;
+  color: #1D4ED8;
+}
+
+.crm-status-pill.ready {
+  background: #ECFDF5;
+  color: #065F46;
+}
+
+.crm-status-pill.completed {
+  background: #F1F5F9;
+  color: #475569;
+}
+
+/* Progress Tracker Bar */
+.crm-progress-track {
+  padding: 16px 24px;
+  background: #FAFAFA;
+  border-bottom: 1px solid var(--crm-border-subtle);
+}
+
+.crm-progress-steps {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+}
+
+.crm-progress-line-back {
+  position: absolute;
+  top: 13px;
+  left: 16px;
+  right: 16px;
+  height: 4px;
+  background: #E2E8F0;
+  z-index: 1;
+}
+
+.crm-progress-line-fill {
+  position: absolute;
+  top: 13px;
+  left: 16px;
+  height: 4px;
+  background: var(--crm-primary-orange);
+  z-index: 2;
+  transition: width 0.35s ease;
+}
+
+.crm-step-node {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.crm-step-circle {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  border: 2px solid #CBD5E1;
+  font-size: 11px;
+  font-weight: 800;
+  color: #64748B;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.crm-step-node.done .crm-step-circle {
+  background: var(--crm-primary-orange);
+  border-color: var(--crm-primary-orange);
+  color: #FFFFFF;
+}
+
+.crm-step-node.current .crm-step-circle {
+  border-color: var(--crm-primary-orange);
+  color: var(--crm-primary-orange);
+  box-shadow: 0 0 0 4px rgba(255, 94, 20, 0.2);
+  transform: scale(1.15);
+}
+
+.crm-step-label {
+  font-size: 11.5px;
+  color: #64748B;
+  font-weight: 600;
+}
+
+.crm-step-node.current .crm-step-label {
+  color: var(--crm-primary-orange);
+  font-weight: 800;
+}
+
+/* Order Body & Items */
+.crm-order-card-body {
+  padding: 20px 24px;
+  flex: 1;
+}
+
+.crm-customer-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13.5px;
+  color: var(--crm-text-muted);
+  margin-bottom: 16px;
+  font-weight: 500;
+}
+
+.crm-order-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.crm-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14.5px;
+}
+
+.crm-item-name-qty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.crm-qty-badge {
+  background: #F1F5F9;
+  color: #0F172A;
+  font-weight: 800;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.crm-veg-dot {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid #10B981;
+  padding: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+}
+
+.crm-veg-dot::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: #10B981;
+}
+
+.crm-nonveg-dot {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid #EF4444;
+  padding: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+}
+
+.crm-nonveg-dot::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: #EF4444;
+}
+
+.crm-special-note {
+  background: #FFFBEB;
+  border: 1px dashed #FDE68A;
+  color: #92400E;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  margin-top: 10px;
+  font-weight: 500;
+}
+
+/* Order Footer & Actions */
+.crm-order-card-footer {
+  padding: 18px 24px;
+  border-top: 1.5px solid var(--crm-border);
+  background: #F8FAFC;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.crm-order-total-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.crm-total-amount {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--crm-text-primary);
+}
+
+.crm-payment-pill {
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+
+.crm-payment-pill.paid-upi {
+  background: #ECFDF5;
+  color: #059669;
+  border: 1px solid #A7F3D0;
+}
+
+.crm-payment-pill.cash {
+  background: #EFF6FF;
+  color: #1D4ED8;
+  border: 1px solid #BFDBFE;
+}
+
+.crm-card-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.crm-btn-primary {
+  background: var(--crm-primary-orange);
+  color: #FFFFFF;
+  border: none;
+  padding: 11px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.crm-btn-primary:hover {
+  background: var(--crm-primary-orange-hover);
+}
+
+.crm-btn-secondary {
+  background: #FFFFFF;
+  border: 1.5px solid var(--crm-border);
+  color: var(--crm-text-primary);
+  padding: 11px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.crm-btn-secondary:hover {
+  background: #F8FAFC;
+  border-color: #CBD5E1;
+}
+
+/* ==========================================================================
+   4. CATALOG / PRODUCTS VIEW (Spacious Ref: Image 2)
+   ========================================================================== */
+.crm-catalog-split-view {
+  display: flex;
+  min-height: calc(100vh - 80px);
+}
+
+/* Left Category Column */
+.crm-categories-sidebar {
+  width: 210px;
+  border-right: 1.5px solid var(--crm-border);
+  background: #FFFFFF;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.crm-cat-sidebar-header {
+  padding: 18px 20px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--crm-text-primary);
+  border-bottom: 1.5px solid var(--crm-border-subtle);
+}
+
+.crm-cat-item-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border: none;
+  border-bottom: 1px solid var(--crm-border-subtle);
+  background: #FFFFFF;
+  color: var(--crm-text-secondary);
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+}
+
+.crm-cat-item-btn:hover {
+  background: #F8FAFC;
+}
+
+/* Dark selected category matching screenshot */
+.crm-cat-item-btn.active {
+  background: #0F172A;
+  color: #FFFFFF;
+  font-weight: 700;
+}
+
+.crm-cat-item-btn.active .crm-cat-dots {
+  color: #94A3B8;
+}
+
+.crm-cat-dots {
+  font-size: 16px;
+  color: #94A3B8;
+}
+
+/* Center Products Table Column - Bigger & High-Contrast */
+.crm-products-main-col {
+  flex: 1;
+  padding: 28px 36px;
+  overflow-x: auto;
+}
+
+.crm-selected-cat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 20px;
+  border-bottom: 1.5px solid var(--crm-border-subtle);
+  margin-bottom: 20px;
+}
+
+.crm-selected-cat-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 18px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--crm-text-primary);
+  letter-spacing: -0.2px;
+}
+
+.crm-seo-link {
+  font-size: 13.5px;
+  color: var(--crm-primary-blue);
+  text-decoration: none;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Product Table */
+.crm-product-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.crm-product-table th {
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--crm-text-muted);
+  font-weight: 700;
+  padding: 12px 18px;
+  border-bottom: 1.5px solid var(--crm-border);
+}
+
+.crm-product-table td {
+  padding: 18px 18px;
+  border-bottom: 1px solid var(--crm-border-subtle);
+  vertical-align: middle;
+}
+
+.crm-product-info-cell {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.crm-prod-thumb-box {
+  width: 54px;
+  height: 54px;
+  border-radius: 12px;
+  background: #FFF7ED;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  flex-shrink: 0;
+  border: 1.5px solid #FED7AA;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+}
+
+.crm-prod-name-title {
+  font-size: 15.5px;
+  font-weight: 800;
+  color: var(--crm-text-primary);
+  margin-bottom: 4px;
+}
+
+.crm-prod-variants-badge {
+  display: inline-block;
+  font-size: 12px;
+  color: var(--crm-text-muted);
+  background: #F1F5F9;
+  padding: 3px 10px;
+  border-radius: 14px;
+  font-weight: 600;
+}
+
+.crm-prod-price {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--crm-text-primary);
+}
+
+/* Right Floating Action Pills (Ref: Image 2) - Larger Buttons */
+.crm-right-action-column {
+  width: 210px;
+  padding: 28px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-left: 1.5px solid var(--crm-border);
+  background: #FFFFFF;
+}
+
+.crm-pill-action-btn {
+  width: 100%;
+  padding: 14px 20px;
+  border-radius: 30px;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: all 0.2s ease;
+}
+
+.crm-pill-action-btn.black {
+  background: #000000;
+  color: #FFFFFF;
+  border: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.crm-pill-action-btn.black:hover {
+  background: #334155;
+  transform: translateY(-2px);
+}
+
+.crm-pill-action-btn.outline {
+  background: #FFFFFF;
+  color: #000000;
+  border: 2px solid #000000;
+}
+
+.crm-pill-action-btn.outline:hover {
+  background: #F8FAFC;
+  transform: translateY(-1px);
+}
+
+/* ==========================================================================
+   5. CUSTOMERS CRM (Spacious Ref: Image 4)
+   ========================================================================== */
+.crm-customers-container {
+  padding: 32px 42px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.crm-customers-stats-banner {
+  display: flex;
+  align-items: center;
+  gap: 48px;
+  padding: 20px 28px;
+  background: #F8FAFC;
+  border: 1.5px solid var(--crm-border);
+  border-radius: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+
+.crm-cust-stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.crm-cust-stat-label {
+  font-size: 13.5px;
+  color: var(--crm-text-muted);
+  font-weight: 600;
+}
+
+.crm-cust-stat-value {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--crm-text-primary);
+}
+
+.crm-cust-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.crm-cust-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1.5px solid var(--crm-border);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
+}
+
+.crm-cust-table th {
+  background: #F8FAFC;
+  font-size: 13px;
+  color: var(--crm-text-muted);
+  font-weight: 700;
+  text-align: left;
+  padding: 16px 24px;
+  border-bottom: 1.5px solid var(--crm-border);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.crm-cust-table td {
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--crm-border-subtle);
+  font-size: 15px;
+}
+
+.crm-bday-tag {
+  background: #FEF3C7;
+  color: #92400E;
+  font-size: 12.5px;
+  font-weight: 800;
+  padding: 4px 12px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ==========================================================================
+   6. STORE CONTROLS (Spacious Ref: Image 5)
+   ========================================================================== */
+.crm-store-controls-page {
+  padding: 32px 42px;
+  max-width: 950px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.crm-control-section-card {
+  background: #FFFFFF;
+  border: 1.5px solid var(--crm-border);
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.03);
+}
+
+.crm-control-card-title {
+  padding: 18px 26px;
+  background: #F8FAFC;
+  font-size: 14.5px;
+  font-weight: 800;
+  color: var(--crm-text-muted);
+  border-bottom: 1.5px solid var(--crm-border);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.crm-control-row {
+  padding: 22px 26px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--crm-border-subtle);
+}
+
+.crm-control-row:last-child {
+  border-bottom: none;
+}
+
+.crm-control-name-status {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.crm-control-label {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--crm-text-primary);
+}
+
+.crm-status-badge-green {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #027A48;
+  background: #ECFDF3;
+  padding: 3px 12px;
+  border-radius: 14px;
+  display: inline-block;
+  width: fit-content;
+}
+
+.crm-status-badge-gray {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #64748B;
+  background: #F1F5F9;
+  padding: 3px 12px;
+  border-radius: 14px;
+  display: inline-block;
+  width: fit-content;
+}
+
+/* Blue Switch matching Image 5 - Bigger Toggle */
+.crm-blue-switch {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+}
+
+.crm-blue-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.crm-blue-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #CBD5E1;
+  transition: 0.25s;
+  border-radius: 28px;
+}
+
+.crm-blue-slider:before {
+  position: absolute;
+  content: "";
+  height: 22px;
+  width: 22px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.25s;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+input:checked + .crm-blue-slider {
+  background-color: #1570EF;
+}
+
+input:checked + .crm-blue-slider:before {
+  transform: translateX(24px);
+}
+
+/* ==========================================================================
+   7. MARKETING & BIRTHDAY NOTIFICATIONS (Bigger & Eye-catching)
+   ========================================================================== */
+.crm-marketing-container {
+  padding: 32px 42px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.crm-birthday-alert-card {
+  background: linear-gradient(135deg, #FFF7ED, #FFEDD5);
+  border: 2px solid #FED7AA;
+  border-radius: 20px;
+  padding: 24px 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  box-shadow: 0 6px 20px rgba(255, 94, 20, 0.08);
+}
+
+.crm-birthday-alert-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.crm-bday-cake-icon {
+  font-size: 46px;
+}
+
+.crm-bday-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #9A3412;
+  margin-bottom: 6px;
+}
+
+.crm-bday-subtitle {
+  font-size: 14.5px;
+  color: #C2410C;
+  line-height: 1.4;
+}
+
+.crm-btn-send-bday {
+  background: #EA580C;
+  color: #FFFFFF;
+  border: none;
+  padding: 13px 26px;
+  border-radius: 26px;
+  font-size: 14.5px;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+  transition: all 0.2s;
+  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.35);
+}
+
+.crm-btn-send-bday:hover {
+  background: #C2410C;
+  transform: scale(1.03);
+}
+
+/* Coupon Cards Grid - Bigger Cards */
+.crm-coupons-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 24px;
+}
+
+.crm-coupon-card {
+  background: #FFFFFF;
+  border: 2px dashed #CBD5E1;
+  border-radius: 18px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: relative;
+  transition: all 0.2s;
+}
+
+.crm-coupon-card:hover {
+  border-color: var(--crm-primary-orange);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  transform: translateY(-2px);
+}
+
+.crm-coupon-code-pill {
+  background: #F8FAFC;
+  border: 2px dashed #0F172A;
+  color: #0F172A;
+  font-weight: 800;
+  font-size: 16px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  display: inline-block;
+  font-family: monospace;
+  letter-spacing: 0.08em;
+  width: fit-content;
+}
+
+/* ==========================================================================
+   8. MANUAL ORDER MODAL & OTHER POPUPS (Spacious & Easy to Use)
+   ========================================================================== */
+.crm-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(5px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: fadeIn 0.2s ease;
+}
+
+.crm-modal-card {
+  background: #FFFFFF;
+  border-radius: 24px;
+  width: min(680px, 100%);
+  max-height: 92vh;
+  overflow-y: auto;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.25s ease;
+}
+
+.crm-modal-header {
+  padding: 24px 28px;
+  border-bottom: 1.5px solid var(--crm-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.crm-modal-header h3 {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 800;
+  color: var(--crm-text-primary);
+}
+
+.crm-modal-close-btn {
+  background: #F1F5F9;
+  border: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748B;
+  transition: all 0.2s ease;
+}
+
+.crm-modal-close-btn:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+}
+
+.crm-modal-body {
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.crm-modal-footer {
+  padding: 20px 28px;
+  border-top: 1.5px solid var(--crm-border);
+  background: #F8FAFC;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+/* Manual Order Type Tabs */
+.crm-order-type-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 6px;
+  background: #F1F5F9;
+  padding: 6px;
+  border-radius: 12px;
+}
+
+.crm-order-type-tab {
+  flex: 1;
+  padding: 12px;
+  border: none;
+  background: transparent;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--crm-text-secondary);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.crm-order-type-tab.active {
+  background: #FFFFFF;
+  color: var(--crm-text-primary);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Dish Picker in Modal */
+.crm-dish-picker-list {
+  max-height: 250px;
+  overflow-y: auto;
+  border: 1.5px solid var(--crm-border);
+  border-radius: 12px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.crm-dish-picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #F8FAFC;
+}
+
+.crm-qty-counter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.crm-qty-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1.5px solid #CBD5E1;
+  background: #FFFFFF;
+  font-weight: 800;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.crm-qty-btn:hover {
+  background: #0F172A;
+  color: #FFFFFF;
+  border-color: #0F172A;
+}
+
+/* Inputs & Form Groups */
+.crm-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.crm-form-group label {
+  font-size: 14px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.crm-input {
+  padding: 12px 16px;
+  background: #F8FAFC;
+  border: 1.5px solid var(--crm-border);
+  border-radius: 10px;
+  font-size: 15px;
+  outline: none;
+  transition: all 0.2s ease;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.crm-input:focus {
+  background: #FFFFFF;
+  border-color: var(--crm-primary-blue);
+  box-shadow: 0 0 0 4px rgba(29, 78, 216, 0.1);
+}
+
+.crm-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+/* ==========================================================================
+   TOAST NOTIFICATIONS (Bigger & Clean)
+   ========================================================================== */
+.crm-toast-container {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.crm-toast-item {
+  background: #0F172A;
+  color: #FFFFFF;
+  padding: 14px 24px;
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  border-left: 5px solid var(--crm-primary-orange);
+  pointer-events: auto;
+  animation: toastIn 0.3s ease;
+}
+
+/* Print Standee Acrylic */
+.crm-standee-acrylic-card {
+  width: 300px;
+  background: #FFFFFF;
+  border: 3.5px solid #0F172A;
+  border-radius: 26px;
+  padding: 28px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.15);
+}
+
+.crm-standee-logo {
+  height: 38px;
+  margin-bottom: 8px;
+}
+
+.crm-standee-rest-name {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0F172A;
+  margin-bottom: 14px;
+}
+
+.crm-standee-table-pill {
+  background: #FF5E14;
+  color: #FFFFFF;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  padding: 8px 22px;
+  border-radius: 24px;
+  margin-bottom: 18px;
+  box-shadow: 0 4px 14px rgba(255, 94, 20, 0.35);
+}
+
+.crm-standee-sub {
+  font-size: 12.5px;
+  color: #475569;
+  line-height: 1.4;
+  margin-top: 16px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1024px) {
+  .crm-sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    transform: translateX(-100%);
+  }
+
+  .crm-sidebar.open {
+    transform: translateX(0);
+    box-shadow: 0 0 50px rgba(0, 0, 0, 0.4);
+  }
+
+  .crm-catalog-split-view {
+    flex-direction: column;
+  }
+
+  .crm-categories-sidebar {
+    width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .crm-right-action-column {
+    width: 100%;
+    border-left: none;
+    border-top: 1.5px solid var(--crm-border);
+  }
+}
