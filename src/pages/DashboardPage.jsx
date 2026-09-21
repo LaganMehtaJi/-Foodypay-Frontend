@@ -478,13 +478,24 @@ export default function DashboardPage({ onShowToast }) {
   const [manualPhone, setManualPhone] = useState('');
   const [manualItems, setManualItems] = useState({});
   const [manualPaymentMode, setManualPaymentMode] = useState('Cash on Counter');
+  
+  // New manual order states
+  const [manualSearch, setManualSearch] = useState('');
+  const [manualGstEnabled, setManualGstEnabled] = useState(false);
+  const [manualDiscount, setManualDiscount] = useState('');
+  const [manualCoupon, setManualCoupon] = useState('');
 
   const handleOpenManualOrder = () => {
     setManualOrderType('Dine-In');
     setManualTable('Table 1');
-    setManualCustomer('Walk-in Guest');
-    setManualPhone('+91 98765 00000');
-    setManualItems({ [dishes[0]?.id || 'p1']: 1 });
+    setManualCustomer('');
+    setManualPhone('');
+    setManualItems({});
+    setManualPaymentMode('Cash on Counter');
+    setManualSearch('');
+    setManualGstEnabled(false);
+    setManualDiscount('');
+    setManualCoupon('');
     setIsManualOrderOpen(true);
   };
 
@@ -505,8 +516,9 @@ export default function DashboardPage({ onShowToast }) {
     const dish = dishes.find((d) => d.id === dishId);
     return sum + (dish ? dish.price * qty : 0);
   }, 0);
-  const manualTax = Math.round(manualSubtotal * 0.05);
-  const manualTotal = manualSubtotal + manualTax;
+  const mDiscountAmt = Number(manualDiscount) || 0;
+  const manualTax = manualGstEnabled ? Math.round((manualSubtotal - mDiscountAmt) * 0.05) : 0;
+  const manualTotal = manualSubtotal - mDiscountAmt + manualTax;
 
   const handleCreateManualOrderSubmit = (e) => {
     e.preventDefault();
@@ -538,8 +550,9 @@ export default function DashboardPage({ onShowToast }) {
       paymentStatus: manualPaymentMode.includes('UPI') ? 'paid-upi' : 'cash',
       paymentLabel: manualPaymentMode,
       items: formattedItems,
-      note: 'Manual Order Created from Counter',
+      note: manualCoupon ? `Applied Coupon: ${manualCoupon}` : 'Manual Order Created from Counter',
       subtotal: manualSubtotal,
+      discount: mDiscountAmt,
       tax: manualTax,
       total: manualTotal,
     };
@@ -1044,18 +1057,18 @@ export default function DashboardPage({ onShowToast }) {
             <div className="crm-kpi-banner-grid">
               <div className="crm-kpi-card">
                 <div>
-                  <div className="crm-kpi-label">Total Orders Today</div>
+                  <div className="crm-kpi-label" style={{ fontWeight: 600, color: '#475569' }}>Today's Orders</div>
                   <div className="crm-kpi-value">{orders.length}</div>
                 </div>
-                <div className="crm-kpi-icon-box" style={{ background: '#EFF6FF', color: '#1D4ED8' }}>
+                <div className="crm-kpi-icon-box" style={{ background: '#EFF6FF', color: '#1D4ED8', width: '56px', height: '56px' }}>
                   <ShoppingBag size={26} />
                 </div>
               </div>
 
               <div className="crm-kpi-card">
                 <div>
-                  <div className="crm-kpi-label">Today's Revenue</div>
-                  <div className="crm-kpi-value">₹{orders.reduce((sum, o) => sum + o.total, 0).toLocaleString()}</div>
+                  <div className="crm-kpi-label" style={{ fontWeight: 600, color: '#475569' }}>Today's Sales</div>
+                  <div className="crm-kpi-value" style={{ color: '#059669' }}>₹{orders.reduce((sum, o) => sum + o.total, 0).toLocaleString()}</div>
                 </div>
                 <div className="crm-kpi-icon-box" style={{ background: '#ECFDF5', color: '#059669' }}>
                   <CreditCard size={26} />
@@ -1108,14 +1121,7 @@ export default function DashboardPage({ onShowToast }) {
                 ))}
               </div>
 
-              <button
-                type="button"
-                className="btn-create-order-primary"
-                onClick={handleOpenManualOrder}
-              >
-                <Plus size={18} />
-                <span>Create A Manual Order</span>
-              </button>
+
             </div>
 
             {/* ORDERS GRID */}

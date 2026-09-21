@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import HomePage from './pages/HomePage';
@@ -12,6 +12,43 @@ import Toast from './components/Toast';
 import LiveOrderTicker from './components/LiveOrderTicker';
 import './App.css';
 
+const AppContent = ({ openSignup, openLogin, showToast }) => {
+  const location = useLocation();
+  const isDashboard = location.pathname.startsWith('/dashboard');
+
+  return (
+    <>
+      {!isDashboard && <Navbar onOpenSignup={openSignup} onOpenLogin={openLogin} />}
+
+      <Routes>
+        <Route
+          path="/"
+          element={<HomePage onOpenSignup={openSignup} onShowToast={showToast} />}
+        />
+        <Route
+          path="/create-website"
+          element={<CreateWebsitePage onOpenSignup={openSignup} onShowToast={showToast} />}
+        />
+        <Route
+          path="/login"
+          element={<LoginPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/dashboard"
+          element={<DashboardPage />}
+        />
+        <Route
+          path="*"
+          element={<HomePage onOpenSignup={openSignup} onShowToast={showToast} />}
+        />
+      </Routes>
+
+      {!isDashboard && <Footer />}
+      {!isDashboard && <LiveOrderTicker onOpenSignup={openSignup} />}
+    </>
+  );
+};
+
 // FoodyPay App Entry Point
 function App() {
   const [signupOpen, setSignupOpen] = useState(false);
@@ -21,7 +58,6 @@ function App() {
   const [toastVisible, setToastVisible] = useState(false);
 
   useEffect(() => {
-    // Permanently set light theme matching the Warm Orange & White logo branding
     document.documentElement.setAttribute('data-theme', 'light');
     localStorage.removeItem('foodypay-theme');
   }, []);
@@ -31,17 +67,9 @@ function App() {
     setSignupOpen(true);
   };
 
-  const closeSignup = () => {
-    setSignupOpen(false);
-  };
-
-  const openLogin = () => {
-    setLoginOpen(true);
-  };
-
-  const closeLogin = () => {
-    setLoginOpen(false);
-  };
+  const closeSignup = () => setSignupOpen(false);
+  const openLogin = () => setLoginOpen(true);
+  const closeLogin = () => setLoginOpen(false);
 
   const showToast = (message) => {
     setToastMessage(message);
@@ -54,32 +82,7 @@ function App() {
   return (
     <BrowserRouter>
       <div className="app-layout">
-        <Navbar onOpenSignup={openSignup} onOpenLogin={openLogin} />
-
-        <Routes>
-          <Route
-            path="/"
-            element={<HomePage onOpenSignup={openSignup} onShowToast={showToast} />}
-          />
-          <Route
-            path="/create-website"
-            element={<CreateWebsitePage onOpenSignup={openSignup} onShowToast={showToast} />}
-          />
-          <Route
-            path="/login"
-            element={<LoginPage onShowToast={showToast} />}
-          />
-          <Route
-            path="/dashboard"
-            element={<DashboardPage />}
-          />
-          <Route
-            path="*"
-            element={<HomePage onOpenSignup={openSignup} onShowToast={showToast} />}
-          />
-        </Routes>
-
-        <Footer />
+        <AppContent openSignup={openSignup} openLogin={openLogin} showToast={showToast} />
 
         <SignupModal
           isOpen={signupOpen}
@@ -95,8 +98,6 @@ function App() {
         />
 
         <Toast message={toastMessage} isVisible={toastVisible} />
-
-        <LiveOrderTicker onOpenSignup={openSignup} />
       </div>
     </BrowserRouter>
   );
