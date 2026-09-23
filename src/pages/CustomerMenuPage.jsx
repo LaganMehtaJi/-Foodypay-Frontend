@@ -33,7 +33,8 @@ import {
 } from 'lucide-react';
 import { playOrderPlaced } from '../utils/soundEffects';
 import { QrCodeComponent } from '../utils/qrGenerator';
-import { fetchDishesApi, createReviewApi } from '../utils/api';
+import { fetchDishesApi, createReviewApi, createPublicOrderApi } from '../utils/api';
+
 
 // Default Fallback Dishes (Cleared as requested)
 const DEFAULT_DISHES = [];
@@ -413,7 +414,7 @@ export default function CustomerMenuPage({ onShowToast }) {
     }
   };
 
-  const finalizeAndSaveOrder = (orderObj) => {
+  const finalizeAndSaveOrder = async (orderObj) => {
     try {
       const existingKey = 'foodypay_crm_orders_v3';
       const existing = localStorage.getItem(existingKey);
@@ -424,7 +425,28 @@ export default function CustomerMenuPage({ onShowToast }) {
       playOrderPlaced();
       window.dispatchEvent(new Event('foodypay_order_created'));
     } catch (err) {
-      console.error('Error saving order:', err);
+      console.error('Error saving order locally:', err);
+    }
+
+    try {
+      await createPublicOrderApi({
+        merchantId: storeInfo.merchantId,
+        foodypayId: foodypayId,
+        type: orderObj.type,
+        table: orderObj.table,
+        customer: orderObj.customer,
+        phone: orderObj.phone,
+        items: orderObj.items,
+        note: orderObj.note,
+        paymentStatus: orderObj.paymentStatus,
+        paymentLabel: orderObj.paymentLabel,
+        subtotal: orderObj.subtotal,
+        discount: orderObj.discount,
+        tax: orderObj.tax,
+        total: orderObj.total,
+      });
+    } catch (err) {
+      console.error('Error saving order to backend server:', err);
     }
 
     setActivePlacedOrder(orderObj);
@@ -441,6 +463,7 @@ export default function CustomerMenuPage({ onShowToast }) {
 
     if (onShowToast) onShowToast(`🎉 Order ${orderObj.id} sent to kitchen!`);
   };
+
 
   // Submit Date of Birth after First Order -> Syncs customer into Dashboard CRM!
   const handleSaveDobSubmit = (e) => {

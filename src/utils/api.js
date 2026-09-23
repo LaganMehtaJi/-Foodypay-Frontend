@@ -98,6 +98,20 @@ export async function createOrderApi(token, orderData) {
   return data.data;
 }
 
+export async function createPublicOrderApi(orderData) {
+  const response = await fetch(`${API_BASE_URL}/orders/public`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(orderData),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to submit public order');
+  return data.data;
+}
+
+
 export async function updateOrderStatusApi(token, orderId, status) {
   const response = await fetch(`${API_BASE_URL}/orders/${orderId}/status`, {
     method: 'PUT',

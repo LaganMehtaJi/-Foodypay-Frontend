@@ -547,7 +547,13 @@ export default function DashboardPage({ onShowToast }) {
 
   // Unique Table URL Generator: Domain / BusinessName / FoodypayId / TableNo
   const getUniqueTableUrl = (tableName, customUrl = '') => {
-    if (customUrl && customUrl.trim() && !customUrl.includes('foodypay.in')) return customUrl.trim();
+    if (customUrl && customUrl.trim()) {
+      let trimmed = customUrl.trim();
+      if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+        trimmed = `https://${trimmed}`;
+      }
+      return trimmed;
+    }
     const bizSlug = (storeControls.restName || 'lagan-da-dhaba')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
@@ -557,11 +563,38 @@ export default function DashboardPage({ onShowToast }) {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
     const fpId = storeControls.foodypayId || 'FP-985569';
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
-    return `${origin}/${bizSlug}/${fpId}/${tableSlug}`;
+    
+    let origin = typeof window !== 'undefined' ? window.location.origin : 'https://foodypay.netlify.app';
+
+    // In local dev environment keep http://, otherwise force full https://
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      return `${origin}/${bizSlug}/${fpId}/${tableSlug}`;
+    }
+
+    // Strip any existing protocol and force https:// explicitly
+    origin = origin.replace(/^https?:\/\//i, '');
+    return `https://${origin}/${bizSlug}/${fpId}/${tableSlug}`;
   };
 
-  // Listen for real-time customer table orders created on customer menu website
+  const sendBrowserNotification = (title, body) => {
+    try {
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        if (Notification.permission === 'granted') {
+          new Notification(title, { body, icon: '/Logo.png' });
+        } else if (Notification.permission === 'default') {
+          Notification.requestPermission().then((perm) => {
+            if (perm === 'granted') {
+              new Notification(title, { body, icon: '/Logo.png' });
+            }
+          });
+        }
+      }
+    } catch (e) {
+      // notification fallback
+    }
+  };
+
+  // Listen & poll for real-time customer table orders created on customer menu website
   useEffect(() => {
     const handleNewOrderEvent = () => {
       try {
@@ -573,6 +606,7 @@ export default function DashboardPage({ onShowToast }) {
           if (newest) {
             triggerSound(playOrderPlaced);
             addToast(`🔔 Live Order Received! ${newest.id} from ${newest.table} (${newest.customer})`, <Bell size={18} />);
+            sendBrowserNotification('🔔 New FoodyPay Order!', `${newest.id} - ${newest.table} (${newest.customer})`);
           }
         }
       } catch (e) {
@@ -580,13 +614,40 @@ export default function DashboardPage({ onShowToast }) {
       }
     };
 
+    // Polling backend database every 5 seconds for new customer orders placed from any mobile device
+    const pollBackendOrders = async () => {
+      const token = localStorage.getItem('foodypay_token');
+      if (!token) return;
+      try {
+        const fetchedOrders = await fetchOrdersApi(token);
+        if (Array.isArray(fetchedOrders) && fetchedOrders.length > 0) {
+          setOrders((prev) => {
+            if (fetchedOrders.length > prev.length) {
+              const newest = fetchedOrders[0];
+              triggerSound(playOrderPlaced);
+              addToast(`🔔 Live Order Received! ${newest.orderId || newest.id} from ${newest.table || 'Table'} (${newest.customer || 'Customer'})`, <Bell size={18} />);
+              sendBrowserNotification('🔔 New FoodyPay Order!', `${newest.orderId || newest.id} - ${newest.table || 'Table'} (${newest.customer || 'Customer'})`);
+            }
+            return fetchedOrders;
+          });
+        }
+      } catch (err) {
+        // silent catch during polling
+      }
+    };
+
+    const pollInterval = setInterval(pollBackendOrders, 5000);
+
+
     window.addEventListener('foodypay_order_created', handleNewOrderEvent);
     window.addEventListener('storage', handleNewOrderEvent);
     return () => {
+      clearInterval(pollInterval);
       window.removeEventListener('foodypay_order_created', handleNewOrderEvent);
       window.removeEventListener('storage', handleNewOrderEvent);
     };
   }, [soundEnabled]);
+
 
   // Continuous Bell Alarm Controller for Unseen Orders
   useEffect(() => {

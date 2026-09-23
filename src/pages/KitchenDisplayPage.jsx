@@ -18,6 +18,7 @@ import {
   Check
 } from 'lucide-react';
 import { playOrderPlaced } from '../utils/soundEffects';
+import { fetchOrdersApi } from '../utils/api';
 
 export default function KitchenDisplayPage({ onShowToast }) {
   const { restaurantSlug, merchantId } = useParams();
@@ -48,8 +49,20 @@ export default function KitchenDisplayPage({ onShowToast }) {
     note: 'Serve HOT',
   });
 
-  // Load orders from localStorage
-  const loadOrders = () => {
+  // Load orders from localStorage & API
+  const loadOrders = async () => {
+    const token = localStorage.getItem('foodypay_token');
+    if (token) {
+      try {
+        const fetched = await fetchOrdersApi(token);
+        if (Array.isArray(fetched) && fetched.length > 0) {
+          setOrders(fetched);
+          return;
+        }
+      } catch (e) {
+        // silent fallback
+      }
+    }
     try {
       const saved = localStorage.getItem('foodypay_crm_orders_v3');
       if (saved) {
@@ -68,6 +81,8 @@ export default function KitchenDisplayPage({ onShowToast }) {
   useEffect(() => {
     loadOrders();
 
+    const pollInterval = setInterval(loadOrders, 5000);
+
     // Listen to real-time order updates across tabs
     const handleStorage = (e) => {
       if (e.key === 'foodypay_crm_orders_v3') {
@@ -81,10 +96,12 @@ export default function KitchenDisplayPage({ onShowToast }) {
     window.addEventListener('foodypay_order_created', handleCustomOrderEvent);
 
     return () => {
+      clearInterval(pollInterval);
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('foodypay_order_created', handleCustomOrderEvent);
     };
   }, []);
+
 
   // Live Clock Update
   useEffect(() => {
