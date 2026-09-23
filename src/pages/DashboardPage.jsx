@@ -38,6 +38,7 @@ import {
   ChefHat,
   Bell,
   X,
+  LogOut,
   Menu,
   Cake,
   Share2,
@@ -79,6 +80,9 @@ import {
   deleteTableApi,
   fetchSettingsApi,
   updateSettingsApi,
+  fetchReviewsApi,
+  createReviewApi,
+  replyReviewApi,
 } from '../utils/api';
 import './Dashboard.css';
 
@@ -155,6 +159,23 @@ export default function DashboardPage({ onShowToast }) {
   }, []);
 
   const token = localStorage.getItem('foodypay_token');
+
+  // Auth Redirect: If no token, redirect to /login
+  useEffect(() => {
+    if (!token) {
+      navigate('/login');
+    }
+  }, [token, navigate]);
+
+  // Logout Handler
+  const handleLogout = () => {
+    if (window.confirm('Are you sure you want to log out of your FoodyPay POS Dashboard?')) {
+      localStorage.removeItem('foodypay_token');
+      localStorage.removeItem('foodypay_user');
+      addToast('Logged out successfully');
+      navigate('/login');
+    }
+  };
 
   // Datasets - default to empty array if user token is present, otherwise fallback
   const [orders, setOrders] = useState([]);
@@ -309,47 +330,25 @@ export default function DashboardPage({ onShowToast }) {
     } catch (e) {}
   }, [storeControls.logoUrl, storeControls.restName]);
 
-  // Customer Reviews & Feedback Dataset State (Clears all sample data; real customer ratings & feedback only)
-  const [reviews, setReviews] = useState(() => {
+  // Customer Reviews & Feedback Dataset State (Loaded only from server DB API)
+  const [reviews, setReviews] = useState([]);
+
+  const reloadServerReviews = async () => {
     try {
-      const saved = localStorage.getItem('foodypay_crm_reviews_v1');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          const SAMPLE_NAMES = ['Rahul Sharma', 'Ananya Verma', 'Vikram Malhotra', 'Pooja Patel', 'Amit Kumar', 'Neha Gupta', 'Saurabh Joshi'];
-          return parsed.filter(r => r && r.customerName && !SAMPLE_NAMES.includes(r.customerName));
-        }
+      const data = await fetchReviewsApi();
+      if (Array.isArray(data)) {
+        setReviews(data);
       }
-    } catch {}
-    return [];
-  });
+    } catch (e) {
+      console.warn('Failed to fetch reviews from server:', e);
+    }
+  };
 
   useEffect(() => {
-    try {
-      localStorage.setItem('foodypay_crm_reviews_v1', JSON.stringify(reviews));
-    } catch {}
-  }, [reviews]);
-
-  // Real-time listener for customer review submissions from Web Menu
-  useEffect(() => {
-    const syncReviews = () => {
-      try {
-        const saved = localStorage.getItem('foodypay_crm_reviews_v1');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
-            const SAMPLE_NAMES = ['Rahul Sharma', 'Ananya Verma', 'Vikram Malhotra', 'Pooja Patel', 'Amit Kumar', 'Neha Gupta', 'Saurabh Joshi'];
-            setReviews(parsed.filter(r => r && r.customerName && !SAMPLE_NAMES.includes(r.customerName)));
-          }
-        }
-      } catch (e) {}
-    };
-
-    window.addEventListener('storage', syncReviews);
-    window.addEventListener('foodypay_review_created', syncReviews);
+    reloadServerReviews();
+    window.addEventListener('foodypay_review_created', reloadServerReviews);
     return () => {
-      window.removeEventListener('storage', syncReviews);
-      window.removeEventListener('foodypay_review_created', syncReviews);
+      window.removeEventListener('foodypay_review_created', reloadServerReviews);
     };
   }, []);
 
@@ -373,18 +372,26 @@ export default function DashboardPage({ onShowToast }) {
     tableNo: 'Table 1',
   });
 
-  const handleSaveReplySubmit = (e) => {
+  const handleSaveReplySubmit = async (e) => {
     e.preventDefault();
     if (!activeReplyReview || !replyTextInput.trim()) return;
 
-    setReviews((prev) =>
-      prev.map((r) => {
-        if (r.id === activeReplyReview.id) {
-          return { ...r, reply: replyTextInput.trim() };
-        }
-        return r;
-      })
-    );
+    const revTargetId = activeReplyReview._id || activeReplyReview.id;
+    try {
+      const updatedRev = await replyReviewApi(revTargetId, replyTextInput.trim());
+      setReviews((prev) =>
+        prev.map((r) => ((r._id || r.id) === revTargetId ? updatedRev : r))
+      );
+    } catch (err) {
+      setReviews((prev) =>
+        prev.map((r) => {
+          if ((r._id || r.id) === revTargetId) {
+            return { ...r, reply: replyTextInput.trim() };
+          }
+          return r;
+        })
+      );
+    }
 
     addToast(`💬 Saved response for ${activeReplyReview.customerName}'s review!`, <Check size={18} />);
     setIsReplyModalOpen(false);
@@ -392,26 +399,35 @@ export default function DashboardPage({ onShowToast }) {
     setReplyTextInput('');
   };
 
-  const handleAddReviewSubmit = (e) => {
+  const handleAddReviewSubmit = async (e) => {
     e.preventDefault();
     if (!newReviewForm.customerName.trim() || !newReviewForm.feedback.trim()) return;
 
     const ratingVal = Number(newReviewForm.rating) || 5;
-    const newR = {
-      id: `rev_${Date.now()}`,
+    const reviewData = {
       customerName: newReviewForm.customerName.trim(),
       customerPhone: newReviewForm.customerPhone.trim() || '+91 98000 00000',
       rating: ratingVal,
       feedback: newReviewForm.feedback.trim(),
       dishOrdered: newReviewForm.dishOrdered.trim() || 'Counter Order',
       tableNo: newReviewForm.tableNo || 'Table 1',
-      date: 'Just now',
-      sentiment: ratingVal >= 4 ? 'positive' : ratingVal === 3 ? 'neutral' : 'negative',
-      reply: null,
     };
 
-    setReviews((prev) => [newR, ...prev]);
-    addToast(`⭐ Added review from ${newR.customerName}!`, <Star size={18} />);
+    try {
+      const createdRev = await createReviewApi(reviewData);
+      setReviews((prev) => [createdRev, ...prev]);
+    } catch (err) {
+      const newR = {
+        id: `rev_${Date.now()}`,
+        ...reviewData,
+        date: 'Just now',
+        sentiment: ratingVal >= 4 ? 'positive' : ratingVal === 3 ? 'neutral' : 'negative',
+        reply: null,
+      };
+      setReviews((prev) => [newR, ...prev]);
+    }
+
+    addToast(`⭐ Added review from ${newReviewForm.customerName}!`, <Star size={18} />);
     setIsAddReviewModalOpen(false);
   };
 
@@ -644,13 +660,14 @@ export default function DashboardPage({ onShowToast }) {
 
       setLoadingData(true);
       try {
-        const [ordersRes, dishesRes, customersRes, couponsRes, tablesRes, settingsRes] = await Promise.allSettled([
+        const [ordersRes, dishesRes, customersRes, couponsRes, tablesRes, settingsRes, reviewsRes] = await Promise.allSettled([
           fetchOrdersApi(token),
           fetchDishesApi(token),
           fetchCustomersApi(token),
           fetchCouponsApi(token),
           fetchTablesApi(token),
           fetchSettingsApi(token),
+          fetchReviewsApi(),
         ]);
 
         if (ordersRes.status === 'fulfilled' && Array.isArray(ordersRes.value)) setOrders(ordersRes.value);
@@ -658,6 +675,8 @@ export default function DashboardPage({ onShowToast }) {
 
         if (dishesRes.status === 'fulfilled' && Array.isArray(dishesRes.value)) setDishes(dishesRes.value);
         else setDishes(INITIAL_DISHES);
+
+        if (reviewsRes.status === 'fulfilled' && Array.isArray(reviewsRes.value)) setReviews(reviewsRes.value);
 
         if (customersRes.status === 'fulfilled' && Array.isArray(customersRes.value)) setCustomers(customersRes.value);
         else setCustomers(INITIAL_CUSTOMERS);
@@ -1314,33 +1333,62 @@ export default function DashboardPage({ onShowToast }) {
     addToast(`Added product "${newProductForm.name}" to catalog!`, <Check size={18} />);
   };
 
-  const handleEditProductSubmit = (e) => {
+  const handleEditProductSubmit = async (e) => {
     e.preventDefault();
     if (!editProductForm || !editProductForm.name.trim() || !editProductForm.price) return;
 
-    setDishes((prev) => 
-      prev.map(dish => {
-        if (dish.id === editProductForm.id) {
-          return {
-            ...dish,
-            name: editProductForm.name.trim().toUpperCase(),
-            category: editProductForm.category,
-            price: Number(editProductForm.price),
-            isVeg: editProductForm.isVeg,
-            variantsCount: editProductForm.sizes.length,
-            sizes: editProductForm.sizes,
-            desc: editProductForm.desc || 'Prepared fresh with high quality ingredients.',
-            images: editProductForm.images?.length ? editProductForm.images : ['https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80'],
-            image: editProductForm.images?.[0] || editProductForm.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80',
-            isPinned: editProductForm.isPinned,
-          };
-        }
-        return dish;
-      })
-    );
+    const dishId = editProductForm._id || editProductForm.id;
+    const updateData = {
+      name: editProductForm.name.trim().toUpperCase(),
+      category: editProductForm.category,
+      price: Number(editProductForm.price),
+      isVeg: editProductForm.isVeg,
+      desc: editProductForm.desc || 'Prepared fresh with high quality ingredients.',
+      sizes: editProductForm.sizes,
+    };
+
+    if (token && dishId) {
+      try {
+        const updatedDish = await updateDishApi(token, dishId, updateData);
+        setDishes((prev) =>
+          prev.map((dish) => ((dish._id || dish.id) === dishId ? updatedDish : dish))
+        );
+      } catch (err) {
+        console.warn('API error updating dish:', err);
+      }
+    } else {
+      setDishes((prev) => 
+        prev.map((dish) => {
+          if ((dish._id || dish.id) === dishId) {
+            return {
+              ...dish,
+              ...updateData,
+              variantsCount: editProductForm.sizes?.length || 1,
+              images: editProductForm.images?.length ? editProductForm.images : ['https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80'],
+              image: editProductForm.images?.[0] || editProductForm.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80',
+              isPinned: editProductForm.isPinned,
+            };
+          }
+          return dish;
+        })
+      );
+    }
     addToast('Product Updated Successfully', <Check size={14}/>);
     setIsEditProductModalOpen(false);
     setEditProductForm(null);
+  };
+
+  const handleDeleteDish = async (dishId) => {
+    if (!window.confirm('Are you sure you want to delete this dish from your catalog?')) return;
+    setDishes((prev) => prev.filter((d) => (d._id || d.id) !== dishId));
+    if (token && dishId) {
+      try {
+        await deleteDishApi(token, dishId);
+      } catch (err) {
+        console.warn('API error deleting dish:', err);
+      }
+    }
+    addToast('Product removed from catalog', <Trash2 size={16} />);
   };
 
   // ==========================================================================
@@ -2128,6 +2176,22 @@ export default function DashboardPage({ onShowToast }) {
               <span>Settings</span>
             </div>
           </button>
+
+          {/* LOGOUT LINK */}
+          <button
+            type="button"
+            title="Log Out"
+            className="crm-menu-link"
+            style={{ color: '#EF4444', marginTop: '6px' }}
+            onClick={handleLogout}
+          >
+            <div className="crm-menu-link-left">
+              <span className="crm-menu-icon" style={{ color: '#EF4444' }}>
+                <LogOut size={20} />
+              </span>
+              <span>Log Out</span>
+            </div>
+          </button>
         </nav>
 
         {/* BOTTOM SIDEBAR CARD: FoodyPay credits */}
@@ -2261,6 +2325,30 @@ export default function DashboardPage({ onShowToast }) {
             >
               <Plus size={16} />
               <span>+ Counter POS Order</span>
+            </button>
+
+            {/* Logout Header Button */}
+            <button
+              type="button"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '9px 14px',
+                borderRadius: '10px',
+                backgroundColor: '#FEF2F2',
+                border: '1.5px solid #FCA5A5',
+                color: '#DC2626',
+                fontWeight: 800,
+                fontSize: '13px',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+              title="Log Out of Merchant Account"
+              onClick={handleLogout}
+            >
+              <LogOut size={16} />
+              <span>Log Out</span>
             </button>
           </div>
         </header>
@@ -2878,20 +2966,31 @@ export default function DashboardPage({ onShowToast }) {
                         </label>
                       </td>
                       <td style={{ textAlign: 'right' }}>
-                        <button 
-                          className="crm-edit-icon-btn"
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B' }}
-                          onClick={() => {
-                            setEditProductForm({
-                              ...dish,
-                              sizes: dish.sizes && dish.sizes.length > 0 ? dish.sizes : [{ name: 'Regular', price: dish.price, qty: 100 }],
-                              images: dish.images && dish.images.length > 0 ? dish.images : (dishImgUrl ? [dishImgUrl] : [])
-                            });
-                            setIsEditProductModalOpen(true);
-                          }}
-                        >
-                           <Edit3 size={18}/>
-                        </button>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                          <button 
+                            className="crm-edit-icon-btn"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B' }}
+                            title="Edit Dish"
+                            onClick={() => {
+                              setEditProductForm({
+                                ...dish,
+                                sizes: dish.sizes && dish.sizes.length > 0 ? dish.sizes : [{ name: 'Regular', price: dish.price, qty: 100 }],
+                                images: dish.images && dish.images.length > 0 ? dish.images : (dishImgUrl ? [dishImgUrl] : [])
+                              });
+                              setIsEditProductModalOpen(true);
+                            }}
+                          >
+                             <Edit3 size={18}/>
+                          </button>
+                          <button 
+                            className="crm-edit-icon-btn"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444' }}
+                            title="Delete Dish"
+                            onClick={() => handleDeleteDish(dish._id || dish.id)}
+                          >
+                             <Trash2 size={18}/>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                     );

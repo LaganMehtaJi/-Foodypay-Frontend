@@ -1,38 +1,46 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import HomePage from './pages/HomePage';
 import DashboardPage from './pages/DashboardPage';
 import CreateWebsitePage from './pages/CreateWebsitePage';
 import LoginPage from './pages/LoginPage';
+import SignupPage from './pages/SignupPage';
 import CustomerMenuPage from './pages/CustomerMenuPage';
 import AdminDebugPage from './pages/AdminDebugPage';
 import KitchenDisplayPage from './pages/KitchenDisplayPage';
-import SignupModal from './components/SignupModal';
-import LoginModal from './components/LoginModal';
 import Toast from './components/Toast';
 import LiveOrderTicker from './components/LiveOrderTicker';
 import './App.css';
 
-const AppContent = ({ openSignup, openLogin, showToast }) => {
-  const location = useLocation();
-  const isDashboard = location.pathname.startsWith('/dashboard');
+const AppContent = ({ showToast }) => {
+  const navigate = useNavigate();
+
+  const handleOpenSignup = () => {
+    navigate('/register');
+  };
 
   return (
     <>
-     
-
       <Routes>
         <Route
           path="/"
-          element={<HomePage onOpenSignup={openSignup} onShowToast={showToast} />}
+          element={<HomePage onOpenSignup={handleOpenSignup} onShowToast={showToast} />}
         />
         <Route
           path="/create-website"
-          element={<CreateWebsitePage onOpenSignup={openSignup} onShowToast={showToast} />}
+          element={<CreateWebsitePage onOpenSignup={handleOpenSignup} onShowToast={showToast} />}
         />
         <Route
           path="/login"
           element={<LoginPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/signup"
+          element={<SignupPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/register"
+          element={<SignupPage onShowToast={showToast} />}
         />
         <Route
           path="/dashboard"
@@ -72,20 +80,15 @@ const AppContent = ({ openSignup, openLogin, showToast }) => {
         />
         <Route
           path="*"
-          element={<HomePage onOpenSignup={openSignup} onShowToast={showToast} />}
+          element={<HomePage onOpenSignup={handleOpenSignup} onShowToast={showToast} />}
         />
       </Routes>
-
-      
     </>
   );
 };
 
 // FoodyPay App Entry Point
 function App() {
-  const [signupOpen, setSignupOpen] = useState(false);
-  const [loginOpen, setLoginOpen] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState('Free');
   const [toastMessage, setToastMessage] = useState('');
   const [toastVisible, setToastVisible] = useState(false);
 
@@ -93,15 +96,6 @@ function App() {
     document.documentElement.setAttribute('data-theme', 'light');
     localStorage.removeItem('foodypay-theme');
   }, []);
-
-  const openSignup = (plan = 'Free') => {
-    setSelectedPlan(plan);
-    setSignupOpen(true);
-  };
-
-  const closeSignup = () => setSignupOpen(false);
-  const openLogin = () => setLoginOpen(true);
-  const closeLogin = () => setLoginOpen(false);
 
   const showToast = (message) => {
     setToastMessage(message);
@@ -114,21 +108,7 @@ function App() {
   return (
     <BrowserRouter>
       <div className="app-layout">
-        <AppContent openSignup={openSignup} openLogin={openLogin} showToast={showToast} />
-
-        <SignupModal
-          isOpen={signupOpen}
-          onClose={closeSignup}
-          selectedPlan={selectedPlan}
-        />
-
-        <LoginModal
-          isOpen={loginOpen}
-          onClose={closeLogin}
-          onShowToast={showToast}
-          onSwitchToSignup={() => openSignup('Free')}
-        />
-
+        <AppContent showToast={showToast} />
         <Toast message={toastMessage} isVisible={toastVisible} />
       </div>
     </BrowserRouter>

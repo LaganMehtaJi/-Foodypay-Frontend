@@ -1,4 +1,6 @@
-export const API_BASE_URL = 'http://localhost:5001/api';
+export const API_BASE_URL = typeof window !== 'undefined' && window.location.hostname === 'localhost'
+  ? 'http://localhost:3000/api'
+  : 'https://server-foodypay.onrender.com/api';
 
 /**
  * Register user with form data (including logo file upload)
@@ -111,22 +113,55 @@ export async function updateOrderStatusApi(token, orderId, status) {
 }
 
 export async function fetchDishesApi(token) {
-  const response = await fetch(`${API_BASE_URL}/dishes`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const response = await fetch(`${API_BASE_URL}/dishes${token ? '' : '/public'}`, { headers });
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || 'Failed to fetch catalog dishes');
   return data.data;
 }
 
-export async function createDishApi(token, formData) {
+export async function createDishApi(token, dishData) {
+  const isFormData = dishData instanceof FormData;
+  const headers = {
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
   const response = await fetch(`${API_BASE_URL}/dishes`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: formData,
+    headers,
+    body: isFormData ? dishData : JSON.stringify(dishData),
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || 'Failed to create dish');
+  return data.data;
+}
+
+export async function fetchReviewsApi() {
+  const response = await fetch(`${API_BASE_URL}/reviews`);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to fetch reviews');
+  return data.data || [];
+}
+
+export async function createReviewApi(reviewData) {
+  const response = await fetch(`${API_BASE_URL}/reviews`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(reviewData),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to post review');
+  return data.data;
+}
+
+export async function replyReviewApi(reviewId, replyText) {
+  const response = await fetch(`${API_BASE_URL}/reviews/${reviewId}/reply`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reply: replyText }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to send reply');
   return data.data;
 }
 
@@ -268,13 +303,15 @@ export async function fetchSettingsApi(token) {
 }
 
 export async function updateSettingsApi(token, settingsData) {
+  const isFormData = settingsData instanceof FormData;
+  const headers = {
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
   const response = await fetch(`${API_BASE_URL}/settings`, {
     method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(settingsData),
+    headers,
+    body: isFormData ? settingsData : JSON.stringify(settingsData),
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || 'Failed to update settings');

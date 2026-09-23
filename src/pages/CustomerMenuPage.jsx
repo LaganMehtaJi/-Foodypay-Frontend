@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { playOrderPlaced } from '../utils/soundEffects';
 import { QrCodeComponent } from '../utils/qrGenerator';
+import { fetchDishesApi, createReviewApi } from '../utils/api';
 
 // Default Fallback Dishes (Cleared as requested)
 const DEFAULT_DISHES = [];
@@ -131,7 +132,7 @@ export default function CustomerMenuPage({ onShowToast }) {
   }, [customerName, customerPhone, customerDob]);
 
   // Load menu dataset dynamically from Dashboard storage
-  const loadDynamicMenu = () => {
+  const loadDynamicMenu = async () => {
     try {
       const savedUser = localStorage.getItem('foodypay_user');
       if (savedUser) {
@@ -154,12 +155,27 @@ export default function CustomerMenuPage({ onShowToast }) {
         }));
       };
 
-      const savedDishes = localStorage.getItem('foodypay_crm_dishes_v3');
-      if (savedDishes) {
-        const parsed = JSON.parse(savedDishes);
-        setDishes(parsed.length > 0 ? normalizeDishes(parsed) : normalizeDishes(DEFAULT_DISHES));
-      } else {
-        setDishes(normalizeDishes(DEFAULT_DISHES));
+      try {
+        const apiDishes = await fetchDishesApi();
+        if (Array.isArray(apiDishes) && apiDishes.length > 0) {
+          setDishes(normalizeDishes(apiDishes));
+        } else {
+          const savedDishes = localStorage.getItem('foodypay_crm_dishes_v3');
+          if (savedDishes) {
+            const parsed = JSON.parse(savedDishes);
+            setDishes(normalizeDishes(parsed));
+          } else {
+            setDishes([]);
+          }
+        }
+      } catch (err) {
+        const savedDishes = localStorage.getItem('foodypay_crm_dishes_v3');
+        if (savedDishes) {
+          const parsed = JSON.parse(savedDishes);
+          setDishes(normalizeDishes(parsed));
+        } else {
+          setDishes([]);
+        }
       }
 
       const savedMeals = localStorage.getItem('foodypay_crm_meals_v1');
@@ -463,7 +479,7 @@ export default function CustomerMenuPage({ onShowToast }) {
     if (onShowToast) onShowToast('🎁 Birthday saved! You will receive special gift offers on your birthday!');
   };
 
-  const handleSubmitReview = (e) => {
+  const handleSubmitReview = async (e) => {
     e.preventDefault();
     if (!feedbackText.trim()) return;
 
@@ -481,14 +497,18 @@ export default function CustomerMenuPage({ onShowToast }) {
     };
 
     try {
-      const savedKey = 'foodypay_crm_reviews_v1';
-      const existingRev = localStorage.getItem(savedKey);
-      let revList = existingRev ? JSON.parse(existingRev) : [];
-      revList = [newReview, ...revList];
-      localStorage.setItem(savedKey, JSON.stringify(revList));
-      window.dispatchEvent(new Event('storage'));
+      await createReviewApi({
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim() || '+91 98000 00000',
+        rating: ratingStars,
+        feedback: feedbackText.trim(),
+        dishOrdered: activePlacedOrder?.items?.map((i) => i.name).join(', ') || 'Table Dining Order',
+        tableNo: rawTable,
+      });
       window.dispatchEvent(new Event('foodypay_review_created'));
-    } catch (err) {}
+    } catch (err) {
+      console.warn('API review post error:', err);
+    }
 
     setShowRatingModal(false);
     if (onShowToast) onShowToast('⭐ Thank you! Review saved directly to Dashboard.');

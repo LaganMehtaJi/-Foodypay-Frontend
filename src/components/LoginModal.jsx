@@ -71,6 +71,9 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
         if (onShowToast) {
           onShowToast(`👋 Welcome back, ${userData.name}!`);
         }
+        setTimeout(() => {
+          window.location.href = '/dashboard';
+        }, 600);
       } else {
         setError('Login failed. Please check your credentials.');
       }
@@ -104,6 +107,9 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
         playMilestoneCelebration();
         confetti({ particleCount: 100, spread: 70, origin: { y: 0.5 } });
         if (onShowToast) onShowToast(`👋 Logged in with Google as ${res.data.name}!`);
+        setTimeout(() => {
+          window.location.href = '/dashboard';
+        }, 600);
       }
     } catch (err) {
       setError(err.message || 'Google Auth failed.');

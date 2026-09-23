@@ -122,6 +122,9 @@ export default function SignupModal({ isOpen, onClose, onSwitchToLogin }) {
         setSuccessUser(userData);
         playMilestoneCelebration();
         confetti({ particleCount: 120, spread: 80, origin: { y: 0.4 } });
+        setTimeout(() => {
+          window.location.href = '/dashboard';
+        }, 600);
       } else {
         setError('Registration failed. Please try again.');
       }
