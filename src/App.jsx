@@ -4,6 +4,9 @@ import HomePage from './pages/HomePage';
 import DashboardPage from './pages/DashboardPage';
 import CreateWebsitePage from './pages/CreateWebsitePage';
 import LoginPage from './pages/LoginPage';
+import CustomerMenuPage from './pages/CustomerMenuPage';
+import AdminDebugPage from './pages/AdminDebugPage';
+import KitchenDisplayPage from './pages/KitchenDisplayPage';
 import SignupModal from './components/SignupModal';
 import LoginModal from './components/LoginModal';
 import Toast from './components/Toast';
@@ -34,6 +37,38 @@ const AppContent = ({ openSignup, openLogin, showToast }) => {
         <Route
           path="/dashboard"
           element={<DashboardPage />}
+        />
+        <Route
+          path="/AdminDebug"
+          element={<AdminDebugPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/admin-debug"
+          element={<AdminDebugPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/:restaurantSlug/:merchantId/KitchenDisplaySystem"
+          element={<KitchenDisplayPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/:restaurantSlug/:merchantId/kds"
+          element={<KitchenDisplayPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/KitchenDisplaySystem"
+          element={<KitchenDisplayPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/kds"
+          element={<KitchenDisplayPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/:restaurantSlug/:merchantId/:tableId"
+          element={<CustomerMenuPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/:restaurantSlug/:merchantId"
+          element={<CustomerMenuPage onShowToast={showToast} />}
         />
         <Route
           path="*"

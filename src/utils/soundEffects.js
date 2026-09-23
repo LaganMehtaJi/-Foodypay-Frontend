@@ -285,3 +285,26 @@ export function playMilestoneCelebration() {
   });
 }
 
+// 8. Continuous Alarm Bell Loop (Rings repeatedly until order is SEEN or PREPARING)
+let alarmTimer = null;
+
+export function startContinuousAlarm() {
+  if (alarmTimer) return; // already ringing
+  try {
+    playCallWaiter();
+  } catch (e) {}
+  alarmTimer = setInterval(() => {
+    try {
+      playCallWaiter();
+    } catch (e) {}
+  }, 1200);
+}
+
+export function stopContinuousAlarm() {
+  if (alarmTimer) {
+    clearInterval(alarmTimer);
+    alarmTimer = null;
+  }
+}
+
+

@@ -46,12 +46,89 @@
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  transition: all 0.25s ease;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 100;
   height: 100vh;
   position: sticky;
   top: 0;
   box-shadow: 2px 0 12px rgba(0, 0, 0, 0.02);
+}
+
+/* Collapsible Hamburger Sidebar (Icon-Only Mode) */
+.crm-sidebar.collapsed {
+  width: 80px;
+}
+
+.crm-sidebar.collapsed .crm-sidebar-brand {
+  padding: 20px 10px;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.crm-sidebar.collapsed .crm-brand-group {
+  justify-content: center;
+  width: 100%;
+}
+
+.crm-sidebar.collapsed .crm-sidebar-toggle-btn {
+  margin: 0 auto !important;
+}
+
+.crm-sidebar.collapsed .crm-sidebar-menu {
+  padding: 16px 8px;
+  align-items: center;
+}
+
+.crm-sidebar.collapsed .crm-menu-link {
+  padding: 12px 0;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  margin: 0 auto;
+}
+
+.crm-sidebar.collapsed .crm-menu-link-left {
+  justify-content: center;
+  gap: 0;
+  width: 100%;
+}
+
+.crm-sidebar.collapsed .crm-menu-link-left > span:not(.crm-menu-icon),
+.crm-sidebar.collapsed .crm-menu-chevron,
+.crm-sidebar.collapsed .crm-badge-new,
+.crm-sidebar.collapsed .crm-submenu-list {
+  display: none !important;
+}
+
+.crm-sidebar.collapsed .crm-menu-icon {
+  margin: 0 auto;
+  font-size: 22px;
+  width: auto;
+}
+
+.crm-sidebar.collapsed .crm-sidebar-credits-card {
+  margin: 16px 8px;
+  padding: 10px 0;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 16px;
+  flex-direction: column;
+  cursor: pointer;
+}
+
+.crm-sidebar.collapsed .crm-credits-info,
+.crm-sidebar.collapsed .crm-sidebar-credits-card button {
+  display: none !important;
+}
+
+.crm-sidebar.collapsed .crm-credits-icon-box {
+  margin: 0;
+  background: transparent;
+  width: auto;
+  height: auto;
 }
 
 .crm-sidebar-brand {
@@ -625,7 +702,7 @@
 }
 
 .crm-order-card-header {
-  padding: 10px 16px;
+  padding: 6px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -636,22 +713,22 @@
 .crm-order-id-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .crm-order-id {
   font-weight: 800;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--crm-text-primary);
 }
 
 .crm-table-tag {
   background: #EFF6FF;
   color: #1D4ED8;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
-  padding: 4px 12px;
-  border-radius: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
   border: 1px solid #BFDBFE;
 }
 
@@ -662,10 +739,10 @@
 }
 
 .crm-status-pill {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
-  padding: 4px 10px;
-  border-radius: 16px;
+  padding: 3px 8px;
+  border-radius: 14px;
   letter-spacing: 0.03em;
   border: 1px solid transparent;
 }
@@ -768,7 +845,7 @@
 
 /* Progress Tracker Bar */
 .crm-progress-track {
-  padding: 8px 16px;
+  padding: 5px 12px;
   background: #FAFAFA;
   border-bottom: 1px solid var(--crm-border-subtle);
 }
@@ -782,19 +859,19 @@
 
 .crm-progress-line-back {
   position: absolute;
-  top: 10px;
-  left: 12px;
-  right: 12px;
-  height: 3px;
+  top: 9px;
+  left: 10px;
+  right: 10px;
+  height: 2.5px;
   background: #E2E8F0;
   z-index: 1;
 }
 
 .crm-progress-line-fill {
   position: absolute;
-  top: 10px;
-  left: 12px;
-  height: 3px;
+  top: 9px;
+  left: 10px;
+  height: 2.5px;
   background: var(--crm-primary-orange);
   z-index: 2;
   transition: width 0.35s ease;
@@ -806,16 +883,16 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
 }
 
 .crm-step-circle {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: #FFFFFF;
   border: 1.5px solid #CBD5E1;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 800;
   color: #64748B;
   display: flex;
@@ -838,9 +915,9 @@
 }
 
 .crm-step-label {
-  font-size: 10.5px;
+  font-size: 11px;
   color: #64748B;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .crm-step-node.current .crm-step-label {
@@ -850,7 +927,7 @@
 
 /* Order Body & Items */
 .crm-order-card-body {
-  padding: 10px 16px;
+  padding: 6px 12px;
   flex: 1;
 }
 
@@ -858,24 +935,40 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.crm-customer-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--crm-text-primary);
+}
+
+.crm-customer-phone {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
   color: var(--crm-text-muted);
-  margin-bottom: 6px;
   font-weight: 600;
 }
 
 .crm-order-items-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 6px;
+  gap: 3px;
+  margin-bottom: 4px;
 }
 
 .crm-item-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12.5px;
+  font-size: 13px;
+  line-height: 1.25;
 }
 
 .crm-item-name-qty {
@@ -889,8 +982,8 @@
   color: #0F172A;
   font-weight: 800;
   font-size: 11px;
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: 1px 6px;
+  border-radius: 5px;
 }
 
 .crm-veg-dot {
@@ -935,21 +1028,21 @@
   background: #FFFBEB;
   border: 1px dashed #FDE68A;
   color: #92400E;
-  padding: 6px 10px;
-  border-radius: 8px;
+  padding: 3px 8px;
+  border-radius: 6px;
   font-size: 11.5px;
-  margin-top: 6px;
+  margin-top: 4px;
   font-weight: 500;
 }
 
 /* Order Footer & Actions */
 .crm-order-card-footer {
-  padding: 10px 16px;
+  padding: 6px 12px;
   border-top: 1.5px solid var(--crm-border);
   background: #F8FAFC;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .crm-order-total-row {
@@ -959,16 +1052,17 @@
 }
 
 .crm-total-amount {
-  font-size: 16px;
-  font-weight: 800;
+  font-size: 20px;
+  font-weight: 900;
   color: var(--crm-text-primary);
+  letter-spacing: -0.02em;
 }
 
 .crm-payment-pill {
-  font-size: 12.5px;
-  font-weight: 700;
-  padding: 4px 10px;
-  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 6px;
 }
 
 .crm-payment-pill.paid-upi {
@@ -2155,23 +2249,23 @@ input:checked + .crm-blue-slider:before {
 .crm-card-actions-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 5px;
   width: 100%;
 }
 
 .crm-btn-action {
   flex: 1;
-  min-width: 95px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  font-size: 11.5px;
+  min-width: 85px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 13px;
   font-weight: 800;
   border: none;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 5px;
   transition: all 0.18s ease;
 }
 
@@ -2211,10 +2305,10 @@ input:checked + .crm-blue-slider:before {
   background: #FFF7ED;
   border: 1.5px solid #FFEDD5;
   color: #C2410C;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 800;
-  padding: 6px 10px;
-  border-radius: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2291,4 +2385,272 @@ input:checked + .crm-blue-slider:before {
     padding-top: 16px;
   }
 }
+
+/* Cards Per Row (1 to 6 Grid Selector Control) */
+.crm-grid-columns-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #F1F5F9;
+  padding: 4px 8px;
+  border-radius: 10px;
+  border: 1px solid #E2E8F0;
+}
+
+.crm-grid-control-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #475569;
+  margin-right: 4px;
+}
+
+.crm-grid-col-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.crm-grid-col-btn:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+}
+
+.crm-grid-col-btn.active {
+  background: #FF5E14;
+  color: #FFFFFF;
+  box-shadow: 0 2px 6px rgba(255, 94, 20, 0.3);
+}
+
+/* ==========================================================================
+   WIDE 2-COLUMN PRODUCT ADD/EDIT MODAL & CLEAN PHOTO PICKER
+   ========================================================================== */
+.crm-modal-card-wide-product {
+  width: min(1040px, 95vw) !important;
+  max-height: 92vh;
+}
+
+.crm-product-modal-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 860px) {
+  .crm-product-modal-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Dietary Pill Options */
+.crm-dietary-toggle-group {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.crm-dietary-pill-option {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1.5px solid #CBD5E1;
+  background: #FFFFFF;
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #475569;
+  transition: all 0.18s ease;
+}
+
+.crm-dietary-pill-option:hover {
+  background: #F8FAFC;
+  border-color: #94A3B8;
+}
+
+.crm-dietary-pill-option.veg-active {
+  border-color: #10B981;
+  background: #ECFDF5;
+  color: #047857;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.15);
+}
+
+.crm-dietary-pill-option.nonveg-active {
+  border-color: #EF4444;
+  background: #FEF2F2;
+  color: #B91C1C;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.15);
+}
+
+/* Clean Food Photo Card & Dropzone */
+.crm-food-photo-card {
+  border: 1.5px solid #E2E8F0;
+  border-radius: 14px;
+  background: #F8FAFC;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.crm-food-photo-preview-box {
+  width: 100%;
+  height: 135px;
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  border: 2px dashed #CBD5E1;
+  background: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.crm-food-photo-preview-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.crm-photo-presets-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.crm-photo-preset-btn {
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid #CBD5E1;
+  background: #FFFFFF;
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+}
+
+.crm-photo-preset-btn:hover {
+  border-color: #FF5E14;
+  color: #FF5E14;
+  background: #FFF7ED;
+}
+
+/* ==========================================================================
+   ADVANCED COUPON BUILDER & OFFER EXPERIMENTS
+   ========================================================================== */
+.crm-coupon-modal-wide {
+  width: min(640px, 95vw) !important;
+  max-height: 92vh;
+}
+
+.crm-offer-type-selector {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 4px;
+}
+
+@media (max-width: 520px) {
+  .crm-offer-type-selector {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.crm-offer-type-btn {
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1.5px solid #CBD5E1;
+  background: #FFFFFF;
+  color: #334155;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.crm-offer-type-btn:hover {
+  background: #F8FAFC;
+  border-color: #94A3B8;
+}
+
+.crm-offer-type-btn.active {
+  background: #EFF6FF;
+  border-color: #3B82F6;
+  color: #1D4ED8;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+}
+
+.crm-preset-days-grid {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.crm-preset-day-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #CBD5E1;
+  background: #FFFFFF;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.crm-preset-day-btn:hover,
+.crm-preset-day-btn.active {
+  border-color: #FF5E14;
+  background: #FFF7ED;
+  color: #C2410C;
+}
+
+.crm-coupon-preview-box {
+  background: linear-gradient(135deg, #FFF7ED 0%, #FEF3C7 100%);
+  border: 2px dashed #FDBA74;
+  border-radius: 14px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.crm-status-badge-red {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #DC2626;
+  background: #FEF2F2;
+  padding: 3px 12px;
+  border-radius: 14px;
+  display: inline-block;
+  width: fit-content;
+}
+
+
+
 

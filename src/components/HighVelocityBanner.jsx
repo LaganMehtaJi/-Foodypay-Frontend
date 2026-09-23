@@ -23,52 +23,10 @@ export default function HighVelocityBanner({ onOpenSignup }) {
 
   const celebrationTimerRef = useRef(null);
 
-  // Trigger celebration routine
+  // Trigger celebration routine (Disabled per user request)
   const triggerCelebration = (milestoneNumber, total) => {
-    // 1. Play Web Audio fanfare chime
-    playMilestoneCelebration();
-
-    // 2. Multi-stage confetti celebration
-    confetti({
-      particleCount: 130,
-      spread: 90,
-      origin: { y: 0.25 },
-      colors: ['#F92B02', '#2FA84F', '#FFB020', '#FFFFFF']
-    });
-
-    setTimeout(() => {
-      confetti({
-        particleCount: 90,
-        angle: 60,
-        spread: 75,
-        origin: { x: 0.05, y: 0.4 },
-        colors: ['#2FA84F', '#FFB020', '#F92B02']
-      });
-      confetti({
-        particleCount: 90,
-        angle: 120,
-        spread: 75,
-        origin: { x: 0.95, y: 0.4 },
-        colors: ['#F92B02', '#FFB020', '#2FA84F']
-      });
-    }, 280);
-
-    // 3. UI hal-chal vibration & aura glow
-    setIsUiBuzzing(true);
-    setTimeout(() => {
-      setIsUiBuzzing(false);
-    }, 3800);
-
-    // 4. Show Congratulations Modal/Banner
-    setCelebrationModal({
-      milestone: milestoneNumber,
-      total: total
-    });
-
-    clearTimeout(celebrationTimerRef.current);
-    celebrationTimerRef.current = setTimeout(() => {
-      setCelebrationModal(null);
-    }, 6500);
+    // Disabled celebration popup and fanfare sound per user request
+    return;
   };
 
   // Interval to add 10 to 30 orders every second

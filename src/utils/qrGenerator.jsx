@@ -106,7 +106,6 @@ export function generateQrSvgString(text, options = {}) {
     size = 220,
     color = '#1E293B',
     bgColor = '#FFFFFF',
-    margin = 2,
     cornerColor = '#FF5E14',
     showLogo = true,
     logoUrl = '',
@@ -114,70 +113,43 @@ export function generateQrSvgString(text, options = {}) {
     logoBgColor = '#FFFFFF',
   } = options;
 
-  const matrix = createQRMatrix(text);
-  const matrixSize = matrix.length;
-  const totalModules = matrixSize + margin * 2;
-  const moduleSize = size / totalModules;
+  const cleanColor = (color || '#1E293B').replace('#', '');
+  const cleanBg = (bgColor || '#FFFFFF').replace('#', '');
+  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(text)}&color=${cleanColor}&bgcolor=${cleanBg}`;
+  
+  const cx = size / 2;
+  const cy = size / 2;
+  const logoRadius = size * 0.13;
+  const iconBoxSize = size * 0.18;
 
-  let rects = [];
-  rects.push(`<rect width="${size}" height="${size}" fill="${bgColor}" rx="12" />`);
-
-  for (let r = 0; r < matrixSize; r++) {
-    for (let c = 0; c < matrixSize; c++) {
-      if (matrix[r][c] === 1) {
-        const x = (c + margin) * moduleSize;
-        const y = (r + margin) * moduleSize;
-
-        const inTopLeft = (r <= 6 && c <= 6);
-        const inTopRight = (r <= 6 && c >= matrixSize - 7);
-        const inBottomLeft = (r >= matrixSize - 7 && c <= 6);
-        const isFinder = inTopLeft || inTopRight || inBottomLeft;
-
-        const fill = isFinder ? cornerColor : color;
-        rects.push(
-          `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${(moduleSize + 0.1).toFixed(2)}" height="${(moduleSize + 0.1).toFixed(2)}" fill="${fill}" rx="${isFinder ? '1' : '0.5'}" />`
-        );
-      }
-    }
-  }
-
-  // Add Center Logo / Icon if requested
+  let logoElement = '';
   if (showLogo) {
-    const cx = size / 2;
-    const cy = size / 2;
-    const logoRadius = size * 0.13;
-    const iconBoxSize = size * 0.18;
-
-    rects.push(
-      `<circle cx="${cx}" cy="${cy}" r="${logoRadius}" fill="${logoBgColor}" stroke="${cornerColor}" stroke-width="2.5" />`
-    );
-
+    let innerGraphic = `<image href="/Logo.png" x="${cx - iconBoxSize / 2}" y="${cy - iconBoxSize / 2}" width="${iconBoxSize}" height="${iconBoxSize}" preserveAspectRatio="xMidYMid meet" />`;
     if (logoUrl) {
-      rects.push(
-        `<image href="${logoUrl}" x="${cx - iconBoxSize / 2}" y="${cy - iconBoxSize / 2}" width="${iconBoxSize}" height="${iconBoxSize}" preserveAspectRatio="xMidYMid meet" />`
-      );
-    } else if (centerIcon === 'foodypay' || !centerIcon) {
-      rects.push(
-        `<image href="/Logo.png" x="${cx - iconBoxSize / 2}" y="${cy - iconBoxSize / 2}" width="${iconBoxSize}" height="${iconBoxSize}" preserveAspectRatio="xMidYMid meet" />`
-      );
+      innerGraphic = `<image href="${logoUrl}" x="${cx - iconBoxSize / 2}" y="${cy - iconBoxSize / 2}" width="${iconBoxSize}" height="${iconBoxSize}" preserveAspectRatio="xMidYMid meet" />`;
     } else if (PRESET_ICON_PATHS[centerIcon]) {
       const pathData = PRESET_ICON_PATHS[centerIcon];
       const scale = iconBoxSize / 24;
       const tx = cx - (12 * scale);
       const ty = cy - (12 * scale);
-      rects.push(
-        `<g transform="translate(${tx}, ${ty}) scale(${scale})">` +
-        `<path d="${pathData}" fill="none" stroke="${cornerColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />` +
-        `</g>`
-      );
+      innerGraphic = `<g transform="translate(${tx}, ${ty}) scale(${scale})"><path d="${pathData}" fill="none" stroke="${cornerColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></g>`;
     }
+
+    logoElement = `
+      <circle cx="${cx}" cy="${cy}" r="${logoRadius}" fill="${logoBgColor}" stroke="${cornerColor}" stroke-width="2.5" />
+      ${innerGraphic}
+    `;
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${rects.join('')}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
+    <rect width="${size}" height="${size}" fill="${bgColor}" rx="12" />
+    <image href="${qrApiUrl}" x="0" y="0" width="${size}" height="${size}" />
+    ${logoElement}
+  </svg>`;
 }
 
 export function QrCodeComponent({
-  text = 'foodypay',
+  text = 'http://localhost:5173',
   size = 180,
   showLogo = true,
   logoUrl = '',
@@ -188,11 +160,9 @@ export function QrCodeComponent({
   logoBgColor = '#FFFFFF',
   className = '',
 }) {
-  const matrix = createQRMatrix(text || 'foodypay');
-  const matrixSize = matrix.length;
-  const margin = 2;
-  const totalModules = matrixSize + margin * 2;
-  const moduleSize = size / totalModules;
+  const cleanColor = (qrColor || '#1E293B').replace('#', '');
+  const cleanBg = (bgColor || '#FFFFFF').replace('#', '');
+  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(text)}&color=${cleanColor}&bgcolor=${cleanBg}`;
 
   return (
     <div
@@ -210,47 +180,21 @@ export function QrCodeComponent({
         justifyContent: 'center',
       }}
     >
-      <svg
-        viewBox={`0 0 ${size} ${size}`}
-        width={size}
-        height={size}
-        style={{ width: '100%', height: '100%', display: 'block' }}
-      >
-        <rect width={size} height={size} fill={bgColor} rx="12" />
-        {matrix.map((row, r) =>
-          row.map((val, c) => {
-            if (val !== 1) return null;
-            const x = (c + margin) * moduleSize;
-            const y = (r + margin) * moduleSize;
-            const inTopLeft = r <= 6 && c <= 6;
-            const inTopRight = r <= 6 && c >= matrixSize - 7;
-            const inBottomLeft = r >= matrixSize - 7 && c <= 6;
-            const isFinder = inTopLeft || inTopRight || inBottomLeft;
-
-            return (
-              <rect
-                key={`${r}-${c}`}
-                x={x}
-                y={y}
-                width={moduleSize + 0.15}
-                height={moduleSize + 0.15}
-                fill={isFinder ? cornerColor : qrColor}
-                rx={isFinder ? 1 : 0.6}
-              />
-            );
-          })
-        )}
-      </svg>
+      <img
+        src={qrApiUrl}
+        alt={`QR Code for ${text}`}
+        style={{ width: '100%', height: '100%', display: 'block', borderRadius: '8px' }}
+      />
 
       {showLogo && (
         <div
           style={{
             position: 'absolute',
-            width: `${Math.round(size * 0.25)}px`,
-            height: `${Math.round(size * 0.25)}px`,
+            width: `${Math.round(size * 0.26)}px`,
+            height: `${Math.round(size * 0.26)}px`,
             backgroundColor: logoBgColor,
             borderRadius: '50%',
-            boxShadow: '0 2px 10px rgba(0, 0, 0, 0.16)',
+            boxShadow: '0 2px 10px rgba(0, 0, 0, 0.2)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

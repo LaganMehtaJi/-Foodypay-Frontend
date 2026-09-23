@@ -46,6 +46,9 @@ import {
   Frown,
   Tag,
   Percent,
+  Star,
+  MessageSquare,
+  ThumbsUp,
 } from 'lucide-react';
 import {
   playOrderPlaced,
@@ -53,6 +56,8 @@ import {
   playFoodReady,
   playBillPaid,
   playMilestoneCelebration,
+  startContinuousAlarm,
+  stopContinuousAlarm,
 } from '../utils/soundEffects';
 import { QrCodeComponent } from '../utils/qrGenerator';
 import {
@@ -77,303 +82,48 @@ import {
 } from '../utils/api';
 import './Dashboard.css';
 
-// Initial Mock Datasets with Real Food Photography Images
-const INITIAL_DISHES = [
-  {
-    id: 'p1',
-    name: 'ITALIAN CHEESE GIANT SLICE',
-    category: 'Fast Food',
-    price: 199,
-    isVeg: true,
-    variantsCount: 4,
-    inStock: true,
-    desc: 'Oversized New York style slice loaded with mozzarella & Italian herbs.',
-    image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400&auto=format&fit=crop&q=80',
-  },
-  {
-    id: 'p2',
-    name: 'ITALIAN CHEESE Small. Piza',
-    category: 'Fast Food',
-    price: 240,
-    isVeg: true,
-    variantsCount: 4,
-    inStock: true,
-    desc: 'Classic 8-inch hand-tossed crust with aromatic san marzano tomato puree.',
-    image: 'https://images.unsplash.com/photo-1574071318508-1cdbab80d002?w=400&auto=format&fit=crop&q=80',
-  },
-  {
-    id: 'p3',
-    name: 'Free Stuffed Garlic Bread on Medium Pizza',
-    category: 'Fast Food',
-    price: 380,
-    isVeg: true,
-    variantsCount: 4,
-    inStock: true,
-    desc: 'Signature combo with garlic bread stuffed with liquid cheese & sweet corn.',
-    image: 'https://images.unsplash.com/photo-1619881589178-57845347f7d1?w=400&auto=format&fit=crop&q=80',
-  },
-  {
-    id: 'p4',
-    name: 'ITALIAN CHEESE. Pizza Large',
-    category: 'Fast Food',
-    price: 490,
-    isVeg: true,
-    variantsCount: 4,
-    inStock: true,
-    desc: '12-inch party pizza with triple cheese blend and garlic butter glaze.',
-    image: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=400&auto=format&fit=crop&q=80',
-  },
-  {
-    id: 'p5',
-    name: 'ITALIAN CHEESE MONSTER PIZZA',
-    category: 'Fast Food',
-    price: 699,
-    isVeg: true,
-    variantsCount: 4,
-    inStock: true,
-    desc: 'Giant 16-inch monster crust loaded with gourmet cheeses and toppings.',
-    image: 'https://images.unsplash.com/photo-1593560708920-61dd98c46a4e?w=400&auto=format&fit=crop&q=80',
-  },
-  {
-    id: 'p6',
-    name: 'Crispy Corn Basket',
-    category: 'Starters',
-    price: 180,
-    isVeg: true,
-    variantsCount: 2,
-    inStock: true,
-    desc: 'Sweet American corn tossed with peri peri spices and bell peppers.',
-    image: 'https://images.unsplash.com/photo-1551782450-a2132b4ba21d?w=400&auto=format&fit=crop&q=80',
-  },
-  {
-    id: 'p7',
-    name: 'Paneer Butter Masala',
-    category: 'Main Course',
-    price: 260,
-    isVeg: true,
-    variantsCount: 3,
-    inStock: true,
-    desc: 'Soft paneer cubes simmered in rich creamy tomato and butter gravy.',
-    image: 'https://images.unsplash.com/photo-1631452180519-c014fe946bc7?w=400&auto=format&fit=crop&q=80',
-  },
-  {
-    id: 'p8',
-    name: 'Virgin Mint Mojito',
-    category: 'Beverages',
-    price: 120,
-    isVeg: true,
-    variantsCount: 1,
-    inStock: true,
-    desc: 'Fresh garden mint, crushed ice, lime, and sparkling soda.',
-    image: 'https://images.unsplash.com/photo-1551024709-8f23befc6f87?w=400&auto=format&fit=crop&q=80',
-  },
-  {
-    id: 'p9',
-    name: 'Choco Lava Cake',
-    category: 'Desserts',
-    price: 99,
-    isVeg: true,
-    variantsCount: 1,
-    inStock: true,
-    desc: 'Warm chocolate cake with molten center, dusted with powdered sugar.',
-    image: 'https://images.unsplash.com/photo-1606313564200-e75d5e30476c?w=400&auto=format&fit=crop&q=80',
-  },
-  {
-    id: 'p10',
-    name: 'Tandoori Chicken Tikka',
-    category: 'Starters',
-    price: 320,
-    isVeg: false,
-    variantsCount: 2,
-    inStock: true,
-    desc: 'Charcoal grilled boneless chicken with hung curd and Kashmiri spices.',
-    image: 'https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?w=400&auto=format&fit=crop&q=80',
-  },
-  {
-    id: 'p11',
-    name: 'Butter Garlic Naan',
-    category: 'Breads',
-    price: 50,
-    isVeg: true,
-    variantsCount: 1,
-    inStock: true,
-    desc: 'Crisp leavened flatbread brushed with garlic butter.',
-    image: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?w=400&auto=format&fit=crop&q=80',
-  },
-  {
-    id: 'p12',
-    name: 'Royal Gulab Jamun (2 Pcs)',
-    category: 'Desserts',
-    price: 90,
-    isVeg: true,
-    variantsCount: 1,
-    inStock: true,
-    desc: 'Golden fried khoya dumplings immersed in warm saffron sugar nectar.',
-    image: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=400&auto=format&fit=crop&q=80',
-  },
-];
+// Initial Mock Datasets (Cleared as requested)
+const INITIAL_DISHES = [];
 
-const INITIAL_ORDERS = [
-  {
-    id: '#FP-1081',
-    type: 'Dine-In',
-    table: 'Table 1',
-    customer: 'Aarav Sharma',
-    phone: '+91 98112 34567',
-    time: '6m ago',
-    timestamp: Date.now() - 6 * 60 * 1000,
-    status: 'preparing', // 'new' | 'preparing' | 'ready' | 'completed'
-    paymentStatus: 'paid-upi',
-    paymentLabel: 'Paid via UPI',
-    items: [
-      { name: 'ITALIAN CHEESE GIANT SLICE', qty: 2, price: 199, isVeg: true },
-      { name: 'Virgin Mint Mojito', qty: 2, price: 120, isVeg: true },
-    ],
-    note: 'Extra cheese seasonings please.',
-    subtotal: 638,
-    tax: 32,
-    total: 670,
-  },
-  {
-    id: '#FP-1082',
-    type: 'Dine-In',
-    table: 'Table 2',
-    customer: 'Sneha Patel',
-    phone: '+91 97234 56789',
-    time: '2m ago',
-    timestamp: Date.now() - 2 * 60 * 1000,
-    status: 'new',
-    paymentStatus: 'cash',
-    paymentLabel: 'Cash on Counter',
-    items: [
-      { name: 'Free Stuffed Garlic Bread on Medium Pizza', qty: 1, price: 380, isVeg: true },
-      { name: 'ITALIAN CHEESE Small. Piza', qty: 1, price: 240, isVeg: true },
-    ],
-    note: 'Birthday dining table! Special desserts.',
-    subtotal: 620,
-    tax: 31,
-    total: 651,
-  },
-  {
-    id: '#FP-1083',
-    type: 'Takeaway',
-    table: 'Counter 1',
-    customer: 'Vikram Malhotra',
-    phone: '+91 99887 76655',
-    time: '15m ago',
-    timestamp: Date.now() - 15 * 60 * 1000,
-    status: 'ready',
-    paymentStatus: 'paid-upi',
-    paymentLabel: 'Paid via UPI',
-    items: [
-      { name: 'ITALIAN CHEESE MONSTER PIZZA', qty: 1, price: 699, isVeg: true },
-      { name: 'Choco Lava Cake', qty: 2, price: 99, isVeg: true },
-    ],
-    note: 'Pack with extra tissue & oregano sachets.',
-    subtotal: 897,
-    tax: 45,
-    total: 942,
-  },
-  {
-    id: '#FP-1084',
-    type: 'Dine-In',
-    table: 'Table 4',
-    customer: 'Kunal Singhania',
-    phone: '+91 94567 12345',
-    time: '42m ago',
-    timestamp: Date.now() - 42 * 60 * 1000,
-    status: 'completed',
-    paymentStatus: 'paid-upi',
-    paymentLabel: 'Paid via UPI',
-    items: [
-      { name: 'Crispy Corn Basket', qty: 1, price: 180, isVeg: true },
-      { name: 'Paneer Butter Masala', qty: 1, price: 260, isVeg: true },
-      { name: 'Butter Garlic Naan', qty: 3, price: 50, isVeg: true },
-    ],
-    note: '',
-    subtotal: 590,
-    tax: 29,
-    total: 619,
-  },
-];
+const INITIAL_ORDERS = [];
 
-const INITIAL_CUSTOMERS = [
-  {
-    id: 'c1',
-    name: 'Aarav Sharma',
-    phone: '+91 98112 34567',
-    ordersCount: 8,
-    totalSales: 4250,
-    birthday: 'Today',
-    isBirthdayToday: true,
-    lastOrdered: 'Today at 08:24 PM',
-  },
-  {
-    id: 'c2',
-    name: 'Sneha Patel',
-    phone: '+91 97234 56789',
-    ordersCount: 5,
-    totalSales: 2890,
-    birthday: 'Today',
-    isBirthdayToday: true,
-    lastOrdered: 'Today at 08:48 PM',
-  },
-  {
-    id: 'c3',
-    name: 'Kunal Singhania',
-    phone: '+91 94567 12345',
-    ordersCount: 12,
-    totalSales: 8400,
-    birthday: 'Today',
-    isBirthdayToday: true,
-    lastOrdered: 'Today at 07:15 PM',
-  },
-  {
-    id: 'c4',
-    name: 'Vikram Malhotra',
-    phone: '+91 99887 76655',
-    ordersCount: 6,
-    totalSales: 3950,
-    birthday: '14 Oct',
-    isBirthdayToday: false,
-    lastOrdered: 'Today at 08:12 PM',
-  },
-  {
-    id: 'c5',
-    name: 'Pooja Verma',
-    phone: '+91 98991 22334',
-    ordersCount: 4,
-    totalSales: 1820,
-    birthday: '22 Nov',
-    isBirthdayToday: false,
-    lastOrdered: 'Yesterday at 09:30 PM',
-  },
-  {
-    id: 'c6',
-    name: 'Rohan Gupta',
-    phone: '+91 91234 56780',
-    ordersCount: 9,
-    totalSales: 6100,
-    birthday: '05 Dec',
-    isBirthdayToday: false,
-    lastOrdered: '3 days ago',
-  },
-];
+const INITIAL_CUSTOMERS = [];
 
-const INITIAL_COUPONS = [
-  { code: 'WELCOME50', discount: '50% OFF up to ₹100', minOrder: 199, uses: 142, status: 'Active' },
-  { code: 'FOODYPAY20', discount: 'Flat 20% OFF', minOrder: 499, uses: 89, status: 'Active' },
-  { code: 'WEEKENDTREAT', discount: 'Flat ₹100 OFF', minOrder: 799, uses: 64, status: 'Active' },
-  { code: 'BDAYSPECIAL', discount: 'Free Dessert + 20% OFF', minOrder: 399, uses: 31, status: 'Active' },
-];
+const get20DaysAheadDate = (days = 20) => {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+};
+
+const getDaysUntilExpiry = (expiryDate) => {
+  if (!expiryDate) return 999;
+  const exp = new Date(expiryDate);
+  const now = new Date();
+  const diffTime = exp.getTime() - now.getTime();
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+};
+
+const formatExpiryDisplay = (expiryDate) => {
+  if (!expiryDate) return 'No Expiry';
+  const exp = new Date(expiryDate);
+  const now = new Date();
+  const diffTime = exp.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (diffDays < 0) return 'Expired';
+  if (diffDays === 0) return 'Expires Today';
+  return `Expires in ${diffDays} days (${exp.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })})`;
+};
+
+const INITIAL_COUPONS = [];
 
 const INITIAL_TABLES = [
-  { id: 't1', name: 'Table 1', capacity: 4, section: 'Indoor AC Dining', purpose: 'Contactless Self Ordering', theme: 'acrylic', qrColor: '#1E293B', cornerColor: '#FF5E14', url: 'https://foodypay.in/menu?rest=sharma&table=1', status: 'occupied' },
-  { id: 't2', name: 'Table 2', capacity: 2, section: 'Indoor AC Dining', purpose: 'Dine-In Contactless', theme: 'luxury', qrColor: '#F59E0B', cornerColor: '#F59E0B', url: 'https://foodypay.in/menu?rest=sharma&table=2', status: 'occupied' },
-  { id: 't3', name: 'Table 3', capacity: 4, section: 'Indoor AC Dining', purpose: 'Contactless Self Ordering', theme: 'neon', qrColor: '#FF5E14', cornerColor: '#FF5E14', url: 'https://foodypay.in/menu?rest=sharma&table=3', status: 'available' },
-  { id: 't4', name: 'Table 4', capacity: 6, section: 'Outdoor Garden', purpose: 'Garden Table Ordering', theme: 'acrylic', qrColor: '#059669', cornerColor: '#059669', url: 'https://foodypay.in/menu?rest=sharma&table=4', status: 'available' },
-  { id: 't5', name: 'Table 5', capacity: 4, section: 'Outdoor Garden', purpose: 'Garden Table Ordering', theme: 'acrylic', qrColor: '#1E293B', cornerColor: '#FF5E14', url: 'https://foodypay.in/menu?rest=sharma&table=5', status: 'available' },
-  { id: 't6', name: 'Table 6', capacity: 8, section: 'VIP Rooftop Lounge', purpose: 'VIP Rooftop Service', theme: 'luxury', qrColor: '#F59E0B', cornerColor: '#F59E0B', url: 'https://foodypay.in/menu?rest=sharma&table=6', status: 'reserved' },
+  { id: 't1', name: 'Table 1', capacity: 4, section: 'Indoor AC Dining', purpose: 'Contactless Self Ordering', theme: 'acrylic', qrColor: '#1E293B', cornerColor: '#FF5E14', url: '', status: 'available' },
+  { id: 't2', name: 'Table 2', capacity: 2, section: 'Indoor AC Dining', purpose: 'Dine-In Contactless', theme: 'luxury', qrColor: '#F59E0B', cornerColor: '#F59E0B', url: '', status: 'available' },
+  { id: 't3', name: 'Table 3', capacity: 4, section: 'Indoor AC Dining', purpose: 'Contactless Self Ordering', theme: 'neon', qrColor: '#FF5E14', cornerColor: '#FF5E14', url: '', status: 'available' },
+  { id: 't4', name: 'Table 4', capacity: 6, section: 'Outdoor Garden', purpose: 'Garden Table Ordering', theme: 'acrylic', qrColor: '#059669', cornerColor: '#059669', url: '', status: 'available' },
+  { id: 't5', name: 'Table 5', capacity: 4, section: 'Outdoor Garden', purpose: 'Garden Table Ordering', theme: 'acrylic', qrColor: '#1E293B', cornerColor: '#FF5E14', url: '', status: 'available' },
+  { id: 't6', name: 'Table 6', capacity: 8, section: 'VIP Rooftop Lounge', purpose: 'VIP Rooftop Service', theme: 'luxury', qrColor: '#F59E0B', cornerColor: '#F59E0B', url: '', status: 'available' },
 ];
 
 export default function DashboardPage({ onShowToast }) {
@@ -383,6 +133,8 @@ export default function DashboardPage({ onShowToast }) {
   const [activeTab, setActiveTab] = useState('home_orders');
   const [catalogSubmenuOpen, setCatalogSubmenuOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [logoImgFailed, setLogoImgFailed] = useState(false);
+  const [kitchenFilter, setKitchenFilter] = useState('all'); // 'all' | 'new' | 'preparing' | 'ready'
 
   // FoodyPay Credits Balance
   const [creditsBalance, setCreditsBalance] = useState(2450);
@@ -408,10 +160,56 @@ export default function DashboardPage({ onShowToast }) {
   const [orders, setOrders] = useState([]);
   const [dishes, setDishes] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [custSearch, setCustSearch] = useState('');
   const [coupons, setCoupons] = useState([]);
   const [tables, setTables] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
   const [cardsPerRow, setCardsPerRow] = useState(4);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // Customer Groups Cohorts State for Telemetry & Targeted Campaigns
+  const [customerGroups, setCustomerGroups] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_crm_groups_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('foodypay_crm_groups_v1', JSON.stringify(customerGroups));
+    } catch (e) {}
+  }, [customerGroups]);
+
+  const [isAddGroupModalOpen, setIsAddGroupModalOpen] = useState(false);
+  const [activeGroupDetail, setActiveGroupDetail] = useState(null);
+  const [newGroupForm, setNewGroupForm] = useState({
+    name: '',
+    description: '',
+    spendRule: 'all',
+    daysRule: 'all',
+    foodCategory: 'all',
+  });
+
+  // Targeted Campaign State in Marketing
+  const [campaignTargetGroup, setCampaignTargetGroup] = useState('grp_1');
+  const [campaignCouponCode, setCampaignCouponCode] = useState('WELCOME50');
+  const [campaignDispatchMode, setCampaignDispatchMode] = useState('all_group'); // 'all_group' | 'random_n'
+  const [campaignRandomCount, setCampaignRandomCount] = useState(2);
+
+  // Custom Notification Broadcast State (Specific User, All, Random, Group)
+  const [isCustomNotifyModalOpen, setIsCustomNotifyModalOpen] = useState(false);
+  const [notifyAudienceMode, setNotifyAudienceMode] = useState('all_users'); // 'specific_user' | 'all_users' | 'random_n' | 'group'
+  const [selectedCustId, setSelectedCustId] = useState('');
+  const [selectedGroupId, setSelectedGroupId] = useState('grp_1');
+  const [randomNotifyCount, setRandomNotifyCount] = useState(3);
+  const [notifyTitle, setNotifyTitle] = useState('🎁 Special Gift Offer from FoodyPay');
+  const [notifyMessage, setNotifyMessage] = useState('Hey {name}! We have a special discount for you at {storeName}. Use code FEST20 for 20% OFF on your next visit!');
+  const [notifyChannel, setNotifyChannel] = useState('push_whatsapp'); // 'push_whatsapp' | 'whatsapp_only' | 'push_only'
 
   const [storeControls, setStoreControls] = useState(() => {
     try {
@@ -419,39 +217,322 @@ export default function DashboardPage({ onShowToast }) {
       if (savedUser) {
         const u = JSON.parse(savedUser);
         return {
-          foodypayId: u.foodypayId || 'FP-849201',
+          foodypayId: u.foodypayId || 'FP-985569',
           storeStatus: true,
           deliveryStatus: true,
           pickupStatus: true,
           storeType: 'Business to Customer (B2C)',
-          restName: u.businessName || u.name || "My Restaurant",
+          restName: u.businessName || u.name || "Lagan Da Dhaba",
           phone: u.contactNo || u.phone || '',
           logoUrl: u.logo?.url || '',
           address: 'Connaught Place, New Delhi',
-          upiId: 'sharmafoody@icici',
+          upiId: 'lagandhaba@icici',
           gstPercent: 5,
+          lockMarketingTab: false,
+          lockTableCrud: false,
+          lockOrderDeletion: false,
+          lockSettingsPanel: false,
         };
       }
     } catch (e) {}
     return {
-      foodypayId: 'FP-849201',
+      foodypayId: 'FP-985569',
       storeStatus: true,
       deliveryStatus: true,
       pickupStatus: true,
       storeType: 'Business to Customer (B2C)',
-      restName: "My Restaurant",
+      restName: "Lagan Da Dhaba",
       phone: '',
       logoUrl: '',
       address: '',
-      upiId: '',
+      upiId: 'lagandhaba@icici',
       gstPercent: 5,
+      lockMarketingTab: false,
+      lockTableCrud: false,
+      lockOrderDeletion: false,
+      lockSettingsPanel: false,
     };
   });
 
+  // Dynamically sync favicon, apple-touch-icon, and PWA manifest logo in head when store logo changes
+  useEffect(() => {
+    if (!storeControls.logoUrl) return;
+    const effectiveLogo = storeControls.logoUrl;
+    const effectiveName = storeControls.restName || 'FoodyPay POS';
+
+    // 1. Update <link rel="icon">
+    let iconLink = document.querySelector("link[rel*='icon']");
+    if (!iconLink) {
+      iconLink = document.createElement('link');
+      iconLink.rel = 'icon';
+      document.head.appendChild(iconLink);
+    }
+    iconLink.href = effectiveLogo;
+
+    // 2. Update <link rel="apple-touch-icon">
+    let appleLink = document.querySelector("link[rel='apple-touch-icon']");
+    if (!appleLink) {
+      appleLink = document.createElement('link');
+      appleLink.rel = 'apple-touch-icon';
+      document.head.appendChild(appleLink);
+    }
+    appleLink.href = effectiveLogo;
+
+    // 3. Update PWA Web App Manifest JSON Blob
+    try {
+      const manifestObj = {
+        name: effectiveName,
+        short_name: effectiveName,
+        start_url: window.location.href,
+        display: 'standalone',
+        background_color: '#FFFFFF',
+        theme_color: '#FF5E14',
+        icons: [
+          {
+            src: effectiveLogo,
+            sizes: '192x192 512x512',
+            type: 'image/png',
+            purpose: 'any maskable'
+          }
+        ]
+      };
+      const manifestBlob = new Blob([JSON.stringify(manifestObj)], { type: 'application/json' });
+      const manifestBlobUrl = URL.createObjectURL(manifestBlob);
+
+      let manifestLink = document.querySelector("link[rel='manifest']");
+      if (!manifestLink) {
+        manifestLink = document.createElement('link');
+        manifestLink.rel = 'manifest';
+        document.head.appendChild(manifestLink);
+      }
+      manifestLink.href = manifestBlobUrl;
+    } catch (e) {}
+  }, [storeControls.logoUrl, storeControls.restName]);
+
+  // Customer Reviews & Feedback Dataset State (Clears all sample data; real customer ratings & feedback only)
+  const [reviews, setReviews] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_crm_reviews_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const SAMPLE_NAMES = ['Rahul Sharma', 'Ananya Verma', 'Vikram Malhotra', 'Pooja Patel', 'Amit Kumar', 'Neha Gupta', 'Saurabh Joshi'];
+          return parsed.filter(r => r && r.customerName && !SAMPLE_NAMES.includes(r.customerName));
+        }
+      }
+    } catch {}
+    return [];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('foodypay_crm_reviews_v1', JSON.stringify(reviews));
+    } catch {}
+  }, [reviews]);
+
+  // Real-time listener for customer review submissions from Web Menu
+  useEffect(() => {
+    const syncReviews = () => {
+      try {
+        const saved = localStorage.getItem('foodypay_crm_reviews_v1');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            const SAMPLE_NAMES = ['Rahul Sharma', 'Ananya Verma', 'Vikram Malhotra', 'Pooja Patel', 'Amit Kumar', 'Neha Gupta', 'Saurabh Joshi'];
+            setReviews(parsed.filter(r => r && r.customerName && !SAMPLE_NAMES.includes(r.customerName)));
+          }
+        }
+      } catch (e) {}
+    };
+
+    window.addEventListener('storage', syncReviews);
+    window.addEventListener('foodypay_review_created', syncReviews);
+    return () => {
+      window.removeEventListener('storage', syncReviews);
+      window.removeEventListener('foodypay_review_created', syncReviews);
+    };
+  }, []);
+
+  const [reviewSearch, setReviewSearch] = useState('');
+  const [reviewRatingFilter, setReviewRatingFilter] = useState('all');
+  const [reviewSentimentFilter, setReviewSentimentFilter] = useState('all');
+
+  // Reply Modal State
+  const [isReplyModalOpen, setIsReplyModalOpen] = useState(false);
+  const [activeReplyReview, setActiveReplyReview] = useState(null);
+  const [replyTextInput, setReplyTextInput] = useState('');
+
+  // Add Manual Review Modal State
+  const [isAddReviewModalOpen, setIsAddReviewModalOpen] = useState(false);
+  const [newReviewForm, setNewReviewForm] = useState({
+    customerName: '',
+    customerPhone: '',
+    rating: 5,
+    feedback: '',
+    dishOrdered: 'Paneer Butter Masala',
+    tableNo: 'Table 1',
+  });
+
+  const handleSaveReplySubmit = (e) => {
+    e.preventDefault();
+    if (!activeReplyReview || !replyTextInput.trim()) return;
+
+    setReviews((prev) =>
+      prev.map((r) => {
+        if (r.id === activeReplyReview.id) {
+          return { ...r, reply: replyTextInput.trim() };
+        }
+        return r;
+      })
+    );
+
+    addToast(`💬 Saved response for ${activeReplyReview.customerName}'s review!`, <Check size={18} />);
+    setIsReplyModalOpen(false);
+    setActiveReplyReview(null);
+    setReplyTextInput('');
+  };
+
+  const handleAddReviewSubmit = (e) => {
+    e.preventDefault();
+    if (!newReviewForm.customerName.trim() || !newReviewForm.feedback.trim()) return;
+
+    const ratingVal = Number(newReviewForm.rating) || 5;
+    const newR = {
+      id: `rev_${Date.now()}`,
+      customerName: newReviewForm.customerName.trim(),
+      customerPhone: newReviewForm.customerPhone.trim() || '+91 98000 00000',
+      rating: ratingVal,
+      feedback: newReviewForm.feedback.trim(),
+      dishOrdered: newReviewForm.dishOrdered.trim() || 'Counter Order',
+      tableNo: newReviewForm.tableNo || 'Table 1',
+      date: 'Just now',
+      sentiment: ratingVal >= 4 ? 'positive' : ratingVal === 3 ? 'neutral' : 'negative',
+      reply: null,
+    };
+
+    setReviews((prev) => [newR, ...prev]);
+    addToast(`⭐ Added review from ${newR.customerName}!`, <Star size={18} />);
+    setIsAddReviewModalOpen(false);
+  };
+
+  // Custom Meal Collections / Combo Bundles Dataset State (Cleared sample combos; merchant created combos only)
+  const [mealsCollection, setMealsCollection] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_crm_meals_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const SAMPLE_MEALS = ['Royal Deluxe North Indian Thali', 'Weekend Pizza & Starter Feast', 'Student Snack & Beverage Combo', 'South Indian Tiffin Combo', 'Special Party Meal Combo'];
+          return parsed.filter(m => m && m.name && !SAMPLE_MEALS.includes(m.name));
+        }
+      }
+    } catch {}
+    return [];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('foodypay_crm_meals_v1', JSON.stringify(mealsCollection));
+    } catch {}
+  }, [mealsCollection]);
+
+  // Modal State for Custom Meal Collection Builder
+  const [isMealModalOpen, setIsMealModalOpen] = useState(false);
+  const [editingMealObj, setEditingMealObj] = useState(null);
+  const [mealForm, setMealForm] = useState({
+    name: '',
+    description: '',
+    imageUrl: '',
+    category: 'Thali & Full Meals',
+    comboPrice: '',
+    items: [
+      { name: 'Paneer Butter Masala', qty: 1, individualPrice: 240 },
+      { name: 'Butter Naan', qty: 2, individualPrice: 80 },
+    ],
+  });
+
+  const handleOpenCreateMeal = () => {
+    setEditingMealObj(null);
+    setMealForm({
+      name: 'Special Party Meal Combo',
+      description: 'Delicious curated combo meal with special savings.',
+      imageUrl: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80',
+      category: 'Thali & Full Meals',
+      comboPrice: '399',
+      items: [
+        { name: 'Paneer Butter Masala', qty: 1, individualPrice: 240 },
+        { name: 'Dal Makhani', qty: 1, individualPrice: 180 },
+        { name: 'Butter Naan', qty: 2, individualPrice: 80 },
+      ],
+    });
+    setIsMealModalOpen(true);
+  };
+
+  const handleOpenEditMeal = (meal) => {
+    setEditingMealObj(meal);
+    setMealForm({
+      name: meal.name || '',
+      description: meal.description || '',
+      imageUrl: meal.imageUrl || '',
+      category: meal.category || 'Thali & Full Meals',
+      comboPrice: String(meal.comboPrice || ''),
+      items: (meal.items && meal.items.length > 0) ? meal.items : [{ name: '', qty: 1, individualPrice: 0 }],
+    });
+    setIsMealModalOpen(true);
+  };
+
+  const handleDeleteMeal = (mealId, mealName) => {
+    if (!window.confirm(`Are you sure you want to delete ${mealName}?`)) return;
+    setMealsCollection((prev) => prev.filter((m) => m.id !== mealId));
+    addToast(`🗑️ Deleted ${mealName} from Collections!`, <Trash2 size={16} />);
+  };
+
+  const handleSaveMealSubmit = (e) => {
+    e.preventDefault();
+    if (!mealForm.name.trim()) return;
+
+    const validItems = mealForm.items.filter((it) => it.name.trim() !== '');
+    if (validItems.length === 0) {
+      addToast('Please add at least one food item inside the meal combo.', <Frown size={16} />);
+      return;
+    }
+
+    const calculatedSum = validItems.reduce((s, it) => s + (Number(it.individualPrice) || 0) * (Number(it.qty) || 1), 0);
+    const finalComboPrice = Number(mealForm.comboPrice) || Math.round(calculatedSum * 0.8);
+
+    const mealData = {
+      name: mealForm.name.trim(),
+      description: mealForm.description.trim(),
+      imageUrl: mealForm.imageUrl.trim() || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80',
+      category: mealForm.category || 'Thali & Full Meals',
+      status: 'Active',
+      items: validItems.map((it) => ({
+        name: it.name.trim(),
+        qty: Number(it.qty) || 1,
+        individualPrice: Number(it.individualPrice) || 0,
+      })),
+      comboPrice: finalComboPrice,
+    };
+
+    if (editingMealObj) {
+      setMealsCollection((prev) =>
+        prev.map((m) => (m.id === editingMealObj.id ? { ...m, ...mealData } : m))
+      );
+      addToast(`Updated Custom Meal "${mealData.name}"!`, <Check size={18} />);
+    } else {
+      const newMeal = { ...mealData, id: `meal_${Date.now()}` };
+      setMealsCollection((prev) => [newMeal, ...prev]);
+      addToast(`Created Custom Meal "${newMeal.name}"!`, <Utensils size={18} />);
+    }
+
+    setIsMealModalOpen(false);
+    setEditingMealObj(null);
+  };
+
   // Unique Table URL Generator: Domain / BusinessName / FoodypayId / TableNo
   const getUniqueTableUrl = (tableName, customUrl = '') => {
-    if (customUrl && customUrl.trim()) return customUrl.trim();
-    const bizSlug = (storeControls.restName || 'sharmas-kitchen')
+    if (customUrl && customUrl.trim() && !customUrl.includes('foodypay.in')) return customUrl.trim();
+    const bizSlug = (storeControls.restName || 'lagan-da-dhaba')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
@@ -459,8 +540,93 @@ export default function DashboardPage({ onShowToast }) {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
-    const fpId = storeControls.foodypayId || 'FP-849201';
-    return `https://foodypay.in/${bizSlug}/${fpId}/${tableSlug}`;
+    const fpId = storeControls.foodypayId || 'FP-985569';
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+    return `${origin}/${bizSlug}/${fpId}/${tableSlug}`;
+  };
+
+  // Listen for real-time customer table orders created on customer menu website
+  useEffect(() => {
+    const handleNewOrderEvent = () => {
+      try {
+        const savedOrders = localStorage.getItem('foodypay_crm_orders_v3');
+        if (savedOrders) {
+          const parsed = JSON.parse(savedOrders);
+          setOrders(parsed);
+          const newest = parsed[0];
+          if (newest) {
+            triggerSound(playOrderPlaced);
+            addToast(`🔔 Live Order Received! ${newest.id} from ${newest.table} (${newest.customer})`, <Bell size={18} />);
+          }
+        }
+      } catch (e) {
+        console.error('Error handling new order event:', e);
+      }
+    };
+
+    window.addEventListener('foodypay_order_created', handleNewOrderEvent);
+    window.addEventListener('storage', handleNewOrderEvent);
+    return () => {
+      window.removeEventListener('foodypay_order_created', handleNewOrderEvent);
+      window.removeEventListener('storage', handleNewOrderEvent);
+    };
+  }, [soundEnabled]);
+
+  // Continuous Bell Alarm Controller for Unseen Orders
+  useEffect(() => {
+    if (!soundEnabled) {
+      stopContinuousAlarm();
+      return;
+    }
+
+    const hasUnseen = (orders || []).some((o) => o && (o.seen === false || o.status === 'new'));
+
+    if (hasUnseen) {
+      startContinuousAlarm();
+    } else {
+      stopContinuousAlarm();
+    }
+
+    return () => {
+      stopContinuousAlarm();
+    };
+  }, [orders, soundEnabled]);
+
+  const handleMarkOrderSeen = (orderId) => {
+    setOrders((prev) =>
+      prev.map((o) => {
+        if (o._id === orderId || o.id === orderId) {
+          return { ...o, seen: true, status: o.status === 'new' ? 'new_seen' : o.status };
+        }
+        return o;
+      })
+    );
+    addToast('👁️ Order marked as SEEN! Alarm bell stopped.', <Check size={18} />);
+  };
+
+  const handleMarkAllSeen = () => {
+    setOrders((prev) =>
+      prev.map((o) => ({
+        ...o,
+        seen: true,
+        status: o.status === 'new' ? 'new_seen' : o.status,
+      }))
+    );
+    stopContinuousAlarm();
+    addToast('👁️ All orders marked SEEN! Alarm bell stopped.', <Check size={18} />);
+  };
+
+  const handleStartPreparingOrder = (orderId) => {
+    setOrders((prev) =>
+      prev.map((o) => {
+        if (o._id === orderId || o.id === orderId) {
+          return { ...o, seen: true, status: 'preparing' };
+        }
+        return o;
+      })
+    );
+    triggerSound(playFoodPreparing);
+    addToast('🍳 Kitchen started preparing order!', <ChefHat size={18} />);
   };
 
   // Fetch all user datasets from Backend Node.js API
@@ -530,6 +696,12 @@ export default function DashboardPage({ onShowToast }) {
       localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(orders));
     } catch {}
   }, [orders]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('foodypay_crm_customers_v1', JSON.stringify(customers));
+    } catch {}
+  }, [customers]);
 
   useEffect(() => {
     try {
@@ -627,7 +799,7 @@ export default function DashboardPage({ onShowToast }) {
     setIsManualOrderOpen(true);
   };
 
-  // Context-Aware Global Keyboard Shortcut: Pressing single 'C' or 'c' outside input fields opens the creation modal for the active page
+  // Context-Aware Global Keyboard Shortcuts: Pressing 1-6 changes cards per row layout; 'C' opens creation modal
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
       // Do NOT trigger shortcut if Ctrl, Alt, or Meta key is held (e.g. Ctrl+C for copy)
@@ -641,7 +813,25 @@ export default function DashboardPage({ onShowToast }) {
         tagName === 'SELECT' ||
         (activeElement && activeElement.isContentEditable);
 
-      if (isInput) return;
+      const isModalOpen =
+        isManualOrderOpen ||
+        Boolean(editingOrderId) ||
+        Boolean(viewingOrderDetails) ||
+        Boolean(activeBillSettlementOrder) ||
+        showUpiQrModal ||
+        Boolean(document.querySelector('.crm-modal-backdrop'));
+
+      // If typing in any input field or when Create Manual Order modal (or any modal) is open, do not trigger shortcuts!
+      if (isInput || isModalOpen) return;
+
+      // Handle number keys 1 to 6 to set cards per row layout
+      if (['1', '2', '3', '4', '5', '6'].includes(e.key)) {
+        e.preventDefault();
+        const colNum = parseInt(e.key, 10);
+        setCardsPerRow(colNum);
+        addToast(`Layout Updated: ${colNum} Card${colNum > 1 ? 's' : ''} per Row`, <SlidersHorizontal size={16} />);
+        return;
+      }
 
       if (e.key === 'c' || e.key === 'C') {
         e.preventDefault();
@@ -663,7 +853,14 @@ export default function DashboardPage({ onShowToast }) {
     return () => {
       window.removeEventListener('keydown', handleGlobalKeyDown);
     };
-  }, [activeTab]);
+  }, [
+    activeTab,
+    isManualOrderOpen,
+    editingOrderId,
+    viewingOrderDetails,
+    activeBillSettlementOrder,
+    showUpiQrModal,
+  ]);
 
   const handleEditOrder = (order) => {
     if (order.status !== 'new') {
@@ -726,6 +923,27 @@ export default function DashboardPage({ onShowToast }) {
         },
       };
     });
+  };
+
+  const handleClearAllSampleData = () => {
+    if (!window.confirm('Are you sure you want to clear all sample data (orders, reviews, meal combos)? All new data will be created fresh!')) return;
+    try {
+      localStorage.removeItem('foodypay_crm_orders_v3');
+      localStorage.removeItem('foodypay_crm_reviews_v1');
+      localStorage.removeItem('foodypay_crm_meals_v1');
+      localStorage.removeItem('foodypay_crm_customers_v1');
+      Object.keys(localStorage).forEach((key) => {
+        if (key.startsWith('foodypay_orders_')) {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch (e) {}
+
+    setOrders([]);
+    setCustomers([]);
+    setReviews([]);
+    setMealsCollection([]);
+    addToast('🧹 All sample data wiped cleanly! Database is completely fresh.', <Check size={18} />);
   };
 
   const manualSubtotal = Object.values(manualItems).reduce((sum, item) => sum + item.price * item.qty, 0);
@@ -958,6 +1176,8 @@ export default function DashboardPage({ onShowToast }) {
   const [catalogSearch, setCatalogSearch] = useState('');
   const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
   const [isEditProductModalOpen, setIsEditProductModalOpen] = useState(false);
+  const [showEditUrlInput, setShowEditUrlInput] = useState(false);
+  const [showAddUrlInput, setShowAddUrlInput] = useState(false);
   const [editProductForm, setEditProductForm] = useState(null);
   const [allCategories, setAllCategories] = useState(['Fast Food', 'Starters', 'Main Course', 'Breads', 'Beverages', 'Desserts']);
 
@@ -1127,15 +1347,117 @@ export default function DashboardPage({ onShowToast }) {
   // 3. MARKETING & BIRTHDAY NOTIFICATIONS
   // ==========================================================================
   const [isCreateCouponOpen, setIsCreateCouponOpen] = useState(false);
+  const [editingCouponObj, setEditingCouponObj] = useState(null);
   const [newCouponForm, setNewCouponForm] = useState({
-    code: '',
-    discount: '',
+    code: 'FEST20',
+    type: 'percentage', // 'percentage', 'flat', 'bogo', 'referral', 'combo'
+    discountValue: '20',
+    maxDiscount: '100',
     minOrder: 299,
+    expiryDate: get20DaysAheadDate(20),
+    description: '20% OFF on all orders',
+  });
+
+  const handleOpenCreateCoupon = () => {
+    if (storeControls.lockMarketingTab) {
+      addToast('🔒 Marketing & Coupon Builder is Locked in Store Settings!', <Lock size={18} />);
+      return;
+    }
+    setEditingCouponObj(null);
+    setNewCouponForm({
+      code: `FEAST${Math.floor(10 + Math.random() * 90)}`,
+      type: 'percentage',
+      discountValue: '20',
+      maxDiscount: '100',
+      minOrder: 299,
+      expiryDate: get20DaysAheadDate(20),
+      description: '20% OFF on all orders',
+    });
+    setIsCreateCouponOpen(true);
+  };
+
+  const handleEditCoupon = (coupon) => {
+    if (storeControls.lockMarketingTab) {
+      addToast('🔒 Marketing & Coupon Builder is Locked in Store Settings!', <Lock size={18} />);
+      return;
+    }
+    setEditingCouponObj(coupon);
+    setNewCouponForm({
+      code: coupon.code || '',
+      type: coupon.type || 'percentage',
+      discountValue: String(coupon.discountValue !== undefined ? coupon.discountValue : 20),
+      maxDiscount: String(coupon.maxDiscount !== undefined ? coupon.maxDiscount : 100),
+      minOrder: coupon.minOrder || 0,
+      expiryDate: coupon.expiryDate || get20DaysAheadDate(20),
+      description: coupon.description || coupon.discount || '',
+    });
+    setIsCreateCouponOpen(true);
+  };
+
+  const handleDeleteCoupon = (coupon) => {
+    if (storeControls.lockMarketingTab) {
+      addToast('🔒 Marketing & Coupon Builder is Locked in Store Settings!', <Lock size={18} />);
+      return;
+    }
+    setCoupons((prev) => prev.filter((c) => (c._id || c.id || c.code) !== (coupon._id || coupon.id || coupon.code)));
+    addToast(`Deleted Promocode "${coupon.code}"`, <Trash2 size={16} />);
+  };
+
+  const handleToggleCouponStatus = (coupon) => {
+    setCoupons((prev) =>
+      prev.map((c) => {
+        if ((c._id || c.id || c.code) === (coupon._id || coupon.id || coupon.code)) {
+          const nextStatus = c.status === 'Active' ? 'Expired' : 'Active';
+          addToast(`Promocode "${c.code}" is now ${nextStatus}`);
+          return { ...c, status: nextStatus };
+        }
+        return c;
+      })
+    );
+  };
+
+  const handleGenerateRandomCouponCode = () => {
+    const prefixes = {
+      percentage: ['OFF', 'SAVE', 'FEAST', 'SPECIAL', 'DEAL'],
+      flat: ['FLAT', 'CASH', 'SAVER', 'DISCOUNT', 'LESS'],
+      bogo: ['BOGO', 'FREE1', 'BUY1GET1', 'PAIR'],
+      referral: ['REFER', 'SHARE', 'EARN', 'FRIEND'],
+      combo: ['COMBO', 'BUNDLE', 'MEAL', 'PARTY'],
+    };
+    const prefList = prefixes[newCouponForm.type] || ['PROMO'];
+    const p = prefList[Math.floor(Math.random() * prefList.length)];
+    const val = newCouponForm.discountValue || '50';
+    setNewCouponForm((prev) => ({ ...prev, code: `${p}${val}` }));
+  };
+
+  const [bdayAutoSend, setBdayAutoSend] = useState(true);
+  const [isEditBdayModalOpen, setIsEditBdayModalOpen] = useState(false);
+  const [bdayConfig, setBdayConfig] = useState({
+    couponCode: 'BDAYSPECIAL',
+    offerDetail: 'Free Choco Lava Cake + 20% OFF',
+    message: '🎉 Happy Birthday {name}! Wish you a delicious day! Enjoy {offer} on your visit to {storeName}. Redeem Code: {code}',
   });
 
   const birthdayCustomers = customers.filter((c) => c.isBirthdayToday);
 
+  const handleToggleBdayAutoSend = () => {
+    setBdayAutoSend((prev) => {
+      const nextVal = !prev;
+      addToast(
+        nextVal
+          ? '🟢 Automatic Birthday Offers Turned ON! Offers will be sent automatically on birthdays.'
+          : '🔴 Automatic Birthday Offers Turned OFF! Automatic sending paused.',
+        <Sparkles size={16} />
+      );
+      return nextVal;
+    });
+  };
+
   const handleSendBirthdayPushNotification = () => {
+    if (!bdayAutoSend && birthdayCustomers.length === 0) {
+      addToast('No birthday customers celebrating today.', <Gift size={18} />);
+    }
+
     if (creditsBalance < 15) {
       addToast('Insufficient FoodyPay Credits. Please recharge credits.', <CreditCard size={18} />);
       return;
@@ -1145,40 +1467,180 @@ export default function DashboardPage({ onShowToast }) {
     triggerSound(playMilestoneCelebration);
     confetti({ particleCount: 90, spread: 80, origin: { y: 0.3 } });
 
+    const count = birthdayCustomers.length > 0 ? birthdayCustomers.length : 1;
     addToast(
-      `Push Notification & WhatsApp Gift Coupon (BDAYSPECIAL) sent to ${birthdayCustomers.length} Birthday Customers!`,
+      `Push Notification & WhatsApp Gift (${bdayConfig.couponCode}) sent to ${count} Birthday Customer(s)!`,
       <Gift size={18} />
     );
   };
 
   const handleCreateCouponSubmit = async (e) => {
     e.preventDefault();
-    if (!newCouponForm.code.trim() || !newCouponForm.discount.trim()) return;
+    if (!newCouponForm.code.trim()) return;
 
-    if (token) {
-      try {
-        const createdCoupon = await createCouponApi(token, {
-          code: newCouponForm.code.trim().toUpperCase(),
-          discount: newCouponForm.discount.trim(),
-          minOrder: Number(newCouponForm.minOrder) || 199,
-        });
-        setCoupons((prev) => [createdCoupon, ...prev]);
-      } catch (err) {
-        console.warn('API error creating coupon:', err);
-      }
+    let discountText = '';
+    if (newCouponForm.type === 'percentage') {
+      discountText = `${newCouponForm.discountValue}% OFF${newCouponForm.maxDiscount ? ` up to ₹${newCouponForm.maxDiscount}` : ''}`;
+    } else if (newCouponForm.type === 'flat') {
+      discountText = `Flat ₹${newCouponForm.discountValue} OFF (-₹${newCouponForm.discountValue} from Total Bill)`;
+    } else if (newCouponForm.type === 'bogo') {
+      discountText = newCouponForm.description || `Buy 1 Get 1 Free (BOGO Offer)`;
+    } else if (newCouponForm.type === 'referral') {
+      discountText = `Refer & Earn ₹${newCouponForm.discountValue || 50} Cashback`;
+    } else if (newCouponForm.type === 'combo') {
+      discountText = newCouponForm.description || `Special Combo Offer (-₹${newCouponForm.discountValue || 100} OFF)`;
+    }
+
+    if (editingCouponObj) {
+      // Edit mode
+      setCoupons((prev) =>
+        prev.map((c) => {
+          if ((c._id || c.id || c.code) === (editingCouponObj._id || editingCouponObj.id || editingCouponObj.code)) {
+            return {
+              ...c,
+              code: newCouponForm.code.trim().toUpperCase(),
+              type: newCouponForm.type,
+              discount: discountText,
+              discountValue: Number(newCouponForm.discountValue) || 0,
+              maxDiscount: Number(newCouponForm.maxDiscount) || 0,
+              minOrder: Number(newCouponForm.minOrder) || 0,
+              expiryDate: newCouponForm.expiryDate || get20DaysAheadDate(20),
+              description: newCouponForm.description || '',
+            };
+          }
+          return c;
+        })
+      );
+      addToast(`Updated Promocode "${newCouponForm.code.trim().toUpperCase()}"!`, <Check size={18} />);
     } else {
+      // Create new mode
       const newC = {
+        id: `cp_${Date.now()}`,
         code: newCouponForm.code.trim().toUpperCase(),
-        discount: newCouponForm.discount.trim(),
-        minOrder: Number(newCouponForm.minOrder) || 199,
+        type: newCouponForm.type,
+        discount: discountText,
+        discountValue: Number(newCouponForm.discountValue) || 0,
+        maxDiscount: Number(newCouponForm.maxDiscount) || 0,
+        minOrder: Number(newCouponForm.minOrder) || 0,
+        expiryDate: newCouponForm.expiryDate || get20DaysAheadDate(20),
+        description: newCouponForm.description || '',
         uses: 0,
         status: 'Active',
       };
-      setCoupons((prev) => [newC, ...prev]);
+
+      if (token) {
+        try {
+          const createdCoupon = await createCouponApi(token, newC);
+          setCoupons((prev) => [createdCoupon || newC, ...prev]);
+        } catch (err) {
+          setCoupons((prev) => [newC, ...prev]);
+        }
+      } else {
+        setCoupons((prev) => [newC, ...prev]);
+      }
+
+      triggerSound(playMilestoneCelebration);
+      addToast(`Activated Promocode "${newC.code}" successfully!`, <Gift size={18} />);
     }
 
     setIsCreateCouponOpen(false);
-    addToast(`Coupon "${newCouponForm.code.toUpperCase()}" created and active!`, <Check size={18} />);
+    setEditingCouponObj(null);
+  };
+
+  const handleCreateCustomerGroupSubmit = (e) => {
+    e.preventDefault();
+    if (!newGroupForm.name.trim()) return;
+
+    const matchingCusts = (customers || []).filter((c) => {
+      if (newGroupForm.spendRule === 'high' && (c.totalSales || 0) < 500) return false;
+      if (newGroupForm.spendRule === 'mid' && ((c.totalSales || 0) < 200 || (c.totalSales || 0) > 500)) return false;
+      if (newGroupForm.spendRule === 'budget' && (c.totalSales || 0) >= 200) return false;
+      return true;
+    });
+
+    const memberIds = matchingCusts.length > 0 ? matchingCusts.map((c) => c.id || c._id) : ['c1', 'c2'];
+    const totalSalesSum = matchingCusts.reduce((s, c) => s + (c.totalSales || 0), 0) || 5400;
+    const avgBillVal = Math.round(totalSalesSum / (matchingCusts.length || 1)) || 380;
+
+    const newGrp = {
+      id: `grp_${Date.now()}`,
+      name: newGroupForm.name.trim(),
+      description: newGroupForm.description || `Custom Segment (${newGroupForm.spendRule} bill, ${newGroupForm.daysRule} days, ${newGroupForm.foodCategory} category)`,
+      spendRule: newGroupForm.spendRule,
+      daysRule: newGroupForm.daysRule,
+      foodCategory: newGroupForm.foodCategory,
+      memberIds,
+      avgBill: avgBillVal,
+      totalSales: totalSalesSum,
+      favoriteItem: newGroupForm.foodCategory === 'Fast Food' ? 'ITALIAN CHEESE GIANT SLICE' : 'Paneer Butter Masala',
+    };
+
+    setCustomerGroups((prev) => [newGrp, ...prev]);
+    addToast(`Created Customer Group "${newGrp.name}" with ${memberIds.length} members!`, <Check size={18} />);
+    setIsAddGroupModalOpen(false);
+    setNewGroupForm({
+      name: '',
+      description: '',
+      spendRule: 'all',
+      daysRule: 'all',
+      foodCategory: 'all',
+    });
+  };
+
+  const handleDispatchTargetedCampaign = (e) => {
+    if (e) e.preventDefault();
+    const targetGrp = customerGroups.find((g) => g.id === campaignTargetGroup) || customerGroups[0];
+    const targetMembersCount = targetGrp ? targetGrp.memberIds.length : (customers || []).length;
+    const countToSend = campaignDispatchMode === 'random_n' ? Math.min(Number(campaignRandomCount) || 1, targetMembersCount) : targetMembersCount;
+
+    if (creditsBalance < 20) {
+      addToast('Insufficient FoodyPay Credits. Please recharge credits.', <CreditCard size={18} />);
+      return;
+    }
+
+    setCreditsBalance((prev) => prev - 20);
+    triggerSound(playMilestoneCelebration);
+    confetti({ particleCount: 90, spread: 80, origin: { y: 0.3 } });
+
+    addToast(
+      `🚀 Promocode "${campaignCouponCode}" dispatched to ${countToSend} customer(s) in group "${targetGrp ? targetGrp.name : 'Target Segment'}"!`,
+      <Gift size={18} />
+    );
+  };
+
+  const handleSendCustomNotificationSubmit = (e) => {
+    e.preventDefault();
+    if (!notifyTitle.trim() || !notifyMessage.trim()) return;
+
+    if (creditsBalance < 15) {
+      addToast('Insufficient FoodyPay Credits. Please recharge credits.', <CreditCard size={18} />);
+      return;
+    }
+
+    let targetDesc = '';
+    if (notifyAudienceMode === 'all_users') {
+      targetDesc = `ALL ${(customers || []).length || 6} Customers`;
+    } else if (notifyAudienceMode === 'specific_user') {
+      const targetCust = (customers || []).find((c) => (c.id || c._id) === selectedCustId) || customers[0];
+      targetDesc = targetCust ? `${targetCust.name} (${targetCust.phone})` : 'Selected Customer';
+    } else if (notifyAudienceMode === 'random_n') {
+      targetDesc = `${randomNotifyCount} Random Customer(s)`;
+    } else if (notifyAudienceMode === 'group') {
+      const matchGrp = customerGroups.find((g) => g.id === selectedGroupId);
+      targetDesc = `Group "${matchGrp ? matchGrp.name : 'Target Segment'}" (${matchGrp ? matchGrp.memberIds.length : 3} Members)`;
+    }
+
+    setCreditsBalance((prev) => prev - 15);
+    triggerSound(playMilestoneCelebration);
+    confetti({ particleCount: 90, spread: 80, origin: { y: 0.3 } });
+
+    const channelText = notifyChannel === 'push_whatsapp' ? 'WhatsApp & Push' : notifyChannel === 'whatsapp_only' ? 'WhatsApp' : 'Push Notification';
+
+    addToast(
+      `🔔 Notification "${notifyTitle}" sent to ${targetDesc} via ${channelText}!`,
+      <Bell size={18} />
+    );
+    setIsCustomNotifyModalOpen(false);
   };
 
   // Table QR Standee Modal & Customizer State
@@ -1244,6 +1706,10 @@ export default function DashboardPage({ onShowToast }) {
   };
 
   const handleOpenAddTableModal = (tableToEdit = null) => {
+    if (storeControls.lockTableCrud) {
+      addToast('🔒 Table QR Modifications (Add/Edit/Delete) are Locked in Store Settings!', <Lock size={18} />);
+      return;
+    }
     setTableLogoFile(null);
     setTableLogoPreview(tableToEdit?.logoUrl || null);
     if (tableToEdit) {
@@ -1337,6 +1803,10 @@ export default function DashboardPage({ onShowToast }) {
   };
 
   const handleDeleteTable = async (tableObj) => {
+    if (storeControls.lockTableCrud) {
+      addToast('🔒 Table QR Modifications (Add/Edit/Delete) are Locked in Store Settings!', <Lock size={18} />);
+      return;
+    }
     const tableId = tableObj._id || tableObj.id;
     if (!window.confirm(`Are you sure you want to delete ${tableObj.name} QR Code?`)) return;
 
@@ -1365,28 +1835,81 @@ export default function DashboardPage({ onShowToast }) {
       {/* ==========================================================================
           1. CLEAN WHITE SIDEBAR (Ref: Image 1 & 3)
           ========================================================================== */}
-      <aside className={`crm-sidebar ${mobileMenuOpen ? 'open' : ''}`}>
-        <div className="crm-sidebar-brand">
-          <a href="/" className="crm-brand-group">
-            <img
-              src={storeControls.logoUrl || "/Logo.png"}
-              alt="FoodyPay Logo"
-              className="crm-brand-img"
-              style={{ objectFit: 'cover', borderRadius: '10px' }}
-            />
-            <div>
-              <div className="crm-brand-title">{storeControls.restName}</div>
-              <div className="crm-brand-subtitle">
-                <span className="crm-brand-live-dot" /> Cloud POS Active
+      <aside className={`crm-sidebar ${isSidebarCollapsed ? 'collapsed' : ''} ${mobileMenuOpen ? 'open' : ''}`}>
+        <div 
+          className="crm-sidebar-brand" 
+          onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
+          title={isSidebarCollapsed ? "Click logo to expand sidebar" : "Click logo to collapse sidebar"}
+          style={{ cursor: 'pointer' }}
+        >
+          <a href="/" className="crm-brand-group" onClick={(e) => e.preventDefault()}>
+            {storeControls.logoUrl && !logoImgFailed ? (
+              <img
+                src={storeControls.logoUrl}
+                alt={storeControls.restName || "FoodyPay Logo"}
+                className="crm-brand-img"
+                style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '10px', boxShadow: '0 2px 6px rgba(0,0,0,0.1)', flexShrink: 0 }}
+                onError={() => setLogoImgFailed(true)}
+              />
+            ) : (
+              <div
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #FF5E14 0%, #D97706 100%)',
+                  color: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 900,
+                  fontSize: '18px',
+                  boxShadow: '0 4px 10px rgba(255, 94, 20, 0.3)',
+                  flexShrink: 0,
+                }}
+              >
+                <Utensils size={22} color="#FFFFFF" />
               </div>
-            </div>
+            )}
+            {!isSidebarCollapsed && (
+              <div className="crm-brand-details">
+                <div className="crm-brand-title">{storeControls.restName || "My Restaurant"}</div>
+                <div className="crm-brand-subtitle">
+                  <span className="crm-brand-live-dot" /> Cloud POS Active
+                </div>
+              </div>
+            )}
           </a>
+          <button
+            type="button"
+            className="crm-sidebar-toggle-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsSidebarCollapsed(!isSidebarCollapsed);
+            }}
+            title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+            style={{
+              background: '#F1F5F9',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '8px',
+              borderRadius: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#0F172A',
+              transition: 'all 0.2s',
+            }}
+          >
+            <Menu size={18} />
+          </button>
         </div>
 
         <nav className="crm-sidebar-menu">
           {/* 1. Home / Orders */}
           <button
             type="button"
+            title="Home / Orders"
             className={`crm-menu-link ${activeTab === 'home_orders' ? 'active' : ''}`}
             onClick={() => {
               setActiveTab('home_orders');
@@ -1402,10 +1925,39 @@ export default function DashboardPage({ onShowToast }) {
             <ChevronRight size={16} className="crm-menu-chevron" />
           </button>
 
+          {/* 1.5 Kitchen Display System (KDS) - Opens Standalone Screen */}
+          <button
+            type="button"
+            title="Open Kitchen Display (KDS) in New Tab"
+            className="crm-menu-link"
+            onClick={() => {
+              const slug = (storeControls.restName || 'lagan-crazy').toLowerCase().replace(/\s+/g, '-');
+              const mid = storeControls.foodypayId || 'FP-397310';
+              window.open(`/${slug}/${mid}/KitchenDisplaySystem`, '_blank');
+              setMobileMenuOpen(false);
+            }}
+          >
+            <div className="crm-menu-link-left">
+              <span className="crm-menu-icon">
+                <ChefHat size={20} color="#FF5E14" />
+              </span>
+              <span>Kitchen Display (KDS)</span>
+            </div>
+            {(() => {
+              const pendingCount = (orders || []).filter((o) => o && (o.status === 'new' || o.status === 'preparing')).length;
+              return pendingCount > 0 ? (
+                <span className="crm-badge-new" style={{ background: '#FFF0EB', color: '#FF5E14', fontSize: '11px', fontWeight: 900, padding: '2px 8px', borderRadius: '10px' }}>
+                  {pendingCount} Active
+                </span>
+              ) : null;
+            })()}
+          </button>
+
           {/* 2. Catalog / Products */}
           <div>
             <button
               type="button"
+              title="Catalog / Products"
               className={`crm-menu-link ${activeTab === 'catalog' ? 'active' : ''}`}
               onClick={() => {
                 setActiveTab('catalog');
@@ -1423,7 +1975,7 @@ export default function DashboardPage({ onShowToast }) {
               </span>
             </button>
 
-            {catalogSubmenuOpen && (
+            {catalogSubmenuOpen && !isSidebarCollapsed && (
               <div className="crm-submenu-list">
                 <button
                   type="button"
@@ -1447,10 +1999,14 @@ export default function DashboardPage({ onShowToast }) {
                 </button>
                 <button
                   type="button"
-                  className="crm-submenu-item"
-                  onClick={() => addToast('Customer Reviews: 4.8/5 Star rating average across 180 diners!')}
+                  className={`crm-submenu-item ${activeTab === 'customer_reviews' ? 'active' : ''}`}
+                  onClick={() => {
+                    setActiveTab('customer_reviews');
+                    setMobileMenuOpen(false);
+                  }}
                 >
                   <span>Customer Reviews</span>
+                  <span className="crm-badge-new" style={{ background: '#FEF3C7', color: '#D97706', padding: '1px 6px' }}>4.8 ★</span>
                 </button>
                 <button
                   type="button"
@@ -1467,6 +2023,7 @@ export default function DashboardPage({ onShowToast }) {
           {/* 3. Grow */}
           <button
             type="button"
+            title="Grow"
             className={`crm-menu-link ${activeTab === 'grow' ? 'active' : ''}`}
             onClick={() => {
               setActiveTab('grow');
@@ -1484,6 +2041,7 @@ export default function DashboardPage({ onShowToast }) {
           {/* 4. Utilities (Table QR Generator) */}
           <button
             type="button"
+            title="Utilities (QR Tables)"
             className={`crm-menu-link ${activeTab === 'utilities' ? 'active' : ''}`}
             onClick={() => {
               setActiveTab('utilities');
@@ -1501,6 +2059,7 @@ export default function DashboardPage({ onShowToast }) {
           {/* 5. Marketing */}
           <button
             type="button"
+            title="Marketing"
             className={`crm-menu-link ${activeTab === 'marketing' ? 'active' : ''}`}
             onClick={() => {
               setActiveTab('marketing');
@@ -1518,6 +2077,7 @@ export default function DashboardPage({ onShowToast }) {
           {/* 6. Customers */}
           <button
             type="button"
+            title="Customers"
             className={`crm-menu-link ${activeTab === 'customers' ? 'active' : ''}`}
             onClick={() => {
               setActiveTab('customers');
@@ -1532,9 +2092,29 @@ export default function DashboardPage({ onShowToast }) {
             </div>
           </button>
 
+          {/* 6.5 Customer Reviews */}
+          <button
+            type="button"
+            title="Customer Reviews"
+            className={`crm-menu-link ${activeTab === 'customer_reviews' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('customer_reviews');
+              setMobileMenuOpen(false);
+            }}
+          >
+            <div className="crm-menu-link-left">
+              <span className="crm-menu-icon">
+                <Star size={20} />
+              </span>
+              <span>Customer Reviews</span>
+            </div>
+            <span className="crm-badge-new" style={{ background: '#FEF3C7', color: '#D97706', fontSize: '11px', fontWeight: 800, padding: '2px 6px', borderRadius: '10px' }}>4.8 ★</span>
+          </button>
+
           {/* 7. Settings */}
           <button
             type="button"
+            title="Settings"
             className={`crm-menu-link ${activeTab === 'store_controls' ? 'active' : ''}`}
             onClick={() => {
               setActiveTab('store_controls');
@@ -1551,7 +2131,17 @@ export default function DashboardPage({ onShowToast }) {
         </nav>
 
         {/* BOTTOM SIDEBAR CARD: FoodyPay credits */}
-        <div className="crm-sidebar-credits-card">
+        <div 
+          className="crm-sidebar-credits-card"
+          title={`FoodyPay credits: ₹${creditsBalance.toLocaleString()} (Click to Add)`}
+          onClick={() => {
+            if (isSidebarCollapsed) {
+              setCreditsBalance((prev) => prev + 1000);
+              addToast('Recharged ₹1,000 FoodyPay credits!', <Check size={18} />);
+              triggerSound(playMilestoneCelebration);
+            }
+          }}
+        >
           <div className="crm-credits-icon-box">
             <CreditCard size={22} color="#1D4ED8" />
           </div>
@@ -1561,6 +2151,7 @@ export default function DashboardPage({ onShowToast }) {
           </div>
           <button
             type="button"
+            className="crm-credits-add-btn"
             style={{
               background: '#EFF8FF',
               border: '1.5px solid #B2DDFF',
@@ -1571,7 +2162,8 @@ export default function DashboardPage({ onShowToast }) {
               fontWeight: 800,
               cursor: 'pointer',
             }}
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               setCreditsBalance((prev) => prev + 1000);
               addToast('Recharged ₹1,000 FoodyPay credits!', <Check size={18} />);
               triggerSound(playMilestoneCelebration);
@@ -1587,17 +2179,89 @@ export default function DashboardPage({ onShowToast }) {
           ========================================================================== */}
       <main className="crm-main">
         {/* TOPBAR */}
-        <header className="crm-header-bar">
-          <div className="crm-header-left">
-            <h1 className="crm-page-heading">
-              {activeTab === 'home_orders' && 'Home / Orders'}
-              {activeTab === 'catalog' && 'Catalog / Products'}
-              {activeTab === 'grow' && 'Grow / Business Telemetry'}
-              {activeTab === 'utilities' && 'Utilities & Table QR Generator'}
-              {activeTab === 'marketing' && 'Marketing & Birthday Push Notifications'}
-              {activeTab === 'customers' && 'Customers Directory & Loyalty'}
-              {activeTab === 'store_controls' && 'Store controls'}
-            </h1>
+        <header className="crm-header-bar" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '24px', background: '#FFFFFF', padding: '16px 24px', borderRadius: '16px', border: '1px solid #E2E8F0', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
+          <div className="crm-header-left" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button
+              type="button"
+              className="crm-desktop-hamburger"
+              style={{ background: '#F1F5F9', border: 'none', borderRadius: '10px', padding: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              title={isSidebarCollapsed ? "Expand Sidebar Menu" : "Collapse Sidebar Menu"}
+            >
+              <Menu size={20} color="#0F172A" />
+            </button>
+            <div>
+              <h1 className="crm-page-heading" style={{ margin: 0, fontSize: '20px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {activeTab === 'home_orders' && <><Home size={22} color="#1D4ED8" /> Home / Orders Overview</>}
+                {activeTab === 'kitchen' && <><ChefHat size={22} color="#FF5E14" /> Kitchen Display System (KDS)</>}
+                {activeTab === 'catalog' && <><Package size={22} color="#1D4ED8" /> Catalog / Products</>}
+                {activeTab === 'catalog_collections' && <><Utensils size={22} color="#FF5E14" /> Meal Collections & Custom Combos</>}
+                {activeTab === 'grow' && <><TrendingUp size={22} color="#16A34A" /> Grow / Business Telemetry</>}
+                {activeTab === 'utilities' && <><QrCode size={22} color="#6366F1" /> Utilities & Table QR Generator</>}
+                {activeTab === 'marketing' && <><Megaphone size={22} color="#FF5E14" /> Marketing & Birthday Push Notifications</>}
+                {activeTab === 'customers' && <><Users size={22} color="#0D9488" /> Customers Directory & Loyalty</>}
+                {activeTab === 'customer_reviews' && <><Star size={22} color="#F59E0B" fill="#F59E0B" /> Customer Reviews & Diner Feedback</>}
+                {activeTab === 'store_controls' && <><Settings size={22} color="#475569" /> Store Controls & Security Settings</>}
+              </h1>
+              <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '3px' }}>
+                {storeControls.restName} • Merchant ID: <strong style={{ color: '#1D4ED8' }}>{storeControls.foodypayId}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {/* Live Clock Badge */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#F8FAFC', padding: '7px 14px', borderRadius: '10px', border: '1px solid #E2E8F0', fontSize: '13px', fontWeight: 700, color: '#475569' }}>
+              <Clock size={15} color="#1D4ED8" />
+              <span>{currentTime}</span>
+            </div>
+
+            {/* Sound Mute/Unmute */}
+            <button
+              type="button"
+              style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '10px',
+                background: '#F1F5F9',
+                border: '1px solid #CBD5E1',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                color: soundEnabled ? '#1D4ED8' : '#94A3B8',
+              }}
+              title={soundEnabled ? 'Audio Alerts Enabled' : 'Audio Alerts Muted'}
+              onClick={() => {
+                setSoundEnabled(!soundEnabled);
+                addToast(soundEnabled ? '🔇 Sound Alerts Muted' : '🔊 Sound Alerts Enabled');
+              }}
+            >
+              {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+            </button>
+
+            {/* Quick Manual Order Button */}
+            <button
+              type="button"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '9px 18px',
+                borderRadius: '10px',
+                background: '#1D4ED8',
+                color: '#FFFFFF',
+                border: 'none',
+                fontWeight: 800,
+                fontSize: '13.5px',
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(29, 78, 216, 0.25)',
+              }}
+              onClick={() => handleOpenManualOrder()}
+            >
+              <Plus size={16} />
+              <span>+ Counter POS Order</span>
+            </button>
           </div>
         </header>
 
@@ -1784,10 +2448,10 @@ export default function DashboardPage({ onShowToast }) {
 
                     <div className="crm-order-card-body">
                       <div className="crm-customer-meta">
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <User size={14} /> {order.customer}
+                        <span className="crm-customer-name">
+                          <User size={16} /> {order.customer}
                         </span>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span className="crm-customer-phone">
                           <Phone size={14} /> {order.phone}
                         </span>
                       </div>
@@ -1820,15 +2484,27 @@ export default function DashboardPage({ onShowToast }) {
                       </div>
 
                       <div className="crm-card-actions-grid">
-                        {order.status === 'new' && (
+                        {(order.status === 'new' || order.status === 'new_seen') && (
                           <>
+                            {(!order.seen || order.status === 'new') && (
+                              <button
+                                type="button"
+                                className="crm-btn-action"
+                                style={{ backgroundColor: '#2563EB', color: '#FFF', fontWeight: 800 }}
+                                onClick={() => handleMarkOrderSeen(order._id || order.id)}
+                                title="Acknowledge Order & Stop Bell Alarm"
+                              >
+                                <Eye size={16} />
+                                <span>👁️ SEEN (STOP BELL)</span>
+                              </button>
+                            )}
                             <button
                               type="button"
                               className="crm-btn-action fire"
-                              onClick={() => handleUpdateOrderStatus(order._id || order.id, 'preparing')}
+                              onClick={() => handleStartPreparingOrder(order._id || order.id)}
                               title="Start Cooking in Kitchen"
                             >
-                              <ChefHat size={15} />
+                              <ChefHat size={16} />
                               <span>Start Cooking</span>
                             </button>
                             <button
@@ -1837,7 +2513,7 @@ export default function DashboardPage({ onShowToast }) {
                               onClick={() => handleEditOrder(order)}
                               title="Edit Order items before cooking"
                             >
-                              <Edit3 size={15} />
+                              <Edit3 size={16} />
                               <span>Edit Order</span>
                             </button>
                             <button
@@ -1846,35 +2522,26 @@ export default function DashboardPage({ onShowToast }) {
                               onClick={() => handleOpenBillSettlement(order)}
                               title="Settle Bill Cash/UPI"
                             >
-                              <CreditCard size={15} />
+                              <CreditCard size={16} />
                               <span>Bill Settlement</span>
-                            </button>
-                            <button
-                              type="button"
-                              className="crm-btn-action cancel"
-                              onClick={() => handleUpdateOrderStatus(order._id || order.id, 'cancelled')}
-                              title="Cancel Order"
-                            >
-                              <X size={15} />
-                              <span>Cancel</span>
                             </button>
                           </>
                         )}
 
                         {order.status === 'preparing' && (
-                          <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                             <div className="crm-locked-cooking-badge">
-                              <Lock size={13} />
+                              <Lock size={14} />
                               <span>In Kitchen (Cooking) — Item Editing Locked</span>
                             </div>
-                            <div style={{ display: 'flex', gap: '8px' }}>
+                            <div style={{ display: 'flex', gap: '6px' }}>
                               <button
                                 type="button"
                                 className="crm-btn-action ready-btn"
                                 style={{ flex: 1 }}
                                 onClick={() => handleUpdateOrderStatus(order._id || order.id, 'ready')}
                               >
-                                <Bell size={15} />
+                                <Bell size={16} />
                                 <span>Food is Ready</span>
                               </button>
                               <button
@@ -1883,7 +2550,7 @@ export default function DashboardPage({ onShowToast }) {
                                 style={{ flex: 1 }}
                                 onClick={() => handleOpenBillSettlement(order)}
                               >
-                                <CreditCard size={15} />
+                                <CreditCard size={16} />
                                 <span>Settle Bill</span>
                               </button>
                             </div>
@@ -1896,20 +2563,20 @@ export default function DashboardPage({ onShowToast }) {
                             className="crm-btn-action settle full-w"
                             onClick={() => handleOpenBillSettlement(order)}
                           >
-                            <CreditCard size={16} />
+                            <CreditCard size={17} />
                             <span>Bill Settlement &amp; Complete</span>
                           </button>
                         )}
 
                         {order.status === 'completed' && (
-                          <div style={{ width: '100%', display: 'flex', gap: '8px' }}>
+                          <div style={{ width: '100%', display: 'flex', gap: '6px' }}>
                             <button
                               type="button"
                               className="crm-btn-secondary"
                               style={{ flex: 1 }}
                               onClick={() => setViewingOrderDetails(order)}
                             >
-                              <Eye size={15} />
+                              <Eye size={16} />
                               <span>View Receipt</span>
                             </button>
                             <button
@@ -1945,6 +2612,162 @@ export default function DashboardPage({ onShowToast }) {
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* ==========================================================================
+            VIEW 1.5: KITCHEN DISPLAY SYSTEM (KDS)
+            ========================================================================== */}
+        {activeTab === 'kitchen' && (
+          <div style={{ padding: '24px 36px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#0F172A', color: '#FFF', padding: '20px 24px', borderRadius: '18px', boxShadow: '0 8px 24px rgba(15,23,42,0.2)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <div style={{ width: '48px', height: '48px', borderRadius: '14px', backgroundColor: '#FF5E14', color: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <ChefHat size={28} />
+                </div>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 900 }}>Kitchen Display System (KDS)</h2>
+                  <span style={{ fontSize: '13px', color: '#94A3B8' }}>Live Chef Screen • Auto-Ringing Bell for Unseen Orders</span>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {['all', 'new', 'preparing', 'ready'].map((filterKey) => (
+                  <button
+                    key={filterKey}
+                    type="button"
+                    onClick={() => setKitchenFilter(filterKey)}
+                    style={{
+                      border: 'none',
+                      padding: '8px 16px',
+                      borderRadius: '12px',
+                      fontSize: '13px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      backgroundColor: kitchenFilter === filterKey ? '#FF5E14' : '#1E293B',
+                      color: '#FFF'
+                    }}
+                  >
+                    {filterKey === 'all' ? 'All Orders' : filterKey === 'new' ? '🔔 New / Unseen' : filterKey === 'preparing' ? '🔥 Preparing' : '✅ Ready'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
+              {(orders || []).filter((o) => {
+                if (!o || o.status === 'completed' || o.status === 'cancelled') return false;
+                if (kitchenFilter === 'all') return true;
+                if (kitchenFilter === 'new') return o.status === 'new' || !o.seen;
+                if (kitchenFilter === 'preparing') return o.status === 'preparing';
+                if (kitchenFilter === 'ready') return o.status === 'ready';
+                return true;
+              }).map((order) => (
+                <div
+                  key={order.id || order._id}
+                  style={{
+                    backgroundColor: '#FFF',
+                    borderRadius: '18px',
+                    border: !order.seen || order.status === 'new' ? '2.5px solid #EF4444' : order.status === 'preparing' ? '2.5px solid #FF5E14' : '2px solid #E2E8F0',
+                    padding: '18px',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.04)',
+                    position: 'relative'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #F1F5F9', paddingBottom: '10px' }}>
+                    <div>
+                      <span style={{ fontSize: '18px', fontWeight: 900, color: '#0F172A' }}>{order.id}</span>
+                      <span style={{ marginLeft: '10px', backgroundColor: '#FFEDD5', color: '#C2410C', fontWeight: 800, padding: '3px 10px', borderRadius: '8px', fontSize: '13px' }}>
+                        📍 {order.table || 'Table 1'}
+                      </span>
+                    </div>
+                    <span style={{
+                      backgroundColor: !order.seen || order.status === 'new' ? '#FEF2F2' : order.status === 'preparing' ? '#FFF7ED' : '#F0FDF4',
+                      color: !order.seen || order.status === 'new' ? '#DC2626' : order.status === 'preparing' ? '#C2410C' : '#16A34A',
+                      fontSize: '12px',
+                      fontWeight: 800,
+                      padding: '4px 10px',
+                      borderRadius: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}>
+                      {!order.seen || order.status === 'new' ? '🚨 BELL RINGING' : order.status === 'preparing' ? '🔥 Cooking' : '🍽️ Food Ready'}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#64748B', marginBottom: '12px' }}>
+                    <span>Customer: <strong>{order.customer}</strong></span>
+                    <span>⏱️ {order.time || '6m ago'}</span>
+                  </div>
+
+                  <div style={{ backgroundColor: '#F8FAFC', borderRadius: '12px', padding: '12px', marginBottom: '14px' }}>
+                    {(order.items || []).map((it, idx) => (
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0', borderBottom: idx < order.items.length - 1 ? '1px dashed #E2E8F0' : 'none' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ backgroundColor: '#FF5E14', color: '#FFF', fontWeight: 900, fontSize: '13px', padding: '2px 8px', borderRadius: '6px' }}>
+                            {it.qty}x
+                          </span>
+                          <span style={{ fontWeight: 700, fontSize: '14px', color: '#0F172A' }}>{it.name}</span>
+                        </div>
+                        <span style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>₹{(it.price || 0) * (it.qty || 1)}</span>
+                      </div>
+                    ))}
+                    {order.note && (
+                      <div style={{ marginTop: '8px', fontSize: '12px', color: '#DC2626', fontWeight: 700, backgroundColor: '#FEF2F2', padding: '6px 10px', borderRadius: '6px' }}>
+                        Note: {order.note}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    {(!order.seen || order.status === 'new') && (
+                      <>
+                        <button
+                          onClick={() => handleMarkOrderSeen(order._id || order.id)}
+                          style={{ flex: 1, backgroundColor: '#3B82F6', color: '#FFF', border: 'none', padding: '10px', borderRadius: '12px', fontWeight: 800, cursor: 'pointer' }}
+                        >
+                          👁️ SEEN (STOP BELL)
+                        </button>
+                        <button
+                          onClick={() => handleStartPreparingOrder(order._id || order.id)}
+                          style={{ flex: 1, backgroundColor: '#FF5E14', color: '#FFF', border: 'none', padding: '10px', borderRadius: '12px', fontWeight: 800, cursor: 'pointer' }}
+                        >
+                          🍳 START COOKING
+                        </button>
+                      </>
+                    )}
+
+                    {order.seen && order.status === 'new_seen' && (
+                      <button
+                        onClick={() => handleStartPreparingOrder(order._id || order.id)}
+                        style={{ width: '100%', backgroundColor: '#FF5E14', color: '#FFF', border: 'none', padding: '12px', borderRadius: '12px', fontWeight: 800, cursor: 'pointer' }}
+                      >
+                        🍳 START COOKING NOW →
+                      </button>
+                    )}
+
+                    {order.status === 'preparing' && (
+                      <button
+                        onClick={() => handleUpdateOrderStatus(order._id || order.id, 'ready')}
+                        style={{ width: '100%', backgroundColor: '#16A34A', color: '#FFF', border: 'none', padding: '12px', borderRadius: '12px', fontWeight: 800, cursor: 'pointer' }}
+                      >
+                        🍽️ MARK IT'S READY! (RING READY BELL)
+                      </button>
+                    )}
+
+                    {order.status === 'ready' && (
+                      <button
+                        onClick={() => handleUpdateOrderStatus(order._id || order.id, 'completed')}
+                        style={{ width: '100%', backgroundColor: '#0F172A', color: '#FFF', border: 'none', padding: '12px', borderRadius: '12px', fontWeight: 800, cursor: 'pointer' }}
+                      >
+                        🏁 MARK SERVED TO TABLE
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -2116,64 +2939,229 @@ export default function DashboardPage({ onShowToast }) {
         )}
 
         {/* ==========================================================================
-            VIEW 3: GROW (Analytics)
+            VIEW 3: GROW / BUSINESS TELEMETRY & CUSTOMER GROUPS
             ========================================================================== */}
         {activeTab === 'grow' && (
-          <div style={{ padding: '32px 42px' }}>
-            <div className="crm-analytics-grid">
-              <div className="crm-analytics-card">
-                <div className="crm-analytics-card-title">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <TrendingUp size={20} color="#1D4ED8" />
-                    <span>Peak Dining Rush (Orders Volume)</span>
-                  </div>
+          <div style={{ padding: '32px 42px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
+            {/* 1. TELEMETRY HIGHLIGHT CARDS (Top Dish, Top Combo, AOV, Repeat Rate) */}
+            <div className="crm-kpi-banner-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+              <div className="crm-kpi-card" style={{ background: '#FFFFFF', border: '1.5px solid #E2E8F0' }}>
+                <div>
+                  <div className="crm-kpi-label" style={{ fontWeight: 700, color: '#64748B', fontSize: '12.5px' }}>MOST ORDERED DISH</div>
+                  {(() => {
+                    const itemCounts = {};
+                    (orders || []).forEach(o => {
+                      (o.items || []).forEach(it => {
+                        if (!it.name) return;
+                        const q = Number(it.qty) || 1;
+                        const p = Number(it.price) || 0;
+                        if (!itemCounts[it.name]) itemCounts[it.name] = { qty: 0, sales: 0 };
+                        itemCounts[it.name].qty += q;
+                        itemCounts[it.name].sales += q * p;
+                      });
+                    });
+                    let topDishName = 'No Orders Recorded';
+                    let topQty = 0;
+                    let topSales = 0;
+                    Object.keys(itemCounts).forEach(k => {
+                      if (itemCounts[k].qty > topQty) {
+                        topQty = itemCounts[k].qty;
+                        topDishName = k;
+                        topSales = itemCounts[k].sales;
+                      }
+                    });
+                    return (
+                      <>
+                        <div style={{ fontSize: '15px', fontWeight: 900, color: '#0F172A', marginTop: '4px' }}>{topDishName}</div>
+                        <div style={{ fontSize: '12px', color: topQty > 0 ? '#059669' : '#64748B', fontWeight: 700, marginTop: '2px' }}>
+                          {topQty > 0 ? `🔥 ${topQty} Orders • ₹${topSales.toLocaleString()} Sales` : '₹0 Sales'}
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
-                <div className="crm-bar-chart">
-                  {[
-                    { label: '12 PM', val: 35 },
-                    { label: '1 PM', val: 75 },
-                    { label: '2 PM', val: 85 },
-                    { label: '3 PM', val: 40 },
-                    { label: '5 PM', val: 30 },
-                    { label: '7 PM', val: 80 },
-                    { label: '8 PM', val: 100 },
-                    { label: '9 PM', val: 95 },
-                    { label: '10 PM', val: 60 },
-                  ].map((b, idx) => (
-                    <div key={idx} className="crm-bar-col">
-                      <div className="crm-bar-fill" style={{ height: `${b.val}%` }} />
-                      <span className="crm-bar-label">{b.label}</span>
-                    </div>
-                  ))}
+                <div className="crm-kpi-icon-box" style={{ background: '#FEF3C7', color: '#D97706', width: '50px', height: '50px' }}>
+                  <Utensils size={24} />
                 </div>
               </div>
 
-              <div className="crm-analytics-card">
-                <div className="crm-analytics-card-title">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <Utensils size={20} color="#FF5E14" />
-                    <span>Category Share</span>
+              <div className="crm-kpi-card" style={{ background: '#FFFFFF', border: '1.5px solid #E2E8F0' }}>
+                <div>
+                  <div className="crm-kpi-label" style={{ fontWeight: 700, color: '#64748B', fontSize: '12.5px' }}>BEST SELLING COMBO</div>
+                  {(() => {
+                    const comboCounts = {};
+                    (orders || []).forEach(o => {
+                      (o.items || []).forEach(it => {
+                        if (!it.name || !it.name.toLowerCase().includes('combo')) return;
+                        const q = Number(it.qty) || 1;
+                        const p = Number(it.price) || 0;
+                        if (!comboCounts[it.name]) comboCounts[it.name] = { qty: 0, sales: 0 };
+                        comboCounts[it.name].qty += q;
+                        comboCounts[it.name].sales += q * p;
+                      });
+                    });
+                    let topComboName = 'No Combos Sold Yet';
+                    let topQty = 0;
+                    let topSales = 0;
+                    Object.keys(comboCounts).forEach(k => {
+                      if (comboCounts[k].qty > topQty) {
+                        topQty = comboCounts[k].qty;
+                        topComboName = k;
+                        topSales = comboCounts[k].sales;
+                      }
+                    });
+                    return (
+                      <>
+                        <div style={{ fontSize: '15px', fontWeight: 900, color: '#0F172A', marginTop: '4px' }}>{topComboName}</div>
+                        <div style={{ fontSize: '12px', color: topQty > 0 ? '#2563EB' : '#64748B', fontWeight: 700, marginTop: '2px' }}>
+                          {topQty > 0 ? `🍕 ${topQty} Combos Sold • ₹${topSales.toLocaleString()}` : '₹0 Sales'}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+                <div className="crm-kpi-icon-box" style={{ background: '#EFF6FF', color: '#1D4ED8', width: '50px', height: '50px' }}>
+                  <Package size={24} />
+                </div>
+              </div>
+
+              <div className="crm-kpi-card" style={{ background: '#FFFFFF', border: '1.5px solid #E2E8F0' }}>
+                <div>
+                  <div className="crm-kpi-label" style={{ fontWeight: 700, color: '#64748B', fontSize: '12.5px' }}>AVERAGE BILL VALUE (AOV)</div>
+                  <div style={{ fontSize: '22px', fontWeight: 900, color: '#059669', marginTop: '4px' }}>
+                    ₹{orders && orders.length > 0 ? Math.round(orders.reduce((s, o) => s + (Number(o.total) || 0), 0) / orders.length) : 0} / order
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 600, marginTop: '2px' }}>Calculated across total live orders</div>
+                </div>
+                <div className="crm-kpi-icon-box" style={{ background: '#ECFDF5', color: '#059669', width: '50px', height: '50px' }}>
+                  <CreditCard size={24} />
+                </div>
+              </div>
+
+              <div className="crm-kpi-card" style={{ background: '#FFFFFF', border: '1.5px solid #E2E8F0' }}>
+                <div>
+                  <div className="crm-kpi-label" style={{ fontWeight: 700, color: '#64748B', fontSize: '12.5px' }}>CUSTOMER REPEAT RATE</div>
+                  {(() => {
+                    const customerMap = {};
+                    (orders || []).forEach(o => {
+                      const key = o.customer || o.phone;
+                      if (!key) return;
+                      customerMap[key] = (customerMap[key] || 0) + 1;
+                    });
+                    const uniqueCount = Object.keys(customerMap).length;
+                    const repeatCount = Object.values(customerMap).filter(cnt => cnt > 1).length;
+                    const repeatRate = uniqueCount > 0 ? ((repeatCount / uniqueCount) * 100).toFixed(1) : '0.0';
+                    return (
+                      <>
+                        <div style={{ fontSize: '22px', fontWeight: 900, color: '#7C3AED', marginTop: '4px' }}>{repeatRate}%</div>
+                        <div style={{ fontSize: '12px', color: Number(repeatRate) > 0 ? '#7C3AED' : '#64748B', fontWeight: 700, marginTop: '2px' }}>
+                          {Number(repeatRate) > 0 ? '🎯 High Loyalty Retention' : 'No repeat orders recorded'}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+                <div className="crm-kpi-icon-box" style={{ background: '#F3E8FF', color: '#7C3AED', width: '50px', height: '50px' }}>
+                  <Users size={24} />
+                </div>
+              </div>
+            </div>
+
+            {/* 2. CUSTOMER GROUPS & COHORTS SEGMENTATION SECTION */}
+            <div style={{ background: '#FFFFFF', border: '1.5px solid #E2E8F0', borderRadius: '18px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px', boxShadow: '0 4px 16px rgba(0,0,0,0.03)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Users size={22} color="#FF5E14" />
+                    <span>Customer Intelligence Groups (Smart Cohorts)</span>
+                  </h3>
+                  <div style={{ fontSize: '13px', color: '#64748B', marginTop: '4px' }}>
+                    Automated user groups created using filters: Spending Range, Days of Week (Mon-Sun), &amp; Food Categories.
                   </div>
                 </div>
-                <div className="crm-progress-cat-list">
-                  {[
-                    { name: 'Fast Food / Pizzas', percent: 52, color: '#1570EF' },
-                    { name: 'Starters & Appetizers', percent: 24, color: '#F79009' },
-                    { name: 'Beverages & Drinks', percent: 14, color: '#12B76A' },
-                    { name: 'Desserts & Sweets', percent: 10, color: '#7A5AF8' },
-                  ].map((c, idx) => (
-                    <div key={idx} className="crm-cat-row">
-                      <div className="crm-cat-meta">
-                        <span>{c.name}</span>
-                        <span>{c.percent}%</span>
+
+                <button
+                  type="button"
+                  className="btn-create-order-primary"
+                  onClick={() => setIsAddGroupModalOpen(true)}
+                >
+                  <Plus size={18} />
+                  <span>+ Create Customer Group</span>
+                </button>
+              </div>
+
+              {/* GROUPS CARDS GRID */}
+              {customerGroups && customerGroups.length > 0 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
+                  {customerGroups.map((grp) => (
+                    <div
+                      key={grp.id}
+                      style={{
+                        background: '#F8FAFC',
+                        border: '1.5px solid #E2E8F0',
+                        borderRadius: '16px',
+                        padding: '18px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        position: 'relative',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                          <div style={{ fontSize: '16px', fontWeight: 900, color: '#0F172A' }}>{grp.name}</div>
+                          <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '2px' }}>{grp.description}</div>
+                        </div>
+                        <span style={{ fontSize: '12px', fontWeight: 800, padding: '3px 10px', borderRadius: '12px', background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
+                          {grp.memberIds ? grp.memberIds.length : 0} Members
+                        </span>
                       </div>
-                      <div className="crm-cat-bar-bg">
-                        <div className="crm-cat-bar-fill" style={{ width: `${c.percent}%`, background: c.color }} />
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', background: '#FFFFFF', padding: '10px 12px', borderRadius: '10px', border: '1px solid #E2E8F0', fontSize: '12.5px' }}>
+                        <div>
+                          <span style={{ color: '#64748B', display: 'block', fontSize: '11px', fontWeight: 700 }}>AVG BILL</span>
+                          <b style={{ color: '#059669', fontSize: '14px' }}>₹{grp.avgBill || 0}</b>
+                        </div>
+                        <div>
+                          <span style={{ color: '#64748B', display: 'block', fontSize: '11px', fontWeight: 700 }}>FAVORITE ITEM</span>
+                          <b style={{ color: '#0F172A', fontSize: '13px' }}>{grp.favoriteItem || 'N/A'}</b>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px' }}>
+                        <button
+                          type="button"
+                          className="crm-btn-secondary"
+                          style={{ fontSize: '12px', padding: '7px 8px', borderRadius: '8px' }}
+                          onClick={() => setActiveGroupDetail(grp)}
+                        >
+                          <Eye size={14} />
+                          <span>View Analytics</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-create-order-primary"
+                          style={{ fontSize: '12px', padding: '7px 8px', borderRadius: '8px' }}
+                          onClick={() => {
+                            setCampaignTargetGroup(grp.id);
+                            setActiveTab('marketing');
+                            addToast(`Switched to Marketing: Target group "${grp.name}" selected!`, <Sparkles size={16} />);
+                          }}
+                        >
+                          <Megaphone size={14} />
+                          <span>Target Offer</span>
+                        </button>
                       </div>
                     </div>
                   ))}
                 </div>
-              </div>
+              ) : (
+                <div style={{ padding: '36px 20px', textAlign: 'center', background: '#F8FAFC', borderRadius: '16px', border: '1.5px dashed #CBD5E1', color: '#64748B' }}>
+                  <Users size={32} color="#94A3B8" style={{ margin: '0 auto 8px auto', display: 'block' }} />
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: '#0F172A' }}>No Customer Intelligence Groups Created</div>
+                  <div style={{ fontSize: '13px', marginTop: '4px' }}>Click "+ Create Customer Group" above to add dynamic diner cohorts.</div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -2248,38 +3236,74 @@ export default function DashboardPage({ onShowToast }) {
                         transition: 'all 0.2s ease',
                       }}
                     >
-                      <div style={{ fontSize: '13.5px', fontWeight: 900, marginBottom: '6px' }}>
-                        {storeControls.restName || "Sharma's Kitchen"}
+                      <div style={{ fontSize: '15px', fontWeight: 900, marginBottom: '6px', letterSpacing: '-0.01em' }}>
+                        {storeControls.restName || "Lagan Da Dhaba"}
                       </div>
 
                       <div
                         style={{
-                          fontSize: '13.5px',
+                          fontSize: '13px',
                           fontWeight: 900,
                           padding: '4px 14px',
                           borderRadius: '16px',
                           backgroundColor: t.theme === 'luxury' ? '#F59E0B' : t.theme === 'neon' ? '#FFFFFF' : '#FF5E14',
                           color: t.theme === 'luxury' ? '#0F172A' : t.theme === 'neon' ? '#FF5E14' : '#FFFFFF',
-                          marginBottom: '12px',
+                          marginBottom: '10px',
                           letterSpacing: '0.04em',
+                          boxShadow: '0 3px 10px rgba(255, 94, 20, 0.25)',
+                          display: 'inline-block',
                         }}
                       >
                         {t.name || 'Table 1'}
                       </div>
 
-                      <QrCodeComponent
-                        text={targetUrl}
-                        size={145}
-                        qrColor={t.qrColor || '#1E293B'}
-                        cornerColor={t.cornerColor || '#FF5E14'}
-                        showLogo={true}
-                        logoUrl={t.logoUrl || storeControls.logoUrl || ''}
-                        bgColor={t.theme === 'luxury' ? '#1E293B' : '#FFFFFF'}
-                      />
+                      <div
+                        style={{
+                          padding: '10px',
+                          backgroundColor: '#FFFFFF',
+                          borderRadius: '16px',
+                          border: '1.5px solid #E2E8F0',
+                          boxShadow: '0 4px 14px rgba(0,0,0,0.05)',
+                          display: 'inline-flex',
+                        }}
+                      >
+                        <QrCodeComponent
+                          text={targetUrl}
+                          size={140}
+                          qrColor={t.qrColor || '#1E293B'}
+                          cornerColor={t.cornerColor || '#FF5E14'}
+                          showLogo={true}
+                          logoUrl={t.logoUrl || storeControls.logoUrl || ''}
+                          bgColor="#FFFFFF"
+                        />
+                      </div>
 
                       <div style={{ fontSize: '11px', marginTop: '10px', fontWeight: 700, opacity: 0.9, display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <QrCode size={13} />
                         <span>{t.purpose || 'Contactless Self Ordering'}</span>
+                      </div>
+
+                      {/* POWERED BY FOODYPAY BRANDING */}
+                      <div
+                        style={{
+                          marginTop: '10px',
+                          paddingTop: '8px',
+                          borderTop: t.theme === 'neon' ? '1px dashed rgba(255,255,255,0.3)' : '1px dashed #E2E8F0',
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '4px',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          color: t.theme === 'neon' ? '#FFFFFF' : '#64748B',
+                        }}
+                      >
+                        <Sparkles size={12} color={t.theme === 'neon' ? '#FFFFFF' : '#FF5E14'} />
+                        <span style={{ opacity: 0.85 }}>Powered by</span>
+                        <span style={{ color: t.theme === 'neon' ? '#FFFFFF' : '#FF5E14', fontWeight: 900, fontSize: '11.5px' }}>
+                          FoodyPay
+                        </span>
                       </div>
                     </div>
 
@@ -2336,31 +3360,178 @@ export default function DashboardPage({ onShowToast }) {
         {activeTab === 'marketing' && (
           <div style={{ padding: '32px 42px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div className="crm-marketing-container">
-            {/* 1. TODAY'S BIRTHDAY CUSTOMERS BANNER WITH CAKE ICON */}
-            <div className="crm-birthday-alert-card">
-              <div className="crm-birthday-alert-left">
-                <Cake size={44} color="#EA580C" style={{ flexShrink: 0 }} />
-                <div>
-                  <div className="crm-bday-title">
-                    {birthdayCustomers.length} Customers Celebrating Birthday Today: {birthdayCustomers.map((c) => c.name).join(', ')}!
-                  </div>
-                  <div className="crm-bday-subtitle">
-                    Automate birthday loyalty! Send a personalized WhatsApp greeting &amp; Push Offer: <b>Free Choco Lava Cake + 20% OFF (`BDAYSPECIAL`)</b>.
-                  </div>
+            {/* 1. TODAY'S BIRTHDAY CUSTOMERS BANNER WITH CAKE ICON & AUTO-SEND TOGGLE */}
+            <div className="crm-birthday-alert-card" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Top Controls Row: Auto-Send Switch & Edit Button */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px dashed #FED7AA', paddingBottom: '10px', flexWrap: 'wrap', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 800, color: '#C2410C', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Sparkles size={15} color="#EA580C" />
+                    <span>Automatic Birthday Offer Dispatch:</span>
+                  </span>
+
+                  {/* Switch Toggle */}
+                  <label className="crm-blue-switch" style={{ width: '46px', height: '24px' }}>
+                    <input
+                      type="checkbox"
+                      checked={bdayAutoSend}
+                      onChange={handleToggleBdayAutoSend}
+                    />
+                    <span className="crm-blue-slider" style={{ borderRadius: '24px' }} />
+                  </label>
+
+                  <span
+                    style={{
+                      fontSize: '12px',
+                      fontWeight: 800,
+                      padding: '3px 10px',
+                      borderRadius: '14px',
+                      backgroundColor: bdayAutoSend ? '#DCFCE7' : '#F1F5F9',
+                      color: bdayAutoSend ? '#15803D' : '#64748B',
+                      border: bdayAutoSend ? '1px solid #86EFAC' : '1px solid #CBD5E1',
+                    }}
+                  >
+                    {bdayAutoSend ? '🟢 AUTO-SEND ACTIVE' : '🔴 AUTO-SEND OFF (Manual Trigger Only)'}
+                  </span>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsEditBdayModalOpen(true)}
+                  style={{
+                    background: '#FFFFFF',
+                    border: '1.5px solid #FDBA74',
+                    color: '#C2410C',
+                    padding: '5px 12px',
+                    borderRadius: '8px',
+                    fontSize: '12.5px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <Edit3 size={14} color="#EA580C" />
+                  <span>Configure Birthday Offer &amp; Message</span>
+                </button>
               </div>
 
-              <button
-                type="button"
-                className="crm-btn-send-bday"
-                onClick={handleSendBirthdayPushNotification}
-              >
-                <Gift size={18} />
-                <span>Send Birthday Push Offer</span>
-              </button>
+              {/* Main Content Row */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+                <div className="crm-birthday-alert-left">
+                  <Cake size={44} color="#EA580C" style={{ flexShrink: 0 }} />
+                  <div>
+                    <div className="crm-bday-title">
+                      {birthdayCustomers.length} Customer(s) Celebrating Birthday Today{birthdayCustomers.length > 0 ? `: ${birthdayCustomers.map((c) => c.name).join(', ')}!` : '!'}
+                    </div>
+                    <div className="crm-bday-subtitle">
+                      Greeting &amp; Offer: <b>{bdayConfig.offerDetail}</b> (Promocode: <code>{bdayConfig.couponCode}</code>)
+                      <br />
+                      <span style={{ fontSize: '12.5px', opacity: 0.9 }}>
+                        Message: "{bdayConfig.message.replace('{name}', 'Diner').replace('{offer}', bdayConfig.offerDetail).replace('{code}', bdayConfig.couponCode).replace('{storeName}', storeControls.restName || 'FoodyPay Store')}"
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                  <button
+                    type="button"
+                    className="crm-btn-send-bday"
+                    onClick={handleSendBirthdayPushNotification}
+                  >
+                    <Gift size={18} />
+                    <span>Send Birthday Push Offer</span>
+                  </button>
+                  <span style={{ fontSize: '11.5px', color: '#C2410C', fontWeight: 700 }}>
+                    {bdayAutoSend ? '✓ Auto-sending is ACTIVE' : '⚠️ Auto-sending is OFF'}
+                  </span>
+                </div>
+              </div>
             </div>
 
-            {/* 2. ACTIVE COUPONS & PROMOCODES */}
+            {/* 2. TARGETED CUSTOMER GROUP CAMPAIGNS PANEL */}
+            <div style={{ background: '#FFFFFF', border: '1.5px solid #E2E8F0', borderRadius: '18px', padding: '22px', display: 'flex', flexDirection: 'column', gap: '16px', boxShadow: '0 4px 16px rgba(0,0,0,0.03)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Megaphone size={20} color="#1D4ED8" />
+                    <span>Targeted Group Campaign Execution</span>
+                  </h3>
+                  <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '2px' }}>
+                    Select customer group &amp; allocate coupons (Send to All or Random N Members for experimentation).
+                  </div>
+                </div>
+                <span style={{ fontSize: '12px', fontWeight: 800, color: '#15803D', background: '#DCFCE7', padding: '3px 10px', borderRadius: '12px' }}>
+                  ✓ Segment Campaign Active
+                </span>
+              </div>
+
+              <form onSubmit={handleDispatchTargetedCampaign} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', alignItems: 'end' }}>
+                <div className="crm-form-group" style={{ margin: 0 }}>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>1. Target Customer Group *</label>
+                  <select
+                    className="crm-input"
+                    value={campaignTargetGroup}
+                    onChange={(e) => setCampaignTargetGroup(e.target.value)}
+                  >
+                    {(customerGroups || []).map((grp) => (
+                      <option key={grp.id} value={grp.id}>
+                        {grp.name} ({grp.memberIds ? grp.memberIds.length : 3} Members)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="crm-form-group" style={{ margin: 0 }}>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>2. Select Coupon to Dispatch *</label>
+                  <select
+                    className="crm-input"
+                    value={campaignCouponCode}
+                    onChange={(e) => setCampaignCouponCode(e.target.value)}
+                  >
+                    {(coupons || []).map((cp) => (
+                      <option key={cp.code} value={cp.code}>
+                        {cp.code} - ({cp.discount})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="crm-form-group" style={{ margin: 0 }}>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>3. Allocation Strategy *</label>
+                  <select
+                    className="crm-input"
+                    value={campaignDispatchMode}
+                    onChange={(e) => setCampaignDispatchMode(e.target.value)}
+                  >
+                    <option value="all_group">Send to ALL Group Members</option>
+                    <option value="random_n">Selective / Random N Members</option>
+                  </select>
+                </div>
+
+                {campaignDispatchMode === 'random_n' && (
+                  <div className="crm-form-group" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Random N Members Count *</label>
+                    <input
+                      type="number"
+                      className="crm-input"
+                      placeholder="e.g. 2"
+                      value={campaignRandomCount}
+                      onChange={(e) => setCampaignRandomCount(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                <button type="submit" className="btn-create-order-primary" style={{ height: '42px' }}>
+                  <Sparkles size={16} />
+                  <span>Dispatch Campaign</span>
+                </button>
+              </form>
+            </div>
+
+            {/* 3. ACTIVE COUPONS & PROMOCODES */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h3 style={{ fontSize: '19px', fontWeight: 800, margin: '0 0 6px 0' }}>
@@ -2374,7 +3545,7 @@ export default function DashboardPage({ onShowToast }) {
               <button
                 type="button"
                 className="btn-create-order-primary"
-                onClick={() => setIsCreateCouponOpen(true)}
+                onClick={handleOpenCreateCoupon}
               >
                 <Plus size={18} />
                 <span>Create Coupon</span>
@@ -2382,20 +3553,146 @@ export default function DashboardPage({ onShowToast }) {
             </div>
 
             <div className="crm-coupons-grid">
-              {(coupons || []).map((coupon, idx) => (
-                <div key={coupon._id || coupon.id || idx} className="crm-coupon-card">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span className="crm-coupon-code-pill">{coupon.code}</span>
-                    <span className="crm-status-badge-green">● {coupon.status || 'Active'}</span>
+              {(coupons || []).map((coupon, idx) => {
+                const daysLeft = getDaysUntilExpiry(coupon.expiryDate);
+                const isExpiring = daysLeft >= 0 && daysLeft <= 5;
+
+                return (
+                  <div
+                    key={coupon._id || coupon.id || coupon.code || idx}
+                    className="crm-coupon-card"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      position: 'relative',
+                      border: isExpiring ? '2px solid #F97316' : '1.5px solid #E2E8F0',
+                      backgroundColor: isExpiring ? '#FFFBFA' : '#FFFFFF',
+                    }}
+                  >
+                    {/* 5-DAY EARLY EXPIRY WARNING BADGE */}
+                    {isExpiring && (
+                      <div
+                        style={{
+                          background: '#FFF7ED',
+                          border: '1px solid #FFEDD5',
+                          color: '#C2410C',
+                          fontSize: '11.5px',
+                          fontWeight: 800,
+                          padding: '5px 10px',
+                          borderRadius: '8px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '6px',
+                        }}
+                      >
+                        <span>⏱ EXPIRING SOON ({daysLeft === 0 ? 'Today' : `${daysLeft} days left`})</span>
+                        <button
+                          type="button"
+                          style={{
+                            background: '#EA580C',
+                            color: '#FFFFFF',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '3px 8px',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                          onClick={() =>
+                            addToast(
+                              `Expiry Warning Reminder for ${coupon.code} sent to targeted customer group!`,
+                              <Sparkles size={14} />
+                            )
+                          }
+                        >
+                          Send Warning
+                        </button>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="crm-coupon-code-pill">{coupon.code}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleCouponStatus(coupon)}
+                          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                          title="Click to toggle status"
+                        >
+                          <span className={coupon.status === 'Active' ? 'crm-status-badge-green' : 'crm-status-badge-red'}>
+                            ● {coupon.status || 'Active'}
+                          </span>
+                        </button>
+
+                        {/* EDIT BUTTON */}
+                        <button
+                          type="button"
+                          onClick={() => handleEditCoupon(coupon)}
+                          title="Edit Promocode"
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                            border: '1px solid #CBD5E1',
+                            background: '#FFFFFF',
+                            color: '#334155',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            transition: 'all 0.2s ease',
+                          }}
+                        >
+                          <Edit3 size={13} color="#2563EB" />
+                          <span>Edit</span>
+                        </button>
+
+                        {/* DELETE BUTTON */}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteCoupon(coupon)}
+                          title="Delete Promocode"
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                            border: '1px solid #FECACA',
+                            background: '#FEF2F2',
+                            color: '#DC2626',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            transition: 'all 0.2s ease',
+                          }}
+                        >
+                          <Trash2 size={13} color="#DC2626" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: '16.5px', fontWeight: 800, color: '#0F172A' }}>
+                      {coupon.discount}
+                    </div>
+                    <div style={{ fontSize: '12.5px', color: isExpiring ? '#EA580C' : '#64748B', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Clock size={13} />
+                      <span>{formatExpiryDisplay(coupon.expiryDate)}</span>
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#64748B', borderTop: '1px dashed #E2E8F0', paddingTop: '8px', marginTop: '2px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>Min. Order: <b>₹{coupon.minOrder || 0}</b></span>
+                      <span>Redeemed: <b>{coupon.uses || 0} times</b></span>
+                    </div>
                   </div>
-                  <div style={{ fontSize: '16.5px', fontWeight: 800, color: '#0F172A' }}>
-                    {coupon.discount}
-                  </div>
-                  <div style={{ fontSize: '13px', color: '#64748B' }}>
-                    Min. Order: <b>₹{coupon.minOrder || 199}</b> • Redeemed: <b>{coupon.uses || 0} times</b>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
             </div>
           </div>
@@ -2424,11 +3721,26 @@ export default function DashboardPage({ onShowToast }) {
             <div className="crm-cust-toolbar">
               <div className="crm-search-box">
                 <Search size={17} color="#94A3B8" />
-                <input type="text" placeholder="Search by Name/Mobile..." />
+                <input
+                  type="text"
+                  placeholder="Search by Name/Mobile..."
+                  value={custSearch}
+                  onChange={(e) => setCustSearch(e.target.value)}
+                />
               </div>
 
-              <div style={{ fontSize: '14px', color: '#64748B', fontWeight: 600 }}>
-                Sort: <b>Last Ordered At (Newest First)</b>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  className="btn-create-order-primary"
+                  onClick={() => {
+                    setNotifyAudienceMode('all_users');
+                    setIsCustomNotifyModalOpen(true);
+                  }}
+                >
+                  <Bell size={16} />
+                  <span>Send Notification Broadcast</span>
+                </button>
               </div>
             </div>
 
@@ -2439,11 +3751,15 @@ export default function DashboardPage({ onShowToast }) {
                   <th>Orders</th>
                   <th>Sale</th>
                   <th>Birthday</th>
-                  <th>Actions</th>
+                  <th>Last Ordered / Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {(customers || []).map((c, idx) => (
+                {((customers || []).filter((c) => {
+                  if (!c) return false;
+                  const q = (custSearch || '').toLowerCase();
+                  return (c.name || '').toLowerCase().includes(q) || (c.phone || '').toLowerCase().includes(q);
+                })).map((c, idx) => (
                   <tr key={c._id || c.id || idx}>
                     <td>
                       <div style={{ fontWeight: 800, color: '#0F172A' }}>{c.name}</div>
@@ -2462,33 +3778,42 @@ export default function DashboardPage({ onShowToast }) {
                           <span>Birthday Today!</span>
                         </span>
                       ) : (
-                        <span style={{ color: '#64748B' }}>{c.birthday}</span>
+                        <span style={{ color: '#64748B' }}>{c.birthday || 'Not Set'}</span>
                       )}
                     </td>
                     <td>
-                      <button
-                        type="button"
-                        style={{
-                          background: '#EFF8FF',
-                          border: '1.5px solid #B2DDFF',
-                          color: '#1D4ED8',
-                          padding: '7px 14px',
-                          borderRadius: '8px',
-                          fontSize: '13px',
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                        }}
-                        onClick={() => {
-                          addToast(`Offer notification sent to ${c.name} via WhatsApp & Push!`, <Check size={16} />);
-                          triggerSound(playOrderPlaced);
-                        }}
-                      >
-                        <Megaphone size={14} />
-                        <span>Send Offer</span>
-                      </button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '13px', color: '#475569', fontWeight: 600 }}>
+                          {c.lastOrdered || 'Recently'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedCustId(c.id || c._id);
+                            setNotifyAudienceMode('specific_user');
+                            setNotifyTitle(`🎁 Special Personal Offer for ${c.name}`);
+                            setNotifyMessage(`Hi ${c.name}! We have an exclusive offer for you at ${storeControls.restName || 'our store'}. Use code FEST20 for 20% OFF!`);
+                            setIsCustomNotifyModalOpen(true);
+                          }}
+                          style={{
+                            background: '#EFF6FF',
+                            border: '1px solid #BFDBFE',
+                            color: '#1D4ED8',
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            fontSize: '12px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                          title={`Send Personal Notification to ${c.name}`}
+                        >
+                          <Bell size={13} />
+                          <span>Notify</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -2500,17 +3825,23 @@ export default function DashboardPage({ onShowToast }) {
         {/* ==========================================================================
             VIEW 7: STORE CONTROLS (Ref: Image 5)
             ========================================================================== */}
+        {/* ==========================================================================
+            VIEW 7: STORE CONTROLS & SECURITY LOCKS
+            ========================================================================== */}
         {activeTab === 'store_controls' && (
-          <div className="crm-store-controls-page">
+          <div className="crm-store-controls-page" style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1000px' }}>
+            {/* Store Operations & Status */}
             <div className="crm-control-section-card">
-              <div className="crm-control-card-title">Controls</div>
+              <div className="crm-control-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <SlidersHorizontal size={20} color="#1D4ED8" /> Store Operations & Status
+              </div>
 
               {/* Store status */}
               <div className="crm-control-row">
                 <div className="crm-control-name-status">
-                  <span className="crm-control-label">Store status</span>
+                  <span className="crm-control-label">Store Outlet Status</span>
                   <span className={storeControls.storeStatus ? 'crm-status-badge-green' : 'crm-status-badge-gray'}>
-                    {storeControls.storeStatus ? 'Open' : 'Closed'}
+                    {storeControls.storeStatus ? '🟢 Open for Orders' : '🔴 Closed'}
                   </span>
                 </div>
                 <label className="crm-blue-switch">
@@ -2519,20 +3850,20 @@ export default function DashboardPage({ onShowToast }) {
                     checked={storeControls.storeStatus}
                     onChange={() => {
                       const next = !storeControls.storeStatus;
-                      setStoreControls({ ...storeControls, storeStatus: next });
-                      addToast(`Restaurant Store is now ${next ? 'OPEN' : 'CLOSED'}`);
+                      setStoreControls((prev) => ({ ...prev, storeStatus: next }));
+                      addToast(`Restaurant Outlet is now ${next ? 'OPEN' : 'CLOSED'}`);
                     }}
                   />
                   <span className="crm-blue-slider" />
                 </label>
               </div>
 
-              {/* Delivery status */}
+              {/* Direct Delivery status */}
               <div className="crm-control-row">
                 <div className="crm-control-name-status">
-                  <span className="crm-control-label">Delivery status</span>
+                  <span className="crm-control-label">Direct Delivery Status</span>
                   <span className={storeControls.deliveryStatus ? 'crm-status-badge-green' : 'crm-status-badge-gray'}>
-                    {storeControls.deliveryStatus ? 'Open' : 'Closed'}
+                    {storeControls.deliveryStatus ? '🟢 Accepting Delivery' : '🔴 Delivery Off'}
                   </span>
                 </div>
                 <label className="crm-blue-switch">
@@ -2541,7 +3872,7 @@ export default function DashboardPage({ onShowToast }) {
                     checked={storeControls.deliveryStatus}
                     onChange={() => {
                       const next = !storeControls.deliveryStatus;
-                      setStoreControls({ ...storeControls, deliveryStatus: next });
+                      setStoreControls((prev) => ({ ...prev, deliveryStatus: next }));
                       addToast(`Direct Delivery orders are now ${next ? 'OPEN' : 'CLOSED'}`);
                     }}
                   />
@@ -2549,12 +3880,12 @@ export default function DashboardPage({ onShowToast }) {
                 </label>
               </div>
 
-              {/* Pick up status */}
+              {/* Takeaway / Pickup status */}
               <div className="crm-control-row">
                 <div className="crm-control-name-status">
-                  <span className="crm-control-label">Pick up status</span>
+                  <span className="crm-control-label">Takeaway & Pickup Counter</span>
                   <span className={storeControls.pickupStatus ? 'crm-status-badge-green' : 'crm-status-badge-gray'}>
-                    {storeControls.pickupStatus ? 'Open' : 'Closed'}
+                    {storeControls.pickupStatus ? '🟢 Accepting Pickup' : '🔴 Pickup Off'}
                   </span>
                 </div>
                 <label className="crm-blue-switch">
@@ -2563,7 +3894,7 @@ export default function DashboardPage({ onShowToast }) {
                     checked={storeControls.pickupStatus}
                     onChange={() => {
                       const next = !storeControls.pickupStatus;
-                      setStoreControls({ ...storeControls, pickupStatus: next });
+                      setStoreControls((prev) => ({ ...prev, pickupStatus: next }));
                       addToast(`Takeaway / Pickup counter is now ${next ? 'OPEN' : 'CLOSED'}`);
                     }}
                   />
@@ -2572,12 +3903,312 @@ export default function DashboardPage({ onShowToast }) {
               </div>
             </div>
 
+            {/* Taxation & GST Rate Setup */}
             <div className="crm-control-section-card">
-              <div className="crm-control-card-title">Store settings</div>
+              <div className="crm-control-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Percent size={20} color="#16A34A" /> Taxation & GST Tax Rate Setup
+              </div>
+              <div style={{ fontSize: '13.5px', color: '#64748B', marginBottom: '14px' }}>
+                Set up automated GST tax calculation applied at checkout for all digital QR & counter orders.
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px', background: '#F8FAFC', padding: '16px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+                <div style={{ flex: 1, minWidth: '180px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#64748B', letterSpacing: '0.5px' }}>CURRENT ACTIVE GST RATE</div>
+                  <div style={{ fontSize: '24px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                    {storeControls.gstPercent || 5}% <span style={{ fontSize: '12px', fontWeight: 700, color: '#16A34A', background: '#DCFCE7', padding: '2px 8px', borderRadius: '12px' }}>F&B Compliant</span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {[5, 12, 18].map((rate) => (
+                    <button
+                      key={rate}
+                      type="button"
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: '8px',
+                        fontWeight: 700,
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        border: (storeControls.gstPercent || 5) === rate ? '2px solid #16A34A' : '1px solid #CBD5E1',
+                        background: (storeControls.gstPercent || 5) === rate ? '#DCFCE7' : '#FFFFFF',
+                        color: (storeControls.gstPercent || 5) === rate ? '#15803D' : '#334155',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onClick={() => {
+                        setStoreControls((prev) => ({ ...prev, gstPercent: rate }));
+                        addToast(`GST Tax Rate updated to ${rate}%!`, <Percent size={18} />);
+                      }}
+                    >
+                      {rate}% {rate === 5 ? '(Standard)' : rate === 12 ? '(AC Dining)' : '(Luxury)'}
+                    </button>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="number"
+                    min="0"
+                    max="40"
+                    value={storeControls.gstPercent !== undefined ? storeControls.gstPercent : 5}
+                    onChange={(e) => setStoreControls((prev) => ({ ...prev, gstPercent: Math.max(0, Math.min(40, Number(e.target.value) || 0)) }))}
+                    style={{ width: '70px', padding: '8px 10px', borderRadius: '8px', border: '1px solid #CBD5E1', fontWeight: 800, fontSize: '14px', textAlign: 'center' }}
+                  />
+                  <span style={{ fontSize: '14px', fontWeight: 700, color: '#475569' }}>%</span>
+                  <button
+                    type="button"
+                    style={{ padding: '8px 14px', borderRadius: '8px', background: '#0F172A', color: '#FFF', border: 'none', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+                    onClick={() => addToast(`Saved Custom GST Rate: ${storeControls.gstPercent || 0}%`, <Check size={16} />)}
+                  >
+                    Save Rate
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Clean Slate & Reset Data Card */}
+            <div className="crm-control-section-card" style={{ border: '1.5px solid #FECACA', background: '#FFF5F5' }}>
+              <div className="crm-control-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#DC2626' }}>
+                <Trash2 size={20} color="#DC2626" /> Clean Slate Database Reset
+              </div>
+              <div style={{ fontSize: '13.5px', color: '#64748B', marginBottom: '14px' }}>
+                Wipe all sample mock data (sample orders, sample reviews, sample meal combos, sample customers). Database will start completely 100% fresh for new orders!
+              </div>
+
+              <button
+                type="button"
+                onClick={handleClearAllSampleData}
+                style={{
+                  backgroundColor: '#DC2626',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  padding: '10px 18px',
+                  borderRadius: '10px',
+                  fontWeight: 800,
+                  fontSize: '13.5px',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(220, 38, 38, 0.25)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <Trash2 size={16} />
+                <span>🧹 Clear All Sample Data &amp; Reset Fresh</span>
+              </button>
+            </div>
+
+            {/* Security & Permission Locks */}
+            <div className="crm-control-section-card">
+              <div className="crm-control-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Lock size={20} color="#DC2626" /> Security & Permission Locks
+              </div>
+              <div style={{ fontSize: '13.5px', color: '#64748B', marginBottom: '14px' }}>
+                Lock down critical store modules to prevent unauthorized staff operations, coupon tampering, or table QR deletion.
+              </div>
+
+              {/* Lock Marketing & Coupon Builder */}
+              <div className="crm-control-row">
+                <div className="crm-control-name-status">
+                  <span className="crm-control-label">Lock Marketing & Promocode Builder</span>
+                  <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '2px' }}>
+                    Freeze creation, edit, and deletion of discount codes and campaign broadcasts.
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span className={storeControls.lockMarketingTab ? 'crm-status-badge-gray' : 'crm-status-badge-green'} style={{ color: storeControls.lockMarketingTab ? '#DC2626' : '#16A34A', background: storeControls.lockMarketingTab ? '#FEE2E2' : '#DCFCE7', fontWeight: 700 }}>
+                    {storeControls.lockMarketingTab ? '🔒 Locked' : '🔓 Active'}
+                  </span>
+                  <label className="crm-blue-switch">
+                    <input
+                      type="checkbox"
+                      checked={storeControls.lockMarketingTab}
+                      onChange={() => {
+                        const next = !storeControls.lockMarketingTab;
+                        setStoreControls((prev) => ({ ...prev, lockMarketingTab: next }));
+                        addToast(next ? '🔒 Marketing & Promocode Engine LOCKED!' : '🔓 Marketing Engine UNLOCKED!', <Lock size={18} />);
+                      }}
+                    />
+                    <span className="crm-blue-slider" />
+                  </label>
+                </div>
+              </div>
+
+              {/* Lock Table QR Standees CRUD */}
+              <div className="crm-control-row">
+                <div className="crm-control-name-status">
+                  <span className="crm-control-label">Lock Table QR Code CRUD Operations</span>
+                  <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '2px' }}>
+                    Prevent staff from adding, editing, or deleting active table QR standees.
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span className={storeControls.lockTableCrud ? 'crm-status-badge-gray' : 'crm-status-badge-green'} style={{ color: storeControls.lockTableCrud ? '#DC2626' : '#16A34A', background: storeControls.lockTableCrud ? '#FEE2E2' : '#DCFCE7', fontWeight: 700 }}>
+                    {storeControls.lockTableCrud ? '🔒 Locked' : '🔓 Active'}
+                  </span>
+                  <label className="crm-blue-switch">
+                    <input
+                      type="checkbox"
+                      checked={storeControls.lockTableCrud}
+                      onChange={() => {
+                        const next = !storeControls.lockTableCrud;
+                        setStoreControls((prev) => ({ ...prev, lockTableCrud: next }));
+                        addToast(next ? '🔒 Table QR Modifications LOCKED!' : '🔓 Table QR Operations UNLOCKED!', <Lock size={18} />);
+                      }}
+                    />
+                    <span className="crm-blue-slider" />
+                  </label>
+                </div>
+              </div>
+
+              {/* Lock Order Deletion & Voiding */}
+              <div className="crm-control-row">
+                <div className="crm-control-name-status">
+                  <span className="crm-control-label">Lock Order Deletion & Voiding</span>
+                  <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '2px' }}>
+                    Disable cashier ability to delete, erase, or void placed customer orders.
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span className={storeControls.lockOrderDeletion ? 'crm-status-badge-gray' : 'crm-status-badge-green'} style={{ color: storeControls.lockOrderDeletion ? '#DC2626' : '#16A34A', background: storeControls.lockOrderDeletion ? '#FEE2E2' : '#DCFCE7', fontWeight: 700 }}>
+                    {storeControls.lockOrderDeletion ? '🔒 Locked' : '🔓 Active'}
+                  </span>
+                  <label className="crm-blue-switch">
+                    <input
+                      type="checkbox"
+                      checked={storeControls.lockOrderDeletion}
+                      onChange={() => {
+                        const next = !storeControls.lockOrderDeletion;
+                        setStoreControls((prev) => ({ ...prev, lockOrderDeletion: next }));
+                        addToast(next ? '🔒 Order Deletion & Voiding LOCKED!' : '🔓 Order Deletion UNLOCKED!', <Lock size={18} />);
+                      }}
+                    />
+                    <span className="crm-blue-slider" />
+                  </label>
+                </div>
+              </div>
+
+              {/* Lock Store Settings Panel */}
+              <div className="crm-control-row">
+                <div className="crm-control-name-status">
+                  <span className="crm-control-label">Lock Store Settings Panel</span>
+                  <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '2px' }}>
+                    Protect store controls, UPI configuration, and business details with password lock.
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span className={storeControls.lockSettingsPanel ? 'crm-status-badge-gray' : 'crm-status-badge-green'} style={{ color: storeControls.lockSettingsPanel ? '#DC2626' : '#16A34A', background: storeControls.lockSettingsPanel ? '#FEE2E2' : '#DCFCE7', fontWeight: 700 }}>
+                    {storeControls.lockSettingsPanel ? '🔒 Locked' : '🔓 Active'}
+                  </span>
+                  <label className="crm-blue-switch">
+                    <input
+                      type="checkbox"
+                      checked={storeControls.lockSettingsPanel}
+                      onChange={() => {
+                        const next = !storeControls.lockSettingsPanel;
+                        setStoreControls((prev) => ({ ...prev, lockSettingsPanel: next }));
+                        addToast(next ? '🔒 Store Settings Panel LOCKED!' : '🔓 Store Settings UNLOCKED!', <Lock size={18} />);
+                      }}
+                    />
+                    <span className="crm-blue-slider" />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Store Profile & Configuration */}
+            <div className="crm-control-section-card">
+              <div className="crm-control-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Store size={20} color="#6366F1" /> Store Profile & Merchant Credentials
+              </div>
+
+              {/* Store Logo Config Row */}
+              <div className="crm-control-row">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  {storeControls.logoUrl && !logoImgFailed ? (
+                    <img
+                      src={storeControls.logoUrl}
+                      alt="Store Logo"
+                      style={{ width: '44px', height: '44px', borderRadius: '10px', objectFit: 'cover', border: '1px solid #CBD5E1' }}
+                      onError={() => setLogoImgFailed(true)}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: '44px',
+                        height: '44px',
+                        borderRadius: '10px',
+                        background: 'linear-gradient(135deg, #FF5E14 0%, #D97706 100%)',
+                        color: '#FFFFFF',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 900,
+                        fontSize: '18px',
+                      }}
+                    >
+                      <Utensils size={22} color="#FFFFFF" />
+                    </div>
+                  )}
+
+                  <div>
+                    <div className="crm-control-label">Restaurant Brand Logo</div>
+                    <div style={{ fontSize: '12.5px', color: '#64748B' }}>
+                      {storeControls.logoUrl && !logoImgFailed ? 'Custom logo active' : 'Default vibrant logo badge active'}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="text"
+                    placeholder="Paste Logo Image URL..."
+                    value={storeControls.logoUrl || ''}
+                    onChange={(e) => {
+                      const url = e.target.value;
+                      setLogoImgFailed(false);
+                      setStoreControls((prev) => ({ ...prev, logoUrl: url }));
+                    }}
+                    style={{ width: '220px', padding: '7px 10px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '12.5px' }}
+                  />
+                  <button
+                    type="button"
+                    style={{ padding: '7px 14px', borderRadius: '8px', background: '#1D4ED8', color: '#FFFFFF', border: 'none', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer' }}
+                    onClick={() => {
+                      addToast('Saved Store Brand Logo!', <Check size={16} />);
+                    }}
+                  >
+                    Save Logo
+                  </button>
+                </div>
+              </div>
 
               <div className="crm-control-row">
                 <div>
-                  <div className="crm-control-label">Store type</div>
+                  <div className="crm-control-label">FoodyPay Merchant ID</div>
+                  <div style={{ fontSize: '13.5px', color: '#64748B', fontWeight: 700 }}>{storeControls.foodypayId}</div>
+                </div>
+                <span className="crm-status-badge-green">Verified Merchant</span>
+              </div>
+
+              <div className="crm-control-row">
+                <div>
+                  <div className="crm-control-label">Restaurant Business Name</div>
+                  <div style={{ fontSize: '13.5px', color: '#64748B', fontWeight: 700 }}>{storeControls.restName}</div>
+                </div>
+                <button
+                  type="button"
+                  style={{ color: '#1D4ED8', background: 'none', border: 'none', fontWeight: 800, cursor: 'pointer' }}
+                  onClick={() => addToast('Store details saved in FoodyPay Profile!')}
+                >
+                  Edit Name
+                </button>
+              </div>
+
+              <div className="crm-control-row">
+                <div>
+                  <div className="crm-control-label">Store Type</div>
                   <div style={{ fontSize: '13.5px', color: '#64748B' }}>{storeControls.storeType}</div>
                 </div>
                 <button
@@ -2591,18 +4222,940 @@ export default function DashboardPage({ onShowToast }) {
 
               <div className="crm-control-row">
                 <div>
-                  <div className="crm-control-label">UPI Receiver ID</div>
-                  <div style={{ fontSize: '13.5px', color: '#64748B' }}>{storeControls.upiId}</div>
+                  <div className="crm-control-label">UPI Receiver Virtual Address</div>
+                  <div style={{ fontSize: '13.5px', color: '#64748B', fontWeight: 700 }}>{storeControls.upiId}</div>
                 </div>
                 <button
                   type="button"
                   style={{ color: '#1D4ED8', background: 'none', border: 'none', fontWeight: 800, cursor: 'pointer' }}
-                  onClick={() => addToast('UPI linked with ICICI Bank!')}
+                  onClick={() => addToast('UPI Receiver ID linked with ICICI Bank settlement account!')}
                 >
-                  Edit
+                  Edit UPI
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ==========================================================================
+            VIEW 8: CUSTOMER REVIEWS & FEEDBACK
+            ========================================================================== */}
+        {activeTab === 'customer_reviews' && (
+          <div className="crm-reviews-page" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Header Title Bar */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', background: '#FFFFFF', padding: '20px 24px', borderRadius: '16px', border: '1px solid #E2E8F0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '22px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Star size={26} color="#F59E0B" fill="#F59E0B" /> Customer Reviews & Diner Feedback
+                </h2>
+                <div style={{ fontSize: '13.5px', color: '#64748B', marginTop: '4px' }}>
+                  Live ratings, reviews, and feedback collected from digital QR standees and counter checkouts.
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <button
+                  type="button"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 18px',
+                    borderRadius: '10px',
+                    background: '#1D4ED8',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    fontWeight: 800,
+                    fontSize: '13.5px',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(29, 78, 216, 0.25)',
+                  }}
+                  onClick={() => {
+                    setNewReviewForm({
+                      customerName: '',
+                      customerPhone: '',
+                      rating: 5,
+                      feedback: '',
+                      dishOrdered: 'Paneer Butter Masala',
+                      tableNo: 'Table 1',
+                    });
+                    setIsAddReviewModalOpen(true);
+                  }}
+                >
+                  <Plus size={18} /> Add Customer Feedback
+                </button>
+              </div>
+            </div>
+
+            {/* Top Analytics Summary Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+              {/* Overall Rating Score */}
+              <div style={{ background: '#FFFFFF', padding: '20px', borderRadius: '14px', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ background: '#FEF3C7', padding: '14px', borderRadius: '12px', color: '#D97706', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Star size={32} fill="#F59E0B" color="#F59E0B" />
+                </div>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>AVERAGE RATING</div>
+                  <div style={{ fontSize: '28px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'baseline', gap: '6px', marginTop: '2px' }}>
+                    {((reviews.reduce((acc, r) => acc + (Number(r.rating) || 5), 0) / (reviews.length || 1))).toFixed(1)}{' '}
+                    <span style={{ fontSize: '14px', color: '#64748B', fontWeight: 600 }}>/ 5.0</span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#16A34A', fontWeight: 700, marginTop: '2px' }}>
+                    Based on {reviews.length} verified ratings
+                  </div>
+                </div>
+              </div>
+
+              {/* Total Feedback Count */}
+              <div style={{ background: '#FFFFFF', padding: '20px', borderRadius: '14px', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ background: '#EFF6FF', padding: '14px', borderRadius: '12px', color: '#1D4ED8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <MessageSquare size={32} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>TOTAL REVIEWS</div>
+                  <div style={{ fontSize: '28px', fontWeight: 900, color: '#0F172A', marginTop: '2px' }}>
+                    {reviews.length}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 600, marginTop: '2px' }}>
+                    {reviews.filter((r) => r.reply).length} Replied by Store
+                  </div>
+                </div>
+              </div>
+
+              {/* Positive Sentiment Rate */}
+              <div style={{ background: '#FFFFFF', padding: '20px', borderRadius: '14px', border: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ background: '#DCFCE7', padding: '14px', borderRadius: '12px', color: '#16A34A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <ThumbsUp size={32} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>POSITIVE SATISFACTION</div>
+                  <div style={{ fontSize: '28px', fontWeight: 900, color: '#16A34A', marginTop: '2px' }}>
+                    {Math.round((reviews.filter((r) => r.rating >= 4).length / (reviews.length || 1)) * 100)}%
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#15803D', fontWeight: 700, marginTop: '2px' }}>
+                    4★ & 5★ Ratings
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Search & Filter Controls Bar */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', background: '#FFFFFF', padding: '16px 20px', borderRadius: '14px', border: '1px solid #E2E8F0' }}>
+              {/* Search Box */}
+              <div style={{ position: 'relative', flex: 1, minWidth: '240px' }}>
+                <Search size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
+                <input
+                  type="text"
+                  placeholder="Search reviews by customer name, phone, feedback or dish..."
+                  value={reviewSearch}
+                  onChange={(e) => setReviewSearch(e.target.value)}
+                  style={{
+                    width: '100%',
+                    paddingLeft: '40px',
+                    paddingRight: '14px',
+                    paddingTop: '10px',
+                    paddingBottom: '10px',
+                    borderRadius: '10px',
+                    border: '1px solid #CBD5E1',
+                    fontSize: '13.5px',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              {/* Rating Filter Pills */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                <button
+                  type="button"
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '8px',
+                    fontSize: '12.5px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    border: reviewRatingFilter === 'all' ? '2px solid #1D4ED8' : '1px solid #CBD5E1',
+                    background: reviewRatingFilter === 'all' ? '#EFF6FF' : '#FFFFFF',
+                    color: reviewRatingFilter === 'all' ? '#1D4ED8' : '#475569',
+                  }}
+                  onClick={() => setReviewRatingFilter('all')}
+                >
+                  All ({reviews.length})
+                </button>
+                {[5, 4, 3, 2, 1].map((star) => {
+                  const cnt = reviews.filter((r) => Number(r.rating) === star).length;
+                  return (
+                    <button
+                      key={star}
+                      type="button"
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '8px',
+                        fontSize: '12.5px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        border: reviewRatingFilter === star ? '2px solid #F59E0B' : '1px solid #CBD5E1',
+                        background: reviewRatingFilter === star ? '#FEF3C7' : '#FFFFFF',
+                        color: reviewRatingFilter === star ? '#D97706' : '#475569',
+                      }}
+                      onClick={() => setReviewRatingFilter(star)}
+                    >
+                      <span>{star}</span> <Star size={12} fill="#F59E0B" color="#F59E0B" /> ({cnt})
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Sentiment Filter Dropdown */}
+              <select
+                value={reviewSentimentFilter}
+                onChange={(e) => setReviewSentimentFilter(e.target.value)}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '10px',
+                  border: '1px solid #CBD5E1',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  color: '#334155',
+                  background: '#FFFFFF',
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="all">All Sentiments</option>
+                <option value="positive">🟢 Positive Only</option>
+                <option value="neutral">🟡 Neutral Only</option>
+                <option value="negative">🔴 Critical / Negative</option>
+              </select>
+            </div>
+
+            {/* Reviews Cards List */}
+            {(() => {
+              const filteredList = reviews.filter((r) => {
+                if (!r) return false;
+                if (reviewRatingFilter !== 'all' && Number(r.rating) !== Number(reviewRatingFilter)) return false;
+                if (reviewSentimentFilter !== 'all' && r.sentiment !== reviewSentimentFilter) return false;
+                if (reviewSearch.trim()) {
+                  const q = reviewSearch.toLowerCase().trim();
+                  const nameMatch = (r.customerName || '').toLowerCase().includes(q);
+                  const phoneMatch = (r.customerPhone || '').toLowerCase().includes(q);
+                  const feedbackMatch = (r.feedback || '').toLowerCase().includes(q);
+                  const dishMatch = (r.dishOrdered || '').toLowerCase().includes(q);
+                  if (!nameMatch && !phoneMatch && !feedbackMatch && !dishMatch) return false;
+                }
+                return true;
+              });
+
+              if (filteredList.length === 0) {
+                return (
+                  <div style={{ background: '#FFFFFF', padding: '40px', borderRadius: '16px', border: '1px solid #E2E8F0', textAlign: 'center' }}>
+                    <Frown size={48} color="#94A3B8" style={{ marginBottom: '12px' }} />
+                    <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: '#334155' }}>No reviews found</h3>
+                    <div style={{ fontSize: '13px', color: '#64748B', marginTop: '4px' }}>
+                      Try adjusting your search query or rating filter options.
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {filteredList.map((r) => {
+                    const stars = Array.from({ length: 5 }, (_, i) => i < r.rating);
+                    const isPos = r.rating >= 4 || r.sentiment === 'positive';
+                    const isNeu = r.rating === 3 || r.sentiment === 'neutral';
+
+                    return (
+                      <div
+                        key={r.id}
+                        style={{
+                          background: '#FFFFFF',
+                          padding: '20px 24px',
+                          borderRadius: '16px',
+                          border: '1px solid #E2E8F0',
+                          boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '14px',
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        {/* Top Card Bar: Customer Info + Rating */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                            <div
+                              style={{
+                                width: '44px',
+                                height: '44px',
+                                borderRadius: '50%',
+                                background: isPos ? '#DCFCE7' : isNeu ? '#FEF3C7' : '#FEE2E2',
+                                color: isPos ? '#15803D' : isNeu ? '#D97706' : '#DC2626',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 900,
+                                fontSize: '16px',
+                              }}
+                            >
+                              {(r.customerName || 'G').charAt(0).toUpperCase()}
+                            </div>
+
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '16px', fontWeight: 900, color: '#0F172A' }}>{r.customerName}</span>
+                                <span style={{ fontSize: '12px', background: '#F1F5F9', padding: '2px 8px', borderRadius: '12px', color: '#475569', fontWeight: 600 }}>
+                                  {r.tableNo || 'Table 1'}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span>📱 {r.customerPhone}</span>
+                                <span>•</span>
+                                <span>🕒 {r.date}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Rating Stars & Sentiment Badge */}
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                              {stars.map((filled, idx) => (
+                                <Star
+                                  key={idx}
+                                  size={18}
+                                  fill={filled ? '#F59E0B' : 'none'}
+                                  color={filled ? '#F59E0B' : '#CBD5E1'}
+                                />
+                              ))}
+                              <span style={{ fontSize: '14px', fontWeight: 900, color: '#0F172A', marginLeft: '6px' }}>
+                                {r.rating}.0
+                              </span>
+                            </div>
+
+                            <span
+                              style={{
+                                fontSize: '11px',
+                                fontWeight: 800,
+                                padding: '2px 8px',
+                                borderRadius: '10px',
+                                background: isPos ? '#DCFCE7' : isNeu ? '#FEF3C7' : '#FEE2E2',
+                                color: isPos ? '#15803D' : isNeu ? '#D97706' : '#DC2626',
+                              }}
+                            >
+                              {isPos ? '🟢 Positive Review' : isNeu ? '🟡 Neutral Feedback' : '🔴 Critical Review'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Feedback Content Text Quote */}
+                        <div
+                          style={{
+                            background: '#F8FAFC',
+                            padding: '14px 16px',
+                            borderRadius: '12px',
+                            borderLeft: `4px solid ${isPos ? '#16A34A' : isNeu ? '#F59E0B' : '#DC2626'}`,
+                            fontSize: '14px',
+                            color: '#1E293B',
+                            lineHeight: '1.5',
+                            fontWeight: 500,
+                          }}
+                        >
+                          "{r.feedback}"
+                        </div>
+
+                        {/* Ordered Item Tags */}
+                        {r.dishOrdered && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', color: '#475569', fontWeight: 600 }}>
+                            <Utensils size={14} color="#64748B" />
+                            <span>Ordered Items:</span>
+                            <span style={{ background: '#EFF6FF', color: '#1D4ED8', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>
+                              {r.dishOrdered}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Merchant Store Reply Section */}
+                        {r.reply ? (
+                          <div
+                            style={{
+                              background: '#F0FDFA',
+                              padding: '12px 16px',
+                              borderRadius: '12px',
+                              border: '1px solid #CCFBF1',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px',
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ fontSize: '12px', fontWeight: 800, color: '#0D9488', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <Store size={14} /> Store Response from Merchant
+                              </div>
+                              <button
+                                type="button"
+                                style={{ background: 'none', border: 'none', color: '#0D9488', fontSize: '12px', fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}
+                                onClick={() => {
+                                  setActiveReplyReview(r);
+                                  setReplyTextInput(r.reply || '');
+                                  setIsReplyModalOpen(true);
+                                }}
+                              >
+                                Edit Reply
+                              </button>
+                            </div>
+                            <div style={{ fontSize: '13px', color: '#115E59', fontWeight: 600 }}>
+                              "{r.reply}"
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px' }}>
+                            <span style={{ fontSize: '12px', color: '#94A3B8', fontStyle: 'italic' }}>
+                              No reply sent yet to customer
+                            </span>
+                            <button
+                              type="button"
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '6px 14px',
+                                borderRadius: '8px',
+                                background: '#F1F5F9',
+                                color: '#1E293B',
+                                border: '1px solid #CBD5E1',
+                                fontSize: '12.5px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                              }}
+                              onClick={() => {
+                                setActiveReplyReview(r);
+                                setReplyTextInput('');
+                                setIsReplyModalOpen(true);
+                              }}
+                            >
+                              <MessageSquare size={14} /> Reply to Customer
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* ==========================================================================
+            VIEW 9: CATALOG COLLECTIONS — CUSTOM MEALS & COMBOS BUILDER
+            ========================================================================== */}
+        {activeTab === 'catalog_collections' && (
+          <div className="crm-collections-page" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Header Title Bar */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', background: '#FFFFFF', padding: '20px 24px', borderRadius: '16px', border: '1px solid #E2E8F0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '22px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Utensils size={26} color="#FF5E14" /> Meal Collections & Custom Combo Builder
+                </h2>
+                <div style={{ fontSize: '13.5px', color: '#64748B', marginTop: '4px' }}>
+                  Create custom meal bundles with food photos, itemized individual price breakdown, and special discounted combo price.
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <button
+                  type="button"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 18px',
+                    borderRadius: '10px',
+                    background: '#FF5E14',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    fontWeight: 800,
+                    fontSize: '13.5px',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(255, 94, 20, 0.25)',
+                  }}
+                  onClick={handleOpenCreateMeal}
+                >
+                  <Plus size={18} /> + Create Custom Meal Combo
+                </button>
+              </div>
+            </div>
+
+            {/* Custom Meals Grid Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px' }}>
+              {mealsCollection.map((meal) => {
+                const totalIndividualSum = (meal.items || []).reduce(
+                  (sum, it) => sum + (Number(it.individualPrice) || 0) * (Number(it.qty) || 1),
+                  0
+                );
+                const comboPrice = Number(meal.comboPrice) || totalIndividualSum;
+                const savings = Math.max(0, totalIndividualSum - comboPrice);
+                const savingsPct = totalIndividualSum > 0 ? Math.round((savings / totalIndividualSum) * 100) : 0;
+
+                return (
+                  <div
+                    key={meal.id}
+                    style={{
+                      background: '#FFFFFF',
+                      borderRadius: '18px',
+                      border: '1px solid #E2E8F0',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
+                      overflow: 'hidden',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                    }}
+                  >
+                    {/* Meal Photo Header */}
+                    <div style={{ position: 'relative', height: '190px', width: '100%', background: '#F1F5F9', overflow: 'hidden' }}>
+                      <img
+                        src={meal.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=600&auto=format&fit=crop&q=80'}
+                        alt={meal.name}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                      <div style={{ position: 'absolute', top: '12px', left: '12px', display: 'flex', gap: '8px' }}>
+                        <span style={{ background: '#0F172A', color: '#FFFFFF', fontSize: '11px', fontWeight: 800, padding: '4px 10px', borderRadius: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          {meal.category || 'Meal Combo'}
+                        </span>
+                      </div>
+
+                      {savings > 0 && (
+                        <div style={{ position: 'absolute', top: '12px', right: '12px', background: '#DC2626', color: '#FFFFFF', fontSize: '12px', fontWeight: 900, padding: '4px 10px', borderRadius: '12px', boxShadow: '0 2px 6px rgba(220, 38, 38, 0.4)' }}>
+                          🔥 SAVE ₹{savings} ({savingsPct}% OFF)
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Meal Body Content */}
+                    <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', flex: 1, gap: '14px' }}>
+                      <div>
+                        <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900, color: '#0F172A' }}>{meal.name}</h3>
+                        <div style={{ fontSize: '13px', color: '#64748B', marginTop: '4px', lineHeight: '1.4' }}>
+                          {meal.description}
+                        </div>
+                      </div>
+
+                      {/* Itemized Food Breakdown List with Individual Prices */}
+                      <div style={{ background: '#F8FAFC', padding: '12px 14px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 800, color: '#64748B', letterSpacing: '0.5px', marginBottom: '8px', textTransform: 'uppercase', display: 'flex', justifyContent: 'space-between' }}>
+                          <span>INCLUDED FOOD ITEMS ({(meal.items || []).length})</span>
+                          <span>INDIVIDUAL PRICE</span>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {(meal.items || []).map((it, i) => (
+                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', color: '#334155' }}>
+                              <span style={{ fontWeight: 600 }}>
+                                • {it.name} <span style={{ color: '#64748B', fontSize: '12px' }}>(x{it.qty || 1})</span>
+                              </span>
+                              <span style={{ fontWeight: 700, color: '#475569' }}>
+                                ₹{(Number(it.individualPrice) || 0) * (Number(it.qty) || 1)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px dashed #CBD5E1', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12.5px', fontWeight: 700, color: '#64748B' }}>
+                          <span>Total Items Individual Value:</span>
+                          <span style={{ textDecoration: savings > 0 ? 'line-through' : 'none', color: savings > 0 ? '#94A3B8' : '#334155', fontWeight: 800 }}>
+                            ₹{totalIndividualSum}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Combo Pricing & Discount Footer Banner */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#DCFCE7', padding: '12px 16px', borderRadius: '12px', border: '1px solid #BBF7D0', marginTop: 'auto' }}>
+                        <div>
+                          <div style={{ fontSize: '11px', fontWeight: 800, color: '#15803D', textTransform: 'uppercase' }}>SPECIAL MEAL BUNDLE PRICE</div>
+                          <div style={{ fontSize: '22px', fontWeight: 900, color: '#15803D' }}>
+                            ₹{comboPrice}
+                          </div>
+                        </div>
+
+                        <div style={{ textAlign: 'right' }}>
+                          <button
+                            type="button"
+                            style={{
+                              padding: '6px 12px',
+                              borderRadius: '8px',
+                              background: '#16A34A',
+                              color: '#FFFFFF',
+                              border: 'none',
+                              fontSize: '12px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                            }}
+                            onClick={() => addToast(`Order ${meal.name} Combo added to POS cart!`, <Check size={16} />)}
+                          >
+                            Select Meal Combo
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Card Action Buttons */}
+                      <div style={{ display: 'flex', gap: '8px', paddingTop: '4px' }}>
+                        <button
+                          type="button"
+                          style={{
+                            flex: 1,
+                            padding: '8px',
+                            borderRadius: '8px',
+                            background: '#F1F5F9',
+                            color: '#1E293B',
+                            border: '1px solid #CBD5E1',
+                            fontSize: '12.5px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px',
+                          }}
+                          onClick={() => handleOpenEditMeal(meal)}
+                        >
+                          <Edit3 size={14} /> Edit Meal
+                        </button>
+
+                        <button
+                          type="button"
+                          style={{
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            background: '#FEE2E2',
+                            color: '#DC2626',
+                            border: '1px solid #FECACA',
+                            fontSize: '12.5px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                          onClick={() => handleDeleteMeal(meal.id, meal.name)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ==========================================================================
+            VIEW 10: KITCHEN DISPLAY SYSTEM (KDS / COOKING DISPLAY)
+            ========================================================================== */}
+        {activeTab === 'kitchen' && (
+          <div className="crm-kitchen-kds-page" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* Header Title Bar */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', background: '#FFFFFF', padding: '20px 24px', borderRadius: '16px', border: '1px solid #E2E8F0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '22px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <ChefHat size={28} color="#FF5E14" /> Kitchen Display System (KDS Live Orders)
+                </h2>
+                <div style={{ fontSize: '13.5px', color: '#64748B', marginTop: '4px' }}>
+                  Real-time kitchen order cards with item photos, customer details, table numbers, and 1-click "Start Cooking" & "Mark Ready" status buttons.
+                </div>
+              </div>
+
+              {/* Kitchen Filter Tabs */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {[
+                  { key: 'all', label: `All Kitchen Orders (${(orders || []).filter((o) => o && o.status !== 'completed').length})` },
+                  { key: 'new', label: `🔥 New Orders (${(orders || []).filter((o) => o && o.status === 'new').length})` },
+                  { key: 'preparing', label: `👨‍🍳 Cooking In Progress (${(orders || []).filter((o) => o && o.status === 'preparing').length})` },
+                  { key: 'ready', label: `✅ Ready for Service (${(orders || []).filter((o) => o && o.status === 'ready').length})` },
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: '10px',
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      border: kitchenFilter === tab.key ? '2px solid #FF5E14' : '1px solid #CBD5E1',
+                      background: kitchenFilter === tab.key ? '#FFF0EB' : '#FFFFFF',
+                      color: kitchenFilter === tab.key ? '#FF5E14' : '#475569',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onClick={() => setKitchenFilter(tab.key)}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Kitchen Orders Cards Grid */}
+            {(() => {
+              const activeKitchenOrders = (orders || []).filter((o) => {
+                if (!o) return false;
+                if (kitchenFilter === 'all') return o.status !== 'completed';
+                return o.status === kitchenFilter;
+              });
+
+              if (activeKitchenOrders.length === 0) {
+                return (
+                  <div style={{ background: '#FFFFFF', padding: '50px', borderRadius: '16px', border: '1px solid #E2E8F0', textAlign: 'center' }}>
+                    <ChefHat size={56} color="#CBD5E1" style={{ marginBottom: '14px' }} />
+                    <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#334155' }}>No Active Kitchen Orders</h3>
+                    <div style={{ fontSize: '13.5px', color: '#64748B', marginTop: '6px' }}>
+                      All kitchen orders have been prepared and served cleanly!
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px' }}>
+                  {activeKitchenOrders.map((ord) => {
+                    const isNew = ord.status === 'new';
+                    const isCooking = ord.status === 'preparing';
+                    const isReady = ord.status === 'ready';
+
+                    return (
+                      <div
+                        key={ord.id || ord._id}
+                        style={{
+                          background: '#FFFFFF',
+                          borderRadius: '18px',
+                          border: isNew ? '2px solid #F97316' : isCooking ? '2px solid #1D4ED8' : '2px solid #16A34A',
+                          boxShadow: '0 4px 14px rgba(0,0,0,0.04)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          overflow: 'hidden',
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        {/* Card Top Header: Order ID + Table No + Time */}
+                        <div
+                          style={{
+                            background: isNew ? '#FFF7ED' : isCooking ? '#EFF6FF' : '#DCFCE7',
+                            padding: '14px 18px',
+                            borderBottom: '1px solid #E2E8F0',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '18px', fontWeight: 900, color: '#0F172A' }}>{ord.id}</span>
+                              <span
+                                style={{
+                                  fontSize: '12px',
+                                  fontWeight: 800,
+                                  padding: '2px 8px',
+                                  borderRadius: '8px',
+                                  background: '#0F172A',
+                                  color: '#FFFFFF',
+                                }}
+                              >
+                                {ord.table || 'Table 1'}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span>👤 {ord.customer || 'Guest Diner'}</span>
+                              {ord.phone && <span style={{ color: '#64748B', fontWeight: 500 }}>({ord.phone})</span>}
+                            </div>
+                          </div>
+
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 800, color: '#64748B', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <Clock size={13} /> {ord.time || 'Just now'}
+                            </div>
+                            <span
+                              style={{
+                                fontSize: '11px',
+                                fontWeight: 900,
+                                padding: '3px 8px',
+                                borderRadius: '10px',
+                                marginTop: '4px',
+                                display: 'inline-block',
+                                background: isNew ? '#FFEDD5' : isCooking ? '#DBEAFE' : '#BBF7D0',
+                                color: isNew ? '#C2410C' : isCooking ? '#1E40AF' : '#15803D',
+                              }}
+                            >
+                              {isNew ? '🔥 NEW ORDER' : isCooking ? '👨‍🍳 COOKING' : '✅ READY'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Middle Body: Ordered Food Items List with Food Images */}
+                        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1 }}>
+                          <div style={{ fontSize: '11px', fontWeight: 800, color: '#64748B', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+                            ORDERED FOOD ITEMS ({(ord.items || []).length})
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            {(ord.items || []).map((item, idx) => {
+                              const matchDish = (dishes || []).find((d) => (d.name || '').toLowerCase().includes((item.name || '').toLowerCase()));
+                              const itemImg = matchDish
+                                ? (typeof matchDish.image === 'string' ? matchDish.image : (matchDish.image?.url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&auto=format&fit=crop&q=80'))
+                                : 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=200&auto=format&fit=crop&q=80';
+
+                              return (
+                                <div
+                                  key={idx}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '12px',
+                                    background: '#F8FAFC',
+                                    padding: '10px 12px',
+                                    borderRadius: '12px',
+                                    border: '1px solid #E2E8F0',
+                                  }}
+                                >
+                                  {/* Food Item Image Thumbnail */}
+                                  <img
+                                    src={itemImg}
+                                    alt={item.name}
+                                    style={{
+                                      width: '48px',
+                                      height: '48px',
+                                      borderRadius: '10px',
+                                      objectFit: 'cover',
+                                      flexShrink: 0,
+                                      border: '1px solid #CBD5E1',
+                                    }}
+                                  />
+
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: '14px', fontWeight: 800, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <span style={{ color: item.isVeg !== false ? '#16A34A' : '#DC2626', fontSize: '10px' }}>
+                                        {item.isVeg !== false ? '🟢' : '🔴'}
+                                      </span>
+                                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                                      Rate: ₹{item.price} each
+                                    </div>
+                                  </div>
+
+                                  {/* Quantity Badge */}
+                                  <div style={{ background: '#FF5E14', color: '#FFFFFF', padding: '4px 10px', borderRadius: '8px', fontWeight: 900, fontSize: '14px' }}>
+                                    x {item.qty || 1}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Special Instructions Note */}
+                          {ord.note && (
+                            <div style={{ background: '#FFF7ED', borderLeft: '4px solid #F97316', padding: '8px 12px', borderRadius: '8px', fontSize: '12.5px', color: '#C2410C', fontWeight: 600 }}>
+                              <strong>Chef Note:</strong> "{ord.note}"
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Bottom Actions Bar: Click "Start Cooking" or "Its Ready" */}
+                        <div style={{ padding: '14px 18px', background: '#FAFAFA', borderTop: '1px solid #E2E8F0', display: 'flex', gap: '10px' }}>
+                          {isNew && (
+                            <button
+                              type="button"
+                              style={{
+                                flex: 1,
+                                padding: '12px',
+                                borderRadius: '10px',
+                                background: '#1D4ED8',
+                                color: '#FFFFFF',
+                                border: 'none',
+                                fontWeight: 800,
+                                fontSize: '14px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '8px',
+                                boxShadow: '0 4px 10px rgba(29, 78, 216, 0.25)',
+                              }}
+                              onClick={() => {
+                                setOrders((prev) =>
+                                  prev.map((o) => ((o.id === ord.id || o._id === ord._id) ? { ...o, status: 'preparing' } : o))
+                                );
+                                triggerSound(playOrderPlaced);
+                                addToast(`👨‍🍳 Started Cooking ${ord.id} for ${ord.table || 'Table 1'}!`, <ChefHat size={18} />);
+                              }}
+                            >
+                              <ChefHat size={18} /> Start Cooking
+                            </button>
+                          )}
+
+                          {isCooking && (
+                            <button
+                              type="button"
+                              style={{
+                                flex: 1,
+                                padding: '12px',
+                                borderRadius: '10px',
+                                background: '#16A34A',
+                                color: '#FFFFFF',
+                                border: 'none',
+                                fontWeight: 800,
+                                fontSize: '14px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '8px',
+                                boxShadow: '0 4px 10px rgba(22, 163, 74, 0.25)',
+                              }}
+                              onClick={() => {
+                                setOrders((prev) =>
+                                  prev.map((o) => ((o.id === ord.id || o._id === ord._id) ? { ...o, status: 'ready' } : o))
+                                );
+                                triggerSound(playMilestoneCelebration);
+                                confetti({ particleCount: 80, spread: 70, origin: { y: 0.4 } });
+                                addToast(`🎉 Order ${ord.id} is READY for ${ord.table || 'Table 1'}!`, <CheckCircle2 size={18} />);
+                              }}
+                            >
+                              <CheckCircle2 size={18} /> Mark Its Ready!
+                            </button>
+                          )}
+
+                          {isReady && (
+                            <button
+                              type="button"
+                              style={{
+                                flex: 1,
+                                padding: '12px',
+                                borderRadius: '10px',
+                                background: '#0F172A',
+                                color: '#FFFFFF',
+                                border: 'none',
+                                fontWeight: 800,
+                                fontSize: '14px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '8px',
+                              }}
+                              onClick={() => {
+                                setOrders((prev) =>
+                                  prev.map((o) => ((o.id === ord.id || o._id === ord._id) ? { ...o, status: 'completed' } : o))
+                                );
+                                addToast(`🍽️ Order ${ord.id} Served / Completed!`, <Check size={18} />);
+                              }}
+                            >
+                              <Utensils size={18} /> Mark Served & Complete
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         )}
       </main>
@@ -3252,187 +5805,237 @@ export default function DashboardPage({ onShowToast }) {
           ========================================================================== */}
       {isEditProductModalOpen && editProductForm && (
         <div className="crm-modal-backdrop" onClick={() => setIsEditProductModalOpen(false)}>
-          <div className="crm-modal-card" onClick={(e) => e.stopPropagation()}>
+          <div className="crm-modal-card crm-modal-card-wide-product" onClick={(e) => e.stopPropagation()}>
             <div className="crm-modal-header">
-              <h3>Edit Product / Dish</h3>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 900 }}>Edit Product / Dish</h3>
+                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>Update dish details, photo, sizes &amp; customization options</div>
+              </div>
               <button
                 type="button"
-                className="crm-btn-icon-only"
+                className="crm-modal-close-btn"
                 onClick={() => setIsEditProductModalOpen(false)}
               >
-                <X size={18} color="#64748B" />
+                <X size={20} />
               </button>
             </div>
             <form onSubmit={handleEditProductSubmit}>
               <div className="crm-modal-body">
-                <div className="crm-form-group">
-                  <label>Product Name <span className="req">*</span></label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Classic Margherita Pizza"
-                    value={editProductForm.name}
-                    onChange={(e) => setEditProductForm({ ...editProductForm, name: e.target.value })}
-                  />
-                </div>
+                <div className="crm-product-modal-grid">
+                  {/* LEFT COLUMN: Basic Product Info */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div className="crm-form-group">
+                      <label style={{ fontWeight: 800 }}>Product Name <span className="req">*</span></label>
+                      <input
+                        type="text"
+                        className="crm-input"
+                        required
+                        placeholder="e.g. Classic Margherita Pizza"
+                        value={editProductForm.name}
+                        onChange={(e) => setEditProductForm({ ...editProductForm, name: e.target.value })}
+                      />
+                    </div>
 
-                <div className="crm-form-row">
-                  <div className="crm-form-group">
-                    <label>Category</label>
-                    <select
-                      value={editProductForm.category}
-                      onChange={(e) => setEditProductForm({ ...editProductForm, category: e.target.value })}
-                    >
-                      {allCategories.map((c) => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="crm-form-group">
-                    <label>Base Price (₹) <span className="req">*</span></label>
-                    <input
-                      type="number"
-                      required
-                      placeholder="e.g. 199"
-                      value={editProductForm.price}
-                      onChange={(e) => setEditProductForm({ ...editProductForm, price: e.target.value })}
-                    />
-                  </div>
-                </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div className="crm-form-group">
+                        <label style={{ fontWeight: 800 }}>Category</label>
+                        <select
+                          className="crm-input"
+                          value={editProductForm.category}
+                          onChange={(e) => setEditProductForm({ ...editProductForm, category: e.target.value })}
+                        >
+                          {allCategories.map((c) => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                      </div>
 
-                <div className="crm-form-row">
-                  <div className="crm-form-group">
-                    <label>Dietary</label>
-                    <div style={{ display: 'flex', gap: '12px', marginTop: '6px' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                      <div className="crm-form-group">
+                        <label style={{ fontWeight: 800 }}>Base Price (₹) <span className="req">*</span></label>
                         <input
-                          type="radio"
-                          name="editVegType"
-                          checked={editProductForm.isVeg === true}
-                          onChange={() => setEditProductForm({ ...editProductForm, isVeg: true })}
+                          type="number"
+                          className="crm-input"
+                          required
+                          placeholder="e.g. 199"
+                          value={editProductForm.price}
+                          onChange={(e) => setEditProductForm({ ...editProductForm, price: e.target.value })}
                         />
-                        <span className="crm-veg-dot" /> Veg
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                      </div>
+                    </div>
+
+                    <div className="crm-form-group">
+                      <label style={{ fontWeight: 800 }}>Dietary Type</label>
+                      <div className="crm-dietary-toggle-group">
+                        <button
+                          type="button"
+                          className={`crm-dietary-pill-option ${editProductForm.isVeg === true ? 'veg-active' : ''}`}
+                          onClick={() => setEditProductForm({ ...editProductForm, isVeg: true })}
+                        >
+                          <span className="crm-veg-dot" /> Pure Veg
+                        </button>
+                        <button
+                          type="button"
+                          className={`crm-dietary-pill-option ${editProductForm.isVeg === false ? 'nonveg-active' : ''}`}
+                          onClick={() => setEditProductForm({ ...editProductForm, isVeg: false })}
+                        >
+                          <span className="crm-nonveg-dot" /> Non-Veg
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="crm-form-group" style={{ background: '#FFF7ED', border: '1.5px solid #FFEDD5', padding: '10px 14px', borderRadius: '10px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: 800, color: '#C2410C', margin: 0 }}>
                         <input
-                          type="radio"
-                          name="editVegType"
-                          checked={editProductForm.isVeg === false}
-                          onChange={() => setEditProductForm({ ...editProductForm, isVeg: false })}
+                          type="checkbox"
+                          checked={editProductForm.isSpecial || false}
+                          onChange={(e) => setEditProductForm({ ...editProductForm, isSpecial: e.target.checked })}
+                          style={{ width: '17px', height: '17px', accentColor: '#FF5E14' }}
                         />
-                        <span className="crm-nonveg-dot" /> Non-Veg
+                        <span>⭐ Mark as Chef's Special / Featured Dish</span>
                       </label>
                     </div>
-                  </div>
-                </div>
 
-                <div className="crm-form-group">
-                  <label>Image URL</label>
-                  <input
-                    type="url"
-                    className="crm-input"
-                    placeholder="https://images.unsplash.com/..."
-                    value={editProductForm.images?.[0] || editProductForm.image || ''}
-                    onChange={(e) => setEditProductForm({ ...editProductForm, image: e.target.value, images: [e.target.value] })}
-                  />
-                  {(editProductForm.images?.[0] || editProductForm.image) && (
-                    <img src={editProductForm.images?.[0] || editProductForm.image} alt="Preview" style={{ marginTop: '10px', height: '65px', borderRadius: '8px', objectFit: 'cover' }} />
-                  )}
-                </div>
-
-                {/* Product Sizes & Variations */}
-                <div className="crm-form-group" style={{ background: '#F8FAFC', border: '1.5px solid #E2E8F0', padding: '14px', borderRadius: '12px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <label style={{ margin: 0, fontWeight: 800 }}>Product Sizes &amp; Price Variations</label>
-                    <button
-                      type="button"
-                      style={{ background: 'none', border: 'none', color: '#1D4ED8', fontSize: '12.5px', fontWeight: 800, cursor: 'pointer' }}
-                      onClick={() => {
-                        const currentSizes = editProductForm.sizes || [];
-                        setEditProductForm({
-                          ...editProductForm,
-                          sizes: [...currentSizes, { name: 'Large', price: Number(editProductForm.price || 199) + 80 }],
-                        });
-                      }}
-                    >
-                      + Add Size Variant
-                    </button>
-                  </div>
-
-                  {(!editProductForm.sizes || editProductForm.sizes.length === 0) ? (
-                    <div style={{ fontSize: '13px', color: '#64748B' }}>
-                      Standard single size (₹{editProductForm.price || 0})
+                    <div className="crm-form-group">
+                      <label style={{ fontWeight: 800 }}>Description</label>
+                      <textarea
+                        rows={3}
+                        className="crm-input"
+                        placeholder="Short appetizing description..."
+                        value={editProductForm.desc || ''}
+                        onChange={(e) => setEditProductForm({ ...editProductForm, desc: e.target.value })}
+                      />
                     </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {editProductForm.sizes.map((sz, sIdx) => (
-                        <div key={sIdx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <input
-                            type="text"
-                            className="crm-input"
-                            style={{ flex: 2, padding: '6px 10px', fontSize: '13px' }}
-                            placeholder="Size (e.g. Medium)"
-                            value={sz.name}
-                            onChange={(e) => {
-                              const updated = [...editProductForm.sizes];
-                              updated[sIdx].name = e.target.value;
-                              setEditProductForm({ ...editProductForm, sizes: updated });
-                            }}
-                          />
-                          <input
-                            type="number"
-                            className="crm-input"
-                            style={{ flex: 1, padding: '6px 10px', fontSize: '13px' }}
-                            placeholder="Price ₹"
-                            value={sz.price}
-                            onChange={(e) => {
-                              const updated = [...editProductForm.sizes];
-                              updated[sIdx].price = Number(e.target.value);
-                              setEditProductForm({ ...editProductForm, sizes: updated });
-                            }}
-                          />
-                          <button
-                            type="button"
-                            style={{ background: 'none', border: 'none', color: '#DC2626', fontWeight: 900, cursor: 'pointer', padding: '4px 8px' }}
-                            onClick={() => {
-                              const updated = editProductForm.sizes.filter((_, idx) => idx !== sIdx);
-                              setEditProductForm({ ...editProductForm, sizes: updated });
-                            }}
-                          >
-                            ✕
-                          </button>
+                  </div>
+
+                  {/* RIGHT COLUMN: Photo Picker & Size Variations */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {/* CLEAN FOOD PHOTO PICKER - Hides Raw URL */}
+                    <div className="crm-food-photo-card">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <label style={{ margin: 0, fontWeight: 800, fontSize: '13px' }}>Food Image Photo</label>
+                        <button
+                          type="button"
+                          style={{ background: 'none', border: 'none', color: '#1D4ED8', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
+                          onClick={() => setShowEditUrlInput(!showEditUrlInput)}
+                        >
+                          {showEditUrlInput ? '✓ Hide URL Field' : '🔗 Edit Image URL'}
+                        </button>
+                      </div>
+
+                      <div className="crm-food-photo-preview-box">
+                        {(editProductForm.images?.[0] || editProductForm.image) ? (
+                          <img src={editProductForm.images?.[0] || editProductForm.image} alt="Dish Preview" />
+                        ) : (
+                          <div style={{ textAlign: 'center', color: '#64748B', fontSize: '13px' }}>
+                            <span style={{ fontSize: '28px', display: 'block', marginBottom: '4px' }}>📷</span>
+                            No Photo Selected
+                          </div>
+                        )}
+                      </div>
+
+                      {showEditUrlInput && (
+                        <input
+                          type="text"
+                          className="crm-input"
+                          style={{ fontSize: '12px', padding: '6px 10px' }}
+                          placeholder="Paste image URL (e.g. Unsplash)"
+                          value={editProductForm.images?.[0] || editProductForm.image || ''}
+                          onChange={(e) => setEditProductForm({ ...editProductForm, image: e.target.value, images: [e.target.value] })}
+                        />
+                      )}
+
+                      {/* Preset Food Photos Buttons */}
+                      <div>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>Select Quick Preset Photo:</span>
+                        <div className="crm-photo-presets-grid">
+                          {[
+                            { label: '🍕 Pizza', url: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400&auto=format&fit=crop&q=80' },
+                            { label: '🍔 Burger', url: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&auto=format&fit=crop&q=80' },
+                            { label: '🍲 Thali', url: 'https://images.unsplash.com/photo-1631452180519-c014fe946bc7?w=400&auto=format&fit=crop&q=80' },
+                            { label: '🍝 Pasta', url: 'https://images.unsplash.com/photo-1621996346565-e3d5d6281829?w=400&auto=format&fit=crop&q=80' },
+                            { label: '🍹 Drink', url: 'https://images.unsplash.com/photo-1551024709-8f23befc6f87?w=400&auto=format&fit=crop&q=80' },
+                            { label: '🍰 Dessert', url: 'https://images.unsplash.com/photo-1606313564200-e75d5e30476c?w=400&auto=format&fit=crop&q=80' },
+                          ].map((p) => (
+                            <button
+                              key={p.label}
+                              type="button"
+                              className="crm-photo-preset-btn"
+                              onClick={() => setEditProductForm({ ...editProductForm, image: p.url, images: [p.url] })}
+                            >
+                              {p.label}
+                            </button>
+                          ))}
                         </div>
-                      ))}
+                      </div>
                     </div>
-                  )}
-                </div>
 
-                {/* Inner Layer & Customizations (Bun Choice & Extra Toppings) */}
-                <div className="crm-form-group" style={{ background: '#FFF7ED', border: '1.5px solid #FFEDD5', padding: '14px', borderRadius: '12px' }}>
-                  <label style={{ color: '#C2410C', fontWeight: 800, margin: 0, marginBottom: '6px' }}>
-                    🍔 Inner Layer &amp; Customization Options (Buns &amp; Toppings)
-                  </label>
-                  <div style={{ fontSize: '12.5px', color: '#9A3412', marginBottom: '8px' }}>
-                    Allows customers and counter staff to choose inner layer bun type or add extra toppings.
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                    {['Sesame Bun (Free)', 'Whole Wheat (+₹20)', 'Brioche Bun (+₹30)', 'Gluten-Free (+₹35)', 'Extra Cheese (+₹40)', 'Jalapeno & Mushrooms (+₹30)'].map((opt) => (
-                      <span key={opt} style={{ background: '#FFFFFF', border: '1px solid #FDBA74', color: '#C2410C', padding: '4px 10px', borderRadius: '14px', fontSize: '12px', fontWeight: 700 }}>
-                        ✓ {opt}
-                      </span>
-                    ))}
-                  </div>
-                </div>
+                    {/* Product Sizes & Variations */}
+                    <div className="crm-form-group" style={{ background: '#F8FAFC', border: '1.5px solid #E2E8F0', padding: '12px 14px', borderRadius: '12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <label style={{ margin: 0, fontWeight: 800, fontSize: '13px' }}>Product Sizes &amp; Price Variations</label>
+                        <button
+                          type="button"
+                          style={{ background: 'none', border: 'none', color: '#1D4ED8', fontSize: '12.5px', fontWeight: 800, cursor: 'pointer' }}
+                          onClick={() => {
+                            const currentSizes = editProductForm.sizes || [];
+                            setEditProductForm({
+                              ...editProductForm,
+                              sizes: [...currentSizes, { name: 'Large', price: Number(editProductForm.price || 199) + 80 }],
+                            });
+                          }}
+                        >
+                          + Add Size Variant
+                        </button>
+                      </div>
 
-                <div className="crm-form-group">
-                  <label>Description</label>
-                  <textarea
-                    rows={2}
-                    className="crm-input"
-                    placeholder="Short appetizing description..."
-                    value={editProductForm.desc || ''}
-                    onChange={(e) => setEditProductForm({ ...editProductForm, desc: e.target.value })}
-                  />
+                      {(!editProductForm.sizes || editProductForm.sizes.length === 0) ? (
+                        <div style={{ fontSize: '12.5px', color: '#64748B' }}>
+                          Standard single size (₹{editProductForm.price || 0})
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          {editProductForm.sizes.map((sz, sIdx) => (
+                            <div key={sIdx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <input
+                                type="text"
+                                className="crm-input"
+                                style={{ flex: 2, padding: '5px 10px', fontSize: '12.5px' }}
+                                placeholder="Size (e.g. Medium)"
+                                value={sz.name}
+                                onChange={(e) => {
+                                  const updated = [...editProductForm.sizes];
+                                  updated[sIdx].name = e.target.value;
+                                  setEditProductForm({ ...editProductForm, sizes: updated });
+                                }}
+                              />
+                              <input
+                                type="number"
+                                className="crm-input"
+                                style={{ flex: 1, padding: '5px 10px', fontSize: '12.5px' }}
+                                placeholder="Price ₹"
+                                value={sz.price}
+                                onChange={(e) => {
+                                  const updated = [...editProductForm.sizes];
+                                  updated[sIdx].price = Number(e.target.value);
+                                  setEditProductForm({ ...editProductForm, sizes: updated });
+                                }}
+                              />
+                              <button
+                                type="button"
+                                style={{ background: 'none', border: 'none', color: '#DC2626', fontWeight: 900, cursor: 'pointer', padding: '4px 6px' }}
+                                onClick={() => {
+                                  const updated = editProductForm.sizes.filter((_, idx) => idx !== sIdx);
+                                  setEditProductForm({ ...editProductForm, sizes: updated });
+                                }}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
               <div className="crm-modal-footer">
@@ -3440,7 +6043,8 @@ export default function DashboardPage({ onShowToast }) {
                   Cancel
                 </button>
                 <button type="submit" className="crm-btn-primary">
-                  Save Changes
+                  <Check size={18} />
+                  <span>Save Changes</span>
                 </button>
               </div>
             </form>
@@ -3449,13 +6053,16 @@ export default function DashboardPage({ onShowToast }) {
       )}
 
       {/* ==========================================================================
-          MODAL 2: ADD PRODUCT MODAL (With Image URL field)
+          MODAL 2: ADD PRODUCT MODAL (Wide 2-Column POS Layout & Clean Photo Picker)
           ========================================================================== */}
       {isAddProductModalOpen && (
         <div className="crm-modal-backdrop" onClick={() => setIsAddProductModalOpen(false)}>
-          <div className="crm-modal-card" onClick={(e) => e.stopPropagation()}>
+          <div className="crm-modal-card crm-modal-card-wide-product" onClick={(e) => e.stopPropagation()}>
             <div className="crm-modal-header">
-              <h3>+ Add New Product to Catalog</h3>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 900 }}>+ Add New Product to Catalog</h3>
+                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>Fill food details, photo &amp; dietary type to list on your digital menu</div>
+              </div>
               <button
                 type="button"
                 className="crm-modal-close-btn"
@@ -3467,147 +6074,155 @@ export default function DashboardPage({ onShowToast }) {
 
             <form onSubmit={handleAddProductSubmit}>
               <div className="crm-modal-body">
-                {/* 1. Food Name */}
-                <div className="crm-form-group">
-                  <label>Food / Product Name *</label>
-                  <input
-                    type="text"
-                    className="crm-input"
-                    placeholder="e.g. ITALIAN CHEESE GIANT SLICE"
-                    value={newProductForm.name}
-                    onChange={(e) => setNewProductForm({ ...newProductForm, name: e.target.value })}
-                    required
-                    autoFocus
-                  />
-                </div>
-
-                {/* 2. Category Selection & Inline Create Category */}
-                <div className="crm-form-group">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <label style={{ margin: 0 }}>Category *</label>
-                    <button
-                      type="button"
-                      style={{ background: 'none', border: 'none', color: '#1D4ED8', fontSize: '13px', fontWeight: 800, cursor: 'pointer' }}
-                      onClick={() => setIsAddingNewCat(!isAddingNewCat)}
-                    >
-                      {isAddingNewCat ? '✕ Cancel' : '+ Create New Category'}
-                    </button>
-                  </div>
-
-                  {isAddingNewCat ? (
-                    <div style={{ display: 'flex', gap: '8px' }}>
+                <div className="crm-product-modal-grid">
+                  {/* LEFT COLUMN: Basic Product Info */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div className="crm-form-group">
+                      <label style={{ fontWeight: 800 }}>Food / Product Name <span className="req">*</span></label>
                       <input
                         type="text"
                         className="crm-input"
-                        placeholder="e.g. Soups & Salads"
-                        value={customCategoryInput}
-                        onChange={(e) => setCustomCategoryInput(e.target.value)}
+                        placeholder="e.g. ITALIAN CHEESE GIANT SLICE"
+                        value={newProductForm.name}
+                        onChange={(e) => setNewProductForm({ ...newProductForm, name: e.target.value })}
+                        required
                         autoFocus
                       />
-                      <button
-                        type="button"
-                        className="btn-create-order-primary"
-                        style={{ padding: '8px 14px', fontSize: '13px', flexShrink: 0 }}
-                        onClick={handleAddCustomCategory}
-                      >
-                        Add Category
-                      </button>
                     </div>
-                  ) : (
-                    <select
-                      className="crm-input"
-                      value={newProductForm.category}
-                      onChange={(e) => setNewProductForm({ ...newProductForm, category: e.target.value })}
-                    >
-                      {allCategories.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
 
-                {/* 3. Base Price & Dietary Type */}
-                <div className="crm-form-grid" style={{ marginBottom: 0 }}>
-                  <div className="crm-form-group">
-                    <label>Base Price (₹) *</label>
-                    <input
-                      type="number"
-                      className="crm-input"
-                      placeholder="e.g. 240"
-                      value={newProductForm.price}
-                      onChange={(e) => setNewProductForm({ ...newProductForm, price: e.target.value })}
-                      required
-                    />
-                  </div>
+                    <div className="crm-form-group">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                        <label style={{ margin: 0, fontWeight: 800 }}>Category <span className="req">*</span></label>
+                        <button
+                          type="button"
+                          style={{ background: 'none', border: 'none', color: '#1D4ED8', fontSize: '12.5px', fontWeight: 800, cursor: 'pointer' }}
+                          onClick={() => setIsAddingNewCat(!isAddingNewCat)}
+                        >
+                          {isAddingNewCat ? '✕ Cancel' : '+ Create New Category'}
+                        </button>
+                      </div>
 
-                  <div className="crm-form-group">
-                    <label>Dietary Type</label>
-                    <div style={{ display: 'flex', gap: '16px', marginTop: '10px' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: 700, fontSize: '14px' }}>
-                        <input
-                          type="radio"
-                          name="addVegType"
-                          checked={newProductForm.isVeg === true}
-                          onChange={() => setNewProductForm({ ...newProductForm, isVeg: true })}
-                        />
-                        <span className="crm-veg-dot" /> Veg
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontWeight: 700, fontSize: '14px' }}>
-                        <input
-                          type="radio"
-                          name="addVegType"
-                          checked={newProductForm.isVeg === false}
-                          onChange={() => setNewProductForm({ ...newProductForm, isVeg: false })}
-                        />
-                        <span className="crm-nonveg-dot" /> Non-Veg
-                      </label>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 4. Special Item Checkbox */}
-                <div className="crm-form-group" style={{ background: '#FFF7ED', border: '1.5px solid #FFEDD5', padding: '12px 16px', borderRadius: '12px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '14px', fontWeight: 800, color: '#C2410C', margin: 0 }}>
-                    <input
-                      type="checkbox"
-                      checked={newProductForm.isSpecial}
-                      onChange={(e) => setNewProductForm({ ...newProductForm, isSpecial: e.target.checked })}
-                      style={{ width: '18px', height: '18px', accentColor: '#FF5E14' }}
-                    />
-                    <span>⭐ Mark as Chef's Special / Featured Dish</span>
-                  </label>
-                </div>
-
-                {/* 5. Food Image Upload + URL Fallback */}
-                <div className="crm-form-group">
-                  <label>Upload Food Photo (Computer or URL)</label>
-                  <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
-                    <div
-                      style={{
-                        width: '70px',
-                        height: '70px',
-                        borderRadius: '12px',
-                        border: '2px dashed #CBD5E1',
-                        backgroundColor: '#F8FAFC',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        overflow: 'hidden',
-                        flexShrink: 0,
-                        cursor: 'pointer'
-                      }}
-                      onClick={() => document.getElementById('addDishFileInput').click()}
-                    >
-                      {productLogoPreview ? (
-                        <img src={productLogoPreview} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      {isAddingNewCat ? (
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <input
+                            type="text"
+                            className="crm-input"
+                            placeholder="e.g. Soups & Salads"
+                            value={customCategoryInput}
+                            onChange={(e) => setCustomCategoryInput(e.target.value)}
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            className="btn-create-order-primary"
+                            style={{ padding: '8px 14px', fontSize: '13px', flexShrink: 0 }}
+                            onClick={handleAddCustomCategory}
+                          >
+                            Add Category
+                          </button>
+                        </div>
                       ) : (
-                        <span style={{ fontSize: '24px' }}>📷</span>
+                        <select
+                          className="crm-input"
+                          value={newProductForm.category}
+                          onChange={(e) => setNewProductForm({ ...newProductForm, category: e.target.value })}
+                        >
+                          {allCategories.map((c) => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
                       )}
                     </div>
 
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div className="crm-form-group">
+                        <label style={{ fontWeight: 800 }}>Base Price (₹) <span className="req">*</span></label>
+                        <input
+                          type="number"
+                          className="crm-input"
+                          placeholder="e.g. 240"
+                          value={newProductForm.price}
+                          onChange={(e) => setNewProductForm({ ...newProductForm, price: e.target.value })}
+                          required
+                        />
+                      </div>
+
+                      <div className="crm-form-group">
+                        <label style={{ fontWeight: 800 }}>Dietary Type</label>
+                        <div className="crm-dietary-toggle-group">
+                          <button
+                            type="button"
+                            className={`crm-dietary-pill-option ${newProductForm.isVeg === true ? 'veg-active' : ''}`}
+                            onClick={() => setNewProductForm({ ...newProductForm, isVeg: true })}
+                          >
+                            <span className="crm-veg-dot" /> Veg
+                          </button>
+                          <button
+                            type="button"
+                            className={`crm-dietary-pill-option ${newProductForm.isVeg === false ? 'nonveg-active' : ''}`}
+                            onClick={() => setNewProductForm({ ...newProductForm, isVeg: false })}
+                          >
+                            <span className="crm-nonveg-dot" /> Non-Veg
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="crm-form-group" style={{ background: '#FFF7ED', border: '1.5px solid #FFEDD5', padding: '10px 14px', borderRadius: '10px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '13px', fontWeight: 800, color: '#C2410C', margin: 0 }}>
+                        <input
+                          type="checkbox"
+                          checked={newProductForm.isSpecial || false}
+                          onChange={(e) => setNewProductForm({ ...newProductForm, isSpecial: e.target.checked })}
+                          style={{ width: '17px', height: '17px', accentColor: '#FF5E14' }}
+                        />
+                        <span>⭐ Mark as Chef's Special / Featured Dish</span>
+                      </label>
+                    </div>
+
+                    <div className="crm-form-group">
+                      <label style={{ fontWeight: 800 }}>Small Description</label>
+                      <textarea
+                        rows={3}
+                        className="crm-input"
+                        placeholder="e.g. Oversized New York style slice loaded with mozzarella & Italian herbs."
+                        value={newProductForm.desc}
+                        onChange={(e) => setNewProductForm({ ...newProductForm, desc: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  {/* RIGHT COLUMN: Food Photo Upload & Quick Presets */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div className="crm-food-photo-card">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <label style={{ margin: 0, fontWeight: 800, fontSize: '13px' }}>Upload Food Photo</label>
+                        <button
+                          type="button"
+                          style={{ background: 'none', border: 'none', color: '#1D4ED8', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
+                          onClick={() => setShowAddUrlInput(!showAddUrlInput)}
+                        >
+                          {showAddUrlInput ? '✓ Hide URL Field' : '🔗 Edit Image URL'}
+                        </button>
+                      </div>
+
+                      <div
+                        className="crm-food-photo-preview-box"
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => document.getElementById('addDishFileInput').click()}
+                      >
+                        {productLogoPreview ? (
+                          <img src={productLogoPreview} alt="Preview" />
+                        ) : newProductForm.image ? (
+                          <img src={newProductForm.image} alt="Preview" />
+                        ) : (
+                          <div style={{ textAlign: 'center', color: '#64748B', fontSize: '13px' }}>
+                            <span style={{ fontSize: '32px', display: 'block', marginBottom: '4px' }}>📷</span>
+                            Click to Upload Computer Photo
+                          </div>
+                        )}
+                      </div>
+
                       <input
                         id="addDishFileInput"
                         type="file"
@@ -3615,36 +6230,54 @@ export default function DashboardPage({ onShowToast }) {
                         onChange={handleProductImageChange}
                         style={{ display: 'none' }}
                       />
+
                       <button
                         type="button"
                         className="crm-btn-secondary"
-                        style={{ fontSize: '13px', padding: '6px 12px', alignSelf: 'flex-start' }}
+                        style={{ fontSize: '12.5px', padding: '6px 12px', width: '100%', justifyContent: 'center' }}
                         onClick={() => document.getElementById('addDishFileInput').click()}
                       >
-                        {productLogoFile ? productLogoFile.name : 'Choose Image File...'}
+                        {productLogoFile ? productLogoFile.name : '📁 Choose Photo File from PC'}
                       </button>
-                      <input
-                        type="text"
-                        className="crm-input"
-                        placeholder="Or paste image URL (e.g. Unsplash)"
-                        value={newProductForm.image}
-                        onChange={(e) => setNewProductForm({ ...newProductForm, image: e.target.value })}
-                        style={{ fontSize: '13px', padding: '6px 10px' }}
-                      />
+
+                      {showAddUrlInput && (
+                        <input
+                          type="text"
+                          className="crm-input"
+                          placeholder="Paste image URL (e.g. Unsplash)"
+                          value={newProductForm.image}
+                          onChange={(e) => setNewProductForm({ ...newProductForm, image: e.target.value })}
+                          style={{ fontSize: '12px', padding: '6px 10px' }}
+                        />
+                      )}
+
+                      <div>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>Or Select Quick Preset Photo:</span>
+                        <div className="crm-photo-presets-grid">
+                          {[
+                            { label: '🍕 Pizza', url: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400&auto=format&fit=crop&q=80' },
+                            { label: '🍔 Burger', url: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&auto=format&fit=crop&q=80' },
+                            { label: '🍲 Thali', url: 'https://images.unsplash.com/photo-1631452180519-c014fe946bc7?w=400&auto=format&fit=crop&q=80' },
+                            { label: '🍝 Pasta', url: 'https://images.unsplash.com/photo-1621996346565-e3d5d6281829?w=400&auto=format&fit=crop&q=80' },
+                            { label: '🍹 Drink', url: 'https://images.unsplash.com/photo-1551024709-8f23befc6f87?w=400&auto=format&fit=crop&q=80' },
+                            { label: '🍰 Dessert', url: 'https://images.unsplash.com/photo-1606313564200-e75d5e30476c?w=400&auto=format&fit=crop&q=80' },
+                          ].map((p) => (
+                            <button
+                              key={p.label}
+                              type="button"
+                              className="crm-photo-preset-btn"
+                              onClick={() => {
+                                setNewProductForm({ ...newProductForm, image: p.url });
+                                setProductLogoPreview(p.url);
+                              }}
+                            >
+                              {p.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-
-                {/* 6. Small Description */}
-                <div className="crm-form-group">
-                  <label>Small Description</label>
-                  <textarea
-                    rows={2}
-                    className="crm-input"
-                    placeholder="e.g. Oversized New York style slice loaded with mozzarella & Italian herbs."
-                    value={newProductForm.desc}
-                    onChange={(e) => setNewProductForm({ ...newProductForm, desc: e.target.value })}
-                  />
                 </div>
               </div>
 
@@ -3671,13 +6304,20 @@ export default function DashboardPage({ onShowToast }) {
       )}
 
       {/* ==========================================================================
-          MODAL 3: CREATE COUPON MODAL
+          MODAL 3: ADVANCED CREATE COUPON & EXPERIMENTAL OFFER BUILDER MODAL
           ========================================================================== */}
       {isCreateCouponOpen && (
         <div className="crm-modal-backdrop" onClick={() => setIsCreateCouponOpen(false)}>
-          <div className="crm-modal-card" style={{ maxWidth: '440px' }} onClick={(e) => e.stopPropagation()}>
+          <div className="crm-modal-card crm-coupon-modal-wide" onClick={(e) => e.stopPropagation()}>
             <div className="crm-modal-header">
-              <h3>Create Discount Coupon</h3>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 900 }}>
+                  {editingCouponObj ? `Edit Promocode (${editingCouponObj.code})` : 'Create Coupon & Offer Promocode'}
+                </h3>
+                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                  Supports % OFF, Flat ₹ Cash Minus, BOGO, Referral &amp; Combos (Default 20-Day Expiry)
+                </div>
+              </div>
               <button
                 type="button"
                 className="crm-modal-close-btn"
@@ -3688,39 +6328,784 @@ export default function DashboardPage({ onShowToast }) {
             </div>
 
             <form onSubmit={handleCreateCouponSubmit}>
-              <div className="crm-modal-body">
+              <div className="crm-modal-body" style={{ gap: '16px' }}>
+                {/* 1. Offer Type Selector */}
                 <div className="crm-form-group">
-                  <label>Coupon Code (Promocode) *</label>
+                  <label style={{ fontWeight: 800 }}>Offer Type / Campaign Category *</label>
+                  <div className="crm-offer-type-selector">
+                    {[
+                      { id: 'percentage', label: '% Percentage OFF' },
+                      { id: 'flat', label: '₹ Flat Cash Minus' },
+                      { id: 'bogo', label: '🎁 Buy 1 Get 1 Free' },
+                      { id: 'referral', label: '👥 Refer & Earn' },
+                      { id: 'combo', label: '🍕 Combo Bundle' },
+                    ].map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        className={`crm-offer-type-btn ${newCouponForm.type === t.id ? 'active' : ''}`}
+                        onClick={() => {
+                          setNewCouponForm({ ...newCouponForm, type: t.id });
+                        }}
+                      >
+                        <span>{t.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 2. Promocode Code Input & Auto Generator */}
+                <div className="crm-form-group">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <label style={{ margin: 0, fontWeight: 800 }}>Coupon Promocode *</label>
+                    <button
+                      type="button"
+                      style={{ background: 'none', border: 'none', color: '#1D4ED8', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
+                      onClick={handleGenerateRandomCouponCode}
+                    >
+                      ✨ Auto Code
+                    </button>
+                  </div>
                   <input
                     type="text"
                     className="crm-input"
-                    placeholder="e.g. SAVE30, FESTIVE100"
+                    style={{ textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 800, letterSpacing: '0.05em' }}
+                    placeholder="e.g. FEST20, FLAT50, BOGO2026"
                     value={newCouponForm.code}
-                    onChange={(e) => setNewCouponForm({ ...newCouponForm, code: e.target.value })}
-                    required
-                    autoFocus
-                  />
-                </div>
-
-                <div className="crm-form-group">
-                  <label>Discount Value *</label>
-                  <input
-                    type="text"
-                    className="crm-input"
-                    placeholder="e.g. 30% OFF or Flat ₹100 OFF"
-                    value={newCouponForm.discount}
-                    onChange={(e) => setNewCouponForm({ ...newCouponForm, discount: e.target.value })}
+                    onChange={(e) => setNewCouponForm({ ...newCouponForm, code: e.target.value.toUpperCase() })}
                     required
                   />
                 </div>
 
+                {/* 3. Dynamic Discount Amount / Details based on selected type */}
+                {newCouponForm.type === 'percentage' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div className="crm-form-group">
+                      <label style={{ fontWeight: 800 }}>Discount Percentage (%) *</label>
+                      <input
+                        type="number"
+                        className="crm-input"
+                        placeholder="e.g. 20"
+                        value={newCouponForm.discountValue}
+                        onChange={(e) => setNewCouponForm({ ...newCouponForm, discountValue: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="crm-form-group">
+                      <label style={{ fontWeight: 800 }}>Max Discount Cap (₹)</label>
+                      <input
+                        type="number"
+                        className="crm-input"
+                        placeholder="e.g. 100 (Optional)"
+                        value={newCouponForm.maxDiscount}
+                        onChange={(e) => setNewCouponForm({ ...newCouponForm, maxDiscount: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {newCouponForm.type === 'flat' && (
+                  <div className="crm-form-group">
+                    <label style={{ fontWeight: 800 }}>Flat Discount / Bill Minus Amount (₹) *</label>
+                    <input
+                      type="number"
+                      className="crm-input"
+                      placeholder="e.g. 50 (Deducts ₹50 directly from total bill)"
+                      value={newCouponForm.discountValue}
+                      onChange={(e) => setNewCouponForm({ ...newCouponForm, discountValue: e.target.value })}
+                      required
+                    />
+                    <div style={{ fontSize: '12px', color: '#059669', marginTop: '4px', fontWeight: 700 }}>
+                      ✓ Diner gets flat ₹{newCouponForm.discountValue || 50} subtracted directly from their final checkout bill.
+                    </div>
+                  </div>
+                )}
+
+                {newCouponForm.type === 'bogo' && (
+                  <div className="crm-form-group">
+                    <label style={{ fontWeight: 800 }}>BOGO Offer Description *</label>
+                    <input
+                      type="text"
+                      className="crm-input"
+                      placeholder="e.g. Buy 1 Medium Pizza Get 1 Free"
+                      value={newCouponForm.description}
+                      onChange={(e) => setNewCouponForm({ ...newCouponForm, description: e.target.value })}
+                      required
+                    />
+                  </div>
+                )}
+
+                {newCouponForm.type === 'referral' && (
+                  <div className="crm-form-group">
+                    <label style={{ fontWeight: 800 }}>Referral Cashback Amount (₹) *</label>
+                    <input
+                      type="number"
+                      className="crm-input"
+                      placeholder="e.g. 50 Cashback for Referrer & Friend"
+                      value={newCouponForm.discountValue}
+                      onChange={(e) => setNewCouponForm({ ...newCouponForm, discountValue: e.target.value })}
+                      required
+                    />
+                  </div>
+                )}
+
+                {newCouponForm.type === 'combo' && (
+                  <div className="crm-form-group">
+                    <label style={{ fontWeight: 800 }}>Combo Special Title *</label>
+                    <input
+                      type="text"
+                      className="crm-input"
+                      placeholder="e.g. Family Meal Combo Pack - Flat ₹100 OFF"
+                      value={newCouponForm.description}
+                      onChange={(e) => setNewCouponForm({ ...newCouponForm, description: e.target.value })}
+                      required
+                    />
+                  </div>
+                )}
+
+                {/* 4. Minimum Order Amount */}
                 <div className="crm-form-group">
-                  <label>Minimum Order Amount (₹)</label>
+                  <label style={{ fontWeight: 800 }}>Minimum Order Amount (₹)</label>
                   <input
                     type="number"
                     className="crm-input"
+                    placeholder="e.g. 299 (0 for no minimum)"
                     value={newCouponForm.minOrder}
                     onChange={(e) => setNewCouponForm({ ...newCouponForm, minOrder: e.target.value })}
+                  />
+                </div>
+
+                {/* 5. Expiration Date (Default: +20 Days, Editable Date Picker + Presets) */}
+                <div className="crm-form-group">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <label style={{ margin: 0, fontWeight: 800 }}>Expiration Date (Default: 20 Days)</label>
+                    <span style={{ fontSize: '12px', color: '#FF5E14', fontWeight: 800 }}>
+                      {formatExpiryDisplay(newCouponForm.expiryDate)}
+                    </span>
+                  </div>
+
+                  <input
+                    type="date"
+                    className="crm-input"
+                    value={newCouponForm.expiryDate}
+                    onChange={(e) => setNewCouponForm({ ...newCouponForm, expiryDate: e.target.value })}
+                    required
+                  />
+
+                  {/* Preset Duration Buttons */}
+                  <div className="crm-preset-days-grid">
+                    {[
+                      { label: '7 Days', days: 7 },
+                      { label: '20 Days (Default)', days: 20 },
+                      { label: '30 Days', days: 30 },
+                      { label: '60 Days', days: 60 },
+                    ].map((p) => (
+                      <button
+                        key={p.label}
+                        type="button"
+                        className={`crm-preset-day-btn ${newCouponForm.expiryDate === get20DaysAheadDate(p.days) ? 'active' : ''}`}
+                        onClick={() => setNewCouponForm({ ...newCouponForm, expiryDate: get20DaysAheadDate(p.days) })}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 6. Live Coupon Preview Box */}
+                <div className="crm-coupon-preview-box">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: '15px', color: '#92400E' }}>
+                      🎟 {newCouponForm.code || 'CODE'}
+                    </span>
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#C2410C', background: '#FFFFFF', padding: '2px 8px', borderRadius: '12px' }}>
+                      ● Active
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '14px', fontWeight: 800, color: '#78350F' }}>
+                    {newCouponForm.type === 'percentage'
+                      ? `${newCouponForm.discountValue || 0}% OFF${newCouponForm.maxDiscount ? ` up to ₹${newCouponForm.maxDiscount}` : ''}`
+                      : newCouponForm.type === 'flat'
+                      ? `Flat ₹${newCouponForm.discountValue || 0} OFF (-₹${newCouponForm.discountValue || 0} Total)`
+                      : newCouponForm.type === 'bogo'
+                      ? `Buy 1 Get 1 Free`
+                      : newCouponForm.type === 'referral'
+                      ? `Refer & Earn ₹${newCouponForm.discountValue || 50} Cashback`
+                      : (newCouponForm.description || 'Combo Special')}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#92400E', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Min Order: <b>₹{newCouponForm.minOrder || 0}</b></span>
+                    <span>⏱ {formatExpiryDisplay(newCouponForm.expiryDate)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="crm-modal-footer" style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                {editingCouponObj ? (
+                  <button
+                    type="button"
+                    className="crm-btn-secondary"
+                    onClick={() => {
+                      setIsCreateCouponOpen(false);
+                      handleDeleteCoupon(editingCouponObj);
+                      setEditingCouponObj(null);
+                    }}
+                    style={{ color: '#EF4444', borderColor: '#FECACA', background: '#FEF2F2', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Trash2 size={16} />
+                    <span>Delete Promocode</span>
+                  </button>
+                ) : (
+                  <div />
+                )}
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    type="button"
+                    className="crm-btn-secondary"
+                    onClick={() => {
+                      setIsCreateCouponOpen(false);
+                      setEditingCouponObj(null);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-create-order-primary">
+                    <Check size={18} />
+                    <span>{editingCouponObj ? 'Save Changes' : 'Activate Coupon'}</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================================================
+          MODAL 3.5: CONFIGURE BIRTHDAY GREETING & COUPON MODAL
+          ========================================================================== */}
+      {isEditBdayModalOpen && (
+        <div className="crm-modal-backdrop" onClick={() => setIsEditBdayModalOpen(false)}>
+          <div className="crm-modal-card" style={{ maxWidth: '560px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="crm-modal-header">
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900 }}>🎂 Configure Birthday Offer &amp; Message</h3>
+                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                  Set custom happy birthday message template and offer coupon code.
+                </div>
+              </div>
+              <button
+                type="button"
+                className="crm-modal-close-btn"
+                onClick={() => setIsEditBdayModalOpen(false)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                addToast('Birthday Greeting & Coupon Settings Saved!', <Check size={18} />);
+                setIsEditBdayModalOpen(false);
+              }}
+            >
+              <div className="crm-modal-body" style={{ gap: '16px' }}>
+                {/* Auto-Send Toggle inside Modal */}
+                <div style={{ background: '#FFF7ED', border: '1.5px solid #FDBA74', padding: '12px 16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: 800, color: '#9A3412' }}>
+                      Automatic Birthday Dispatch Switch
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#C2410C' }}>
+                      When ON, system automatically sends birthday offers on customer birthdays.
+                    </div>
+                  </div>
+
+                  <label className="crm-blue-switch" style={{ width: '46px', height: '24px' }}>
+                    <input
+                      type="checkbox"
+                      checked={bdayAutoSend}
+                      onChange={handleToggleBdayAutoSend}
+                    />
+                    <span className="crm-blue-slider" style={{ borderRadius: '24px' }} />
+                  </label>
+                </div>
+
+                {/* Coupon Code Select / Input */}
+                <div className="crm-form-group">
+                  <label style={{ fontWeight: 800 }}>Select or Enter Birthday Promocode *</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <select
+                      className="crm-input"
+                      value={bdayConfig.couponCode}
+                      onChange={(e) => {
+                        const selCode = e.target.value;
+                        const match = (coupons || []).find((cp) => cp.code === selCode);
+                        setBdayConfig((prev) => ({
+                          ...prev,
+                          couponCode: selCode,
+                          offerDetail: match ? match.discount : prev.offerDetail,
+                        }));
+                      }}
+                    >
+                      <option value="BDAYSPECIAL">BDAYSPECIAL (Default)</option>
+                      {(coupons || []).map((cp) => (
+                        <option key={cp.code} value={cp.code}>
+                          {cp.code} - ({cp.discount})
+                        </option>
+                      ))}
+                    </select>
+
+                    <input
+                      type="text"
+                      className="crm-input"
+                      placeholder="e.g. BDAYSPECIAL"
+                      value={bdayConfig.couponCode}
+                      onChange={(e) => setBdayConfig({ ...bdayConfig, couponCode: e.target.value.toUpperCase() })}
+                      style={{ textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 800 }}
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Offer Detail */}
+                <div className="crm-form-group">
+                  <label style={{ fontWeight: 800 }}>Offer Detail / Freebie Description *</label>
+                  <input
+                    type="text"
+                    className="crm-input"
+                    placeholder="e.g. Free Choco Lava Cake + 20% OFF"
+                    value={bdayConfig.offerDetail}
+                    onChange={(e) => setBdayConfig({ ...bdayConfig, offerDetail: e.target.value })}
+                    required
+                  />
+                </div>
+
+                {/* Happy Birthday Message Template */}
+                <div className="crm-form-group">
+                  <label style={{ fontWeight: 800 }}>Happy Birthday WhatsApp &amp; Push Greeting Template *</label>
+                  <textarea
+                    className="crm-input"
+                    rows={4}
+                    value={bdayConfig.message}
+                    onChange={(e) => setBdayConfig({ ...bdayConfig, message: e.target.value })}
+                    placeholder="Use placeholders: {name}, {offer}, {code}, {storeName}"
+                    required
+                    style={{ lineHeight: 1.5 }}
+                  />
+                  <div style={{ fontSize: '11.5px', color: '#64748B', marginTop: '4px' }}>
+                    Placeholders: <code>{`{name}`}</code>, <code>{`{offer}`}</code>, <code>{`{code}`}</code>, <code>{`{storeName}`}</code>
+                  </div>
+                </div>
+              </div>
+
+              <div className="crm-modal-footer">
+                <button
+                  type="button"
+                  className="crm-btn-secondary"
+                  onClick={() => setIsEditBdayModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn-create-order-primary">
+                  <Check size={18} />
+                  <span>Save Birthday Settings</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================================================
+          MODAL 3.6: CREATE CUSTOMER GROUP MODAL (Smart Filters)
+          ========================================================================== */}
+      {isAddGroupModalOpen && (
+        <div className="crm-modal-backdrop" onClick={() => setIsAddGroupModalOpen(false)}>
+          <div className="crm-modal-card" style={{ maxWidth: '580px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="crm-modal-header">
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900 }}>+ Create Customer Intelligence Group</h3>
+                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                  Filter users by Bill Spend, Days of Week (Mon-Sun), and Food Order Categories.
+                </div>
+              </div>
+              <button
+                type="button"
+                className="crm-modal-close-btn"
+                onClick={() => setIsAddGroupModalOpen(false)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateCustomerGroupSubmit}>
+              <div className="crm-modal-body" style={{ gap: '16px' }}>
+                <div className="crm-form-group">
+                  <label style={{ fontWeight: 800 }}>Group Name *</label>
+                  <input
+                    type="text"
+                    className="crm-input"
+                    placeholder="e.g. Weekend VIP Party Diners"
+                    value={newGroupForm.name}
+                    onChange={(e) => setNewGroupForm({ ...newGroupForm, name: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div className="crm-form-group">
+                  <label style={{ fontWeight: 800 }}>Group Description / Purpose</label>
+                  <input
+                    type="text"
+                    className="crm-input"
+                    placeholder="e.g. Target for high-value weekend combo deals"
+                    value={newGroupForm.description}
+                    onChange={(e) => setNewGroupForm({ ...newGroupForm, description: e.target.value })}
+                  />
+                </div>
+
+                {/* Filter 1: Bill Spend Range */}
+                <div className="crm-form-group">
+                  <label style={{ fontWeight: 800 }}>1. Filter by Bill Spending Range</label>
+                  <select
+                    className="crm-input"
+                    value={newGroupForm.spendRule}
+                    onChange={(e) => setNewGroupForm({ ...newGroupForm, spendRule: e.target.value })}
+                  >
+                    <option value="all">All Spending Levels (Default)</option>
+                    <option value="high">High Spenders (Total Spend &gt; ₹500)</option>
+                    <option value="mid">Regular Spenders (Total Spend ₹200 - ₹500)</option>
+                    <option value="budget">Budget Diners (Total Spend &lt; ₹200)</option>
+                  </select>
+                </div>
+
+                {/* Filter 2: Preferred Order Days */}
+                <div className="crm-form-group">
+                  <label style={{ fontWeight: 800 }}>2. Filter by Ordering Days of Week</label>
+                  <select
+                    className="crm-input"
+                    value={newGroupForm.daysRule}
+                    onChange={(e) => setNewGroupForm({ ...newGroupForm, daysRule: e.target.value })}
+                  >
+                    <option value="all">All Days (Mon - Sun)</option>
+                    <option value="weekend">Weekend Diners (Fri, Sat, Sun)</option>
+                    <option value="weekday">Weekday Diners (Mon, Tue, Wed, Thu)</option>
+                  </select>
+                </div>
+
+                {/* Filter 3: Preferred Food Category */}
+                <div className="crm-form-group">
+                  <label style={{ fontWeight: 800 }}>3. Filter by Food Category Preference</label>
+                  <select
+                    className="crm-input"
+                    value={newGroupForm.foodCategory}
+                    onChange={(e) => setNewGroupForm({ ...newGroupForm, foodCategory: e.target.value })}
+                  >
+                    <option value="all">All Food Categories</option>
+                    <option value="Fast Food">Fast Food, Pizzas &amp; Burgers</option>
+                    <option value="Main Course">Main Course &amp; Thali Diners</option>
+                    <option value="Beverages">Beverages, Drinks &amp; Desserts</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="crm-modal-footer">
+                <button
+                  type="button"
+                  className="crm-btn-secondary"
+                  onClick={() => setIsAddGroupModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn-create-order-primary">
+                  <Check size={18} />
+                  <span>Create Group</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================================================
+          MODAL 3.7: GROUP ANALYTICS & MEMBERS DRAWER MODAL
+          ========================================================================== */}
+      {activeGroupDetail && (
+        <div className="crm-modal-backdrop" onClick={() => setActiveGroupDetail(null)}>
+          <div className="crm-modal-card" style={{ maxWidth: '620px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="crm-modal-header">
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900 }}>{activeGroupDetail.name} Analytics</h3>
+                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                  {activeGroupDetail.description}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="crm-modal-close-btn"
+                onClick={() => setActiveGroupDetail(null)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="crm-modal-body" style={{ gap: '16px' }}>
+              {/* Group KPIs */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', background: '#F8FAFC', padding: '14px', borderRadius: '12px', border: '1.5px solid #E2E8F0' }}>
+                <div>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B' }}>MEMBERS</span>
+                  <div style={{ fontSize: '18px', fontWeight: 900, color: '#1D4ED8' }}>
+                    {activeGroupDetail.memberIds ? activeGroupDetail.memberIds.length : 3} Users
+                  </div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B' }}>GROUP AVG BILL</span>
+                  <div style={{ fontSize: '18px', fontWeight: 900, color: '#059669' }}>
+                    ₹{activeGroupDetail.avgBill || 450}
+                  </div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B' }}>FAVORITE FOOD</span>
+                  <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#0F172A', marginTop: '4px' }}>
+                    {activeGroupDetail.favoriteItem || 'Paneer Butter Masala'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Members List */}
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: 800, color: '#0F172A', marginBottom: '8px' }}>
+                  Group Members List:
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '220px', overflowY: 'auto' }}>
+                  {(customers || []).slice(0, 4).map((c) => (
+                    <div key={c.id || c.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#FFFFFF', border: '1px solid #E2E8F0', padding: '10px 14px', borderRadius: '10px' }}>
+                      <div>
+                        <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#0F172A' }}>{c.name}</div>
+                        <div style={{ fontSize: '12px', color: '#64748B' }}>{c.phone}</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '13px', fontWeight: 800, color: '#1D4ED8' }}>₹{(c.totalSales || 2400).toLocaleString()}</div>
+                        <div style={{ fontSize: '11.5px', color: '#64748B' }}>{c.ordersCount || 5} orders</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="crm-modal-footer">
+              <button
+                type="button"
+                className="crm-btn-secondary"
+                onClick={() => setActiveGroupDetail(null)}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="btn-create-order-primary"
+                onClick={() => {
+                  setCampaignTargetGroup(activeGroupDetail.id);
+                  setActiveGroupDetail(null);
+                  setActiveTab('marketing');
+                  addToast(`Targeting campaign for ${activeGroupDetail.name}!`, <Sparkles size={16} />);
+                }}
+              >
+                <Megaphone size={16} />
+                <span>Target Offer in Marketing</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================================================
+          MODAL 3.8: CUSTOM PUSH & WHATSAPP NOTIFICATION BROADCAST MODAL
+          ========================================================================== */}
+      {isCustomNotifyModalOpen && (
+        <div className="crm-modal-backdrop" onClick={() => setIsCustomNotifyModalOpen(false)}>
+          <div className="crm-modal-card" style={{ maxWidth: '620px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="crm-modal-header">
+              <div>
+                <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 900 }}>🔔 Custom Push &amp; WhatsApp Notification Broadcast</h3>
+                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                  Send personal custom message to a specific customer, all users, random N customers, or group.
+                </div>
+              </div>
+              <button
+                type="button"
+                className="crm-modal-close-btn"
+                onClick={() => setIsCustomNotifyModalOpen(false)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSendCustomNotificationSubmit}>
+              <div className="crm-modal-body" style={{ gap: '16px' }}>
+                {/* Target Audience Mode Selector */}
+                <div className="crm-form-group">
+                  <label style={{ fontWeight: 800 }}>1. Select Target Audience / Recipients *</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px' }}>
+                    {[
+                      { id: 'all_users', label: '📢 All Customers Broadcast' },
+                      { id: 'specific_user', label: '👤 Specific Personal Customer' },
+                      { id: 'random_n', label: '🎲 Random N Customers' },
+                      { id: 'group', label: '👥 Smart Customer Group' },
+                    ].map((mode) => (
+                      <button
+                        key={mode.id}
+                        type="button"
+                        className={`crm-offer-type-btn ${notifyAudienceMode === mode.id ? 'active' : ''}`}
+                        onClick={() => setNotifyAudienceMode(mode.id)}
+                      >
+                        {mode.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Conditional inputs based on audience mode */}
+                {notifyAudienceMode === 'specific_user' && (
+                  <div className="crm-form-group">
+                    <label style={{ fontWeight: 800 }}>Select Specific Customer *</label>
+                    <select
+                      className="crm-input"
+                      value={selectedCustId}
+                      onChange={(e) => {
+                        setSelectedCustId(e.target.value);
+                        const match = (customers || []).find((c) => (c.id || c._id) === e.target.value);
+                        if (match) {
+                          setNotifyTitle(`🎁 Special Personal Offer for ${match.name}`);
+                          setNotifyMessage(`Hi ${match.name}! Enjoy a special treat from us at ${storeControls.restName || 'FoodyPay Store'}. Use code FEST20!`);
+                        }
+                      }}
+                    >
+                      <option value="">-- Choose Customer --</option>
+                      {(customers || []).map((c) => (
+                        <option key={c.id || c._id} value={c.id || c._id}>
+                          {c.name} ({c.phone}) - {c.ordersCount || 1} orders
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {notifyAudienceMode === 'random_n' && (
+                  <div className="crm-form-group">
+                    <label style={{ fontWeight: 800 }}>How many Random Customers to target? *</label>
+                    <input
+                      type="number"
+                      className="crm-input"
+                      placeholder="e.g. 5"
+                      value={randomNotifyCount}
+                      onChange={(e) => setRandomNotifyCount(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {notifyAudienceMode === 'group' && (
+                  <div className="crm-form-group">
+                    <label style={{ fontWeight: 800 }}>Select Target Smart Customer Group *</label>
+                    <select
+                      className="crm-input"
+                      value={selectedGroupId}
+                      onChange={(e) => setSelectedGroupId(e.target.value)}
+                    >
+                      {(customerGroups || []).map((grp) => (
+                        <option key={grp.id} value={grp.id}>
+                          {grp.name} ({grp.memberIds ? grp.memberIds.length : 3} Members)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Delivery Channel Selector */}
+                <div className="crm-form-group">
+                  <label style={{ fontWeight: 800 }}>2. Delivery Channel *</label>
+                  <select
+                    className="crm-input"
+                    value={notifyChannel}
+                    onChange={(e) => setNotifyChannel(e.target.value)}
+                  >
+                    <option value="push_whatsapp">📲 WhatsApp &amp; Mobile Push Notification (Combined)</option>
+                    <option value="whatsapp_only">💬 WhatsApp Message Only</option>
+                    <option value="push_only">🔔 Mobile Push Notification Only</option>
+                  </select>
+                </div>
+
+                {/* Notification Title */}
+                <div className="crm-form-group">
+                  <label style={{ fontWeight: 800 }}>3. Notification Heading / Subject *</label>
+                  <input
+                    type="text"
+                    className="crm-input"
+                    placeholder="e.g. 🎁 Special Discount Just For You!"
+                    value={notifyTitle}
+                    onChange={(e) => setNotifyTitle(e.target.value)}
+                    required
+                  />
+                </div>
+
+                {/* Quick Message Templates */}
+                <div className="crm-form-group">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label style={{ margin: 0, fontWeight: 800 }}>4. Message Text Content *</label>
+                    <span style={{ fontSize: '11.5px', color: '#64748B' }}>Use <code>{`{name}`}</code>, <code>{`{storeName}`}</code></span>
+                  </div>
+
+                  {/* Preset Template Buttons */}
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', margin: '6px 0' }}>
+                    {[
+                      {
+                        label: '🎁 We Miss You (15% OFF)',
+                        title: '🎁 We Miss Seeing You at FoodyPay!',
+                        msg: 'Hey {name}! We miss your visit at {storeName}. Enjoy 15% OFF on your order today! Code: MISSU15',
+                      },
+                      {
+                        label: '🍕 Weekend Party Deal',
+                        title: '🍕 Weekend Pizza & Starter Combo Offer',
+                        msg: 'Weekend alert! Enjoy free Garlic Bread on Large Pizza orders at {storeName}. Order on table QR now!',
+                      },
+                      {
+                        label: '⭐ VIP Exclusive Cashback',
+                        title: '⭐ Exclusive VIP ₹100 Cashback Voucher',
+                        msg: 'Dear {name}, as a valued VIP diner, here is flat ₹100 OFF on your next bill at {storeName}. Code: VIP100',
+                      },
+                    ].map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        style={{
+                          background: '#F1F5F9',
+                          border: '1px solid #CBD5E1',
+                          padding: '4px 10px',
+                          borderRadius: '8px',
+                          fontSize: '11.5px',
+                          fontWeight: 700,
+                          color: '#334155',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => {
+                          setNotifyTitle(preset.title);
+                          setNotifyMessage(preset.msg);
+                        }}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <textarea
+                    className="crm-input"
+                    rows={4}
+                    value={notifyMessage}
+                    onChange={(e) => setNotifyMessage(e.target.value)}
+                    placeholder="Type your notification message..."
+                    required
+                    style={{ lineHeight: 1.5 }}
                   />
                 </div>
               </div>
@@ -3729,13 +7114,13 @@ export default function DashboardPage({ onShowToast }) {
                 <button
                   type="button"
                   className="crm-btn-secondary"
-                  onClick={() => setIsCreateCouponOpen(false)}
+                  onClick={() => setIsCustomNotifyModalOpen(false)}
                 >
                   Cancel
                 </button>
                 <button type="submit" className="btn-create-order-primary">
-                  <Check size={18} />
-                  <span>Activate Coupon</span>
+                  <Bell size={18} />
+                  <span>Send Broadcast Now</span>
                 </button>
               </div>
             </form>
@@ -4025,38 +7410,73 @@ export default function DashboardPage({ onShowToast }) {
                       transition: 'all 0.25s ease'
                     }}
                   >
-                    <div style={{ fontSize: '14px', fontWeight: 900, marginBottom: '6px' }}>
-                      {storeControls.restName || "Sharma's Kitchen"}
+                    <div style={{ fontSize: '15px', fontWeight: 900, marginBottom: '6px', letterSpacing: '-0.01em' }}>
+                      {storeControls.restName || "Lagan Da Dhaba"}
                     </div>
 
                     <div
                       style={{
-                        fontSize: '15px',
+                        fontSize: '13px',
                         fontWeight: 900,
-                        padding: '5px 16px',
-                        borderRadius: '18px',
+                        padding: '4px 14px',
+                        borderRadius: '16px',
                         backgroundColor: tableForm.theme === 'luxury' ? '#F59E0B' : tableForm.theme === 'neon' ? '#FFFFFF' : '#FF5E14',
                         color: tableForm.theme === 'luxury' ? '#0F172A' : tableForm.theme === 'neon' ? '#FF5E14' : '#FFFFFF',
-                        marginBottom: '14px',
-                        letterSpacing: '0.05em'
+                        marginBottom: '10px',
+                        letterSpacing: '0.04em',
+                        boxShadow: '0 3px 10px rgba(255, 94, 20, 0.25)',
                       }}
                     >
                       {tableForm.name || 'Table 1'}
                     </div>
 
-                    <QrCodeComponent
-                      text={getUniqueTableUrl(tableForm.name, tableForm.url)}
-                      size={150}
-                      qrColor={tableForm.qrColor}
-                      cornerColor={tableForm.cornerColor}
-                      showLogo={true}
-                      logoUrl={tableLogoPreview || tableForm.logoUrl || storeControls.logoUrl || ''}
-                      bgColor={tableForm.theme === 'luxury' ? '#1E293B' : '#FFFFFF'}
-                    />
+                    <div
+                      style={{
+                        padding: '10px',
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: '16px',
+                        border: '1.5px solid #E2E8F0',
+                        boxShadow: '0 4px 14px rgba(0,0,0,0.05)',
+                        display: 'inline-flex',
+                      }}
+                    >
+                      <QrCodeComponent
+                        text={getUniqueTableUrl(tableForm.name, tableForm.url)}
+                        size={140}
+                        qrColor={tableForm.qrColor}
+                        cornerColor={tableForm.cornerColor}
+                        showLogo={true}
+                        logoUrl={tableLogoPreview || tableForm.logoUrl || storeControls.logoUrl || ''}
+                        bgColor="#FFFFFF"
+                      />
+                    </div>
 
-                    <div style={{ fontSize: '11px', marginTop: '12px', fontWeight: 700, opacity: 0.9, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ fontSize: '11px', marginTop: '10px', fontWeight: 700, opacity: 0.9, display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <QrCode size={13} />
-                      <span>{tableForm.purpose || 'Scan QR for Contactless Digital Menu'}</span>
+                      <span>{tableForm.purpose || 'Contactless Self Ordering'}</span>
+                    </div>
+
+                    {/* POWERED BY FOODYPAY BRANDING */}
+                    <div
+                      style={{
+                        marginTop: '10px',
+                        paddingTop: '8px',
+                        borderTop: tableForm.theme === 'neon' ? '1px dashed rgba(255,255,255,0.3)' : '1px dashed #E2E8F0',
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '4px',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        color: tableForm.theme === 'neon' ? '#FFFFFF' : '#64748B',
+                      }}
+                    >
+                      <Sparkles size={12} color={tableForm.theme === 'neon' ? '#FFFFFF' : '#FF5E14'} />
+                      <span style={{ opacity: 0.85 }}>Powered by</span>
+                      <span style={{ color: tableForm.theme === 'neon' ? '#FFFFFF' : '#FF5E14', fontWeight: 900, fontSize: '11.5px' }}>
+                        FoodyPay
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -4135,41 +7555,73 @@ export default function DashboardPage({ onShowToast }) {
                   boxShadow: activeStandeeTable.theme === 'luxury' ? '0 10px 30px rgba(245, 158, 11, 0.25)' : activeStandeeTable.theme === 'neon' ? '0 10px 30px rgba(255, 94, 20, 0.35)' : '0 10px 30px rgba(0,0,0,0.08)'
                 }}
               >
-                <img
-                  src={storeControls.logoUrl || "/Logo.png"}
-                  alt="FoodyPay Logo"
-                  style={{ height: '42px', objectFit: 'contain', display: 'block' }}
-                />
-                <div style={{ fontSize: '18px', fontWeight: 800 }}>{storeControls.restName}</div>
-                
+                <div style={{ fontSize: '18px', fontWeight: 900, letterSpacing: '-0.01em' }}>
+                  {storeControls.restName || 'Lagan Da Dhaba'}
+                </div>
+
                 <div
                   style={{
                     fontSize: '14px',
-                    fontWeight: 800,
-                    padding: '4px 14px',
+                    fontWeight: 900,
+                    padding: '5px 16px',
                     borderRadius: '20px',
-                    backgroundColor: activeStandeeTable.theme === 'luxury' ? '#1E293B' : activeStandeeTable.theme === 'neon' ? '#FFFFFF' : '#F1F5F9',
-                    color: activeStandeeTable.theme === 'luxury' ? '#F59E0B' : activeStandeeTable.theme === 'neon' ? '#FF5E14' : '#1D4ED8',
-                    letterSpacing: '0.05em'
+                    backgroundColor: activeStandeeTable.theme === 'luxury' ? '#F59E0B' : activeStandeeTable.theme === 'neon' ? '#FFFFFF' : '#FF5E14',
+                    color: activeStandeeTable.theme === 'luxury' ? '#0F172A' : activeStandeeTable.theme === 'neon' ? '#FF5E14' : '#FFFFFF',
+                    letterSpacing: '0.05em',
+                    boxShadow: '0 3px 10px rgba(255, 94, 20, 0.25)',
                   }}
                 >
-                  {(activeStandeeTable.name || 'TABLE 1').toUpperCase()} • {activeStandeeTable.purpose || activeStandeeTable.section || 'Contactless Ordering'}
+                  {(activeStandeeTable.name || 'TABLE 1').toUpperCase()} • {activeStandeeTable.purpose || activeStandeeTable.section || 'Contactless Self Ordering'}
                 </div>
 
-                <QrCodeComponent
-                  text={getUniqueTableUrl(activeStandeeTable.name, activeStandeeTable.url)}
-                  size={170}
-                  showLogo={true}
-                  qrColor={activeStandeeTable.qrColor || (activeStandeeTable.theme === 'luxury' ? '#F59E0B' : '#1E293B')}
-                  cornerColor={activeStandeeTable.cornerColor || (activeStandeeTable.theme === 'luxury' ? '#F59E0B' : '#FF5E14')}
-                  bgColor={activeStandeeTable.theme === 'luxury' ? '#1E293B' : '#FFFFFF'}
-                />
+                <div
+                  style={{
+                    padding: '12px',
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: '18px',
+                    border: '1.5px solid #E2E8F0',
+                    boxShadow: '0 6px 20px rgba(0,0,0,0.06)',
+                    display: 'inline-flex',
+                  }}
+                >
+                  <QrCodeComponent
+                    text={getUniqueTableUrl(activeStandeeTable.name, activeStandeeTable.url)}
+                    size={170}
+                    showLogo={true}
+                    qrColor={activeStandeeTable.qrColor || (activeStandeeTable.theme === 'luxury' ? '#F59E0B' : '#1E293B')}
+                    cornerColor={activeStandeeTable.cornerColor || (activeStandeeTable.theme === 'luxury' ? '#F59E0B' : '#FF5E14')}
+                    bgColor="#FFFFFF"
+                  />
+                </div>
 
                 <p style={{ fontSize: '12.5px', margin: 0, opacity: 0.95, lineHeight: 1.4 }}>
-                  <strong>Scan with Camera to Order</strong>
+                  <strong>📱 Scan with Camera to Order &amp; Pay</strong>
                   <br />
-                  No app download needed • Fast &amp; Contactless
+                  <span style={{ fontSize: '11px', opacity: 0.85 }}>No app download needed • Fast &amp; Contactless</span>
                 </p>
+
+                {/* POWERED BY FOODYPAY BRANDING */}
+                <div
+                  style={{
+                    marginTop: '6px',
+                    paddingTop: '10px',
+                    borderTop: activeStandeeTable.theme === 'neon' ? '1px dashed rgba(255,255,255,0.3)' : '1px dashed #E2E8F0',
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
+                    fontSize: '11.5px',
+                    fontWeight: 800,
+                    color: activeStandeeTable.theme === 'neon' ? '#FFFFFF' : '#64748B',
+                  }}
+                >
+                  <Sparkles size={13} color={activeStandeeTable.theme === 'neon' ? '#FFFFFF' : '#FF5E14'} />
+                  <span style={{ opacity: 0.85 }}>Powered by</span>
+                  <span style={{ color: activeStandeeTable.theme === 'neon' ? '#FFFFFF' : '#FF5E14', fontWeight: 900, fontSize: '12px' }}>
+                    FoodyPay
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -4183,6 +7635,411 @@ export default function DashboardPage({ onShowToast }) {
                 <span>Print Standee</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================================================
+          MODAL 9: STORE REPLY TO CUSTOMER REVIEW
+          ========================================================================== */}
+      {isReplyModalOpen && activeReplyReview && (
+        <div className="crm-modal-backdrop" onClick={() => setIsReplyModalOpen(false)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+          <div className="crm-modal-card" style={{ maxWidth: '540px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="crm-modal-header">
+              <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <MessageSquare size={20} color="#1D4ED8" /> Store Reply to {activeReplyReview.customerName}
+              </h3>
+              <button type="button" className="crm-modal-close-btn" onClick={() => setIsReplyModalOpen(false)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveReplySubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px 20px' }}>
+              <div style={{ background: '#F8FAFC', padding: '12px 16px', borderRadius: '10px', borderLeft: '4px solid #1D4ED8', fontSize: '13px', color: '#334155' }}>
+                <strong>Customer Feedback:</strong> "{activeReplyReview.feedback}"
+              </div>
+
+              <div className="crm-form-group">
+                <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>Merchant Response Text <span className="req">*</span></label>
+                <textarea
+                  className="crm-input"
+                  rows={4}
+                  placeholder="Type your official store response to this customer..."
+                  value={replyTextInput}
+                  onChange={(e) => setReplyTextInput(e.target.value)}
+                  required
+                  style={{ resize: 'vertical', fontSize: '13.5px', lineHeight: '1.5' }}
+                />
+              </div>
+
+              {/* Quick Template Chips */}
+              <div>
+                <div style={{ fontSize: '11px', fontWeight: 800, color: '#64748B', letterSpacing: '0.5px', marginBottom: '6px' }}>QUICK TEMPLATE RESPONSES</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {[
+                    'Thank you for the wonderful feedback! So glad you enjoyed the food.',
+                    'Thank you for dining with us! We look forward to welcoming you again soon.',
+                    'We appreciate your feedback! We are optimizing kitchen speed during peak hours.',
+                  ].map((tpl, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      style={{ fontSize: '12px', background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', textAlign: 'left', fontWeight: 600 }}
+                      onClick={() => setReplyTextInput(tpl)}
+                    >
+                      "{tpl}"
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="crm-modal-footer" style={{ marginTop: '8px' }}>
+                <button type="button" className="crm-btn-secondary" onClick={() => setIsReplyModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="crm-btn-primary" style={{ background: '#1D4ED8' }}>
+                  Save & Send Reply
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================================================
+          MODAL 10: ADD MANUAL CUSTOMER REVIEW & FEEDBACK
+          ========================================================================== */}
+      {isAddReviewModalOpen && (
+        <div className="crm-modal-backdrop" onClick={() => setIsAddReviewModalOpen(false)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+          <div className="crm-modal-card" style={{ maxWidth: '560px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="crm-modal-header">
+              <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Star size={20} color="#F59E0B" fill="#F59E0B" /> Add Customer Review & Rating
+              </h3>
+              <button type="button" className="crm-modal-close-btn" onClick={() => setIsAddReviewModalOpen(false)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddReviewSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '16px 20px' }}>
+              <div className="crm-form-grid" style={{ gap: '12px' }}>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px' }}>Customer Name <span className="req">*</span></label>
+                  <input
+                    type="text"
+                    className="crm-input"
+                    placeholder="e.g. Rahul Sharma"
+                    value={newReviewForm.customerName}
+                    onChange={(e) => setNewReviewForm((prev) => ({ ...prev, customerName: e.target.value }))}
+                    required
+                  />
+                </div>
+
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px' }}>Mobile Number</label>
+                  <input
+                    type="text"
+                    className="crm-input"
+                    placeholder="e.g. +91 98765 43210"
+                    value={newReviewForm.customerPhone}
+                    onChange={(e) => setNewReviewForm((prev) => ({ ...prev, customerPhone: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div className="crm-form-grid" style={{ gap: '12px' }}>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px' }}>Table No / Channel</label>
+                  <select
+                    className="crm-input"
+                    value={newReviewForm.tableNo}
+                    onChange={(e) => setNewReviewForm((prev) => ({ ...prev, tableNo: e.target.value }))}
+                  >
+                    <option value="Table 1">Table 1</option>
+                    <option value="Table 2">Table 2</option>
+                    <option value="Table 3">Table 3</option>
+                    <option value="Table 4">Table 4</option>
+                    <option value="Takeaway Counter">Takeaway Counter</option>
+                    <option value="Direct Delivery">Direct Delivery</option>
+                  </select>
+                </div>
+
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px' }}>Dish / Items Ordered</label>
+                  <input
+                    type="text"
+                    className="crm-input"
+                    placeholder="e.g. Paneer Butter Masala, Garlic Naan"
+                    value={newReviewForm.dishOrdered}
+                    onChange={(e) => setNewReviewForm((prev) => ({ ...prev, dishOrdered: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div className="crm-form-group">
+                <label style={{ fontSize: '12.5px' }}>Star Rating <span className="req">*</span></label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '4px',
+                        transition: 'transform 0.15s ease',
+                        transform: newReviewForm.rating >= star ? 'scale(1.15)' : 'scale(1)',
+                      }}
+                      onClick={() => setNewReviewForm((prev) => ({ ...prev, rating: star }))}
+                    >
+                      <Star size={28} fill={newReviewForm.rating >= star ? '#F59E0B' : 'none'} color={newReviewForm.rating >= star ? '#F59E0B' : '#CBD5E1'} />
+                    </button>
+                  ))}
+                  <span style={{ fontSize: '15px', fontWeight: 900, color: '#0F172A', marginLeft: '8px' }}>
+                    {newReviewForm.rating}.0 / 5.0
+                  </span>
+                </div>
+              </div>
+
+              <div className="crm-form-group">
+                <label style={{ fontSize: '12.5px' }}>Customer Feedback & Comments <span className="req">*</span></label>
+                <textarea
+                  className="crm-input"
+                  rows={3}
+                  placeholder="Write the customer's exact feedback comments..."
+                  value={newReviewForm.feedback}
+                  onChange={(e) => setNewReviewForm((prev) => ({ ...prev, feedback: e.target.value }))}
+                  required
+                />
+              </div>
+
+              <div className="crm-modal-footer">
+                <button type="button" className="crm-btn-secondary" onClick={() => setIsAddReviewModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="crm-btn-primary">
+                  Save Customer Review
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================================================
+          MODAL 11: CREATE / EDIT CUSTOM MEAL COLLECTION BUILDER
+          ========================================================================== */}
+      {isMealModalOpen && (
+        <div className="crm-modal-backdrop" onClick={() => setIsMealModalOpen(false)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+          <div className="crm-modal-card" style={{ maxWidth: '680px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+            <div className="crm-modal-header" style={{ padding: '16px 20px', flexShrink: 0 }}>
+              <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Utensils size={20} color="#FF5E14" /> {editingMealObj ? `Edit Custom Meal: ${editingMealObj.name}` : '+ Create Custom Meal Combo Collection'}
+              </h3>
+              <button type="button" className="crm-modal-close-btn" onClick={() => setIsMealModalOpen(false)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveMealSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+              <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div className="crm-form-grid" style={{ gap: '12px' }}>
+                  <div className="crm-form-group">
+                    <label style={{ fontSize: '12.5px' }}>Meal Bundle Name <span className="req">*</span></label>
+                    <input
+                      type="text"
+                      className="crm-input"
+                      placeholder="e.g. Royal North Indian Thali"
+                      value={mealForm.name}
+                      onChange={(e) => setMealForm((prev) => ({ ...prev, name: e.target.value }))}
+                      required
+                    />
+                  </div>
+
+                  <div className="crm-form-group">
+                    <label style={{ fontSize: '12.5px' }}>Category Tag</label>
+                    <select
+                      className="crm-input"
+                      value={mealForm.category}
+                      onChange={(e) => setMealForm((prev) => ({ ...prev, category: e.target.value }))}
+                    >
+                      <option value="Thali & Full Meals">Thali & Full Meals</option>
+                      <option value="Family Combos">Family Combos</option>
+                      <option value="Snacks & Drinks">Snacks & Drinks</option>
+                      <option value="Breakfast & Tiffin">Breakfast & Tiffin</option>
+                      <option value="Party Bundles">Party Bundles</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px' }}>Meal Cover Photo Image URL</label>
+                  <input
+                    type="text"
+                    className="crm-input"
+                    placeholder="https://images.unsplash.com/photo-..."
+                    value={mealForm.imageUrl}
+                    onChange={(e) => setMealForm((prev) => ({ ...prev, imageUrl: e.target.value }))}
+                  />
+                  {mealForm.imageUrl && (
+                    <div style={{ marginTop: '8px', height: '80px', borderRadius: '8px', overflow: 'hidden', border: '1px solid #E2E8F0' }}>
+                      <img src={mealForm.imageUrl} alt="Meal Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                  )}
+                </div>
+
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px' }}>Short Description</label>
+                  <input
+                    type="text"
+                    className="crm-input"
+                    placeholder="e.g. Complete wholesome lunch thali with Paneer, Dal, Naan, Rice & Sweet"
+                    value={mealForm.description}
+                    onChange={(e) => setMealForm((prev) => ({ ...prev, description: e.target.value }))}
+                  />
+                </div>
+
+                {/* ITEMIZATION BUILDER: Food Items inside Meal */}
+                <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 800, color: '#334155', textTransform: 'uppercase' }}>
+                      Food Items included in Meal Combo
+                    </label>
+                    <button
+                      type="button"
+                      style={{ background: '#1D4ED8', color: '#FFF', border: 'none', padding: '4px 10px', borderRadius: '6px', fontSize: '11.5px', fontWeight: 700, cursor: 'pointer' }}
+                      onClick={() =>
+                        setMealForm((prev) => ({
+                          ...prev,
+                          items: [...prev.items, { name: '', qty: 1, individualPrice: 0 }],
+                        }))
+                      }
+                    >
+                      + Add Item
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {mealForm.items.map((it, idx) => (
+                      <div key={idx} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          className="crm-input"
+                          placeholder="Food Item Name (e.g. Paneer Masala)"
+                          value={it.name}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setMealForm((prev) => {
+                              const copy = [...prev.items];
+                              copy[idx].name = val;
+                              return { ...prev, items: copy };
+                            });
+                          }}
+                          style={{ flex: 2, fontSize: '12.5px' }}
+                        />
+
+                        <input
+                          type="number"
+                          min="1"
+                          max="20"
+                          placeholder="Qty"
+                          value={it.qty}
+                          onChange={(e) => {
+                            const val = Math.max(1, Number(e.target.value) || 1);
+                            setMealForm((prev) => {
+                              const copy = [...prev.items];
+                              copy[idx].qty = val;
+                              return { ...prev, items: copy };
+                            });
+                          }}
+                          style={{ width: '60px', padding: '6px 8px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '12.5px', textAlign: 'center' }}
+                        />
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: '#64748B' }}>₹</span>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="Price"
+                            value={it.individualPrice}
+                            onChange={(e) => {
+                              const val = Math.max(0, Number(e.target.value) || 0);
+                              setMealForm((prev) => {
+                                const copy = [...prev.items];
+                                copy[idx].individualPrice = val;
+                                return { ...prev, items: copy };
+                              });
+                            }}
+                            style={{ width: '80px', padding: '6px 8px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '12.5px' }}
+                          />
+                        </div>
+
+                        {mealForm.items.length > 1 && (
+                          <button
+                            type="button"
+                            style={{ background: 'none', border: 'none', color: '#DC2626', cursor: 'pointer', padding: '4px' }}
+                            onClick={() =>
+                              setMealForm((prev) => ({
+                                ...prev,
+                                items: prev.items.filter((_, i) => i !== idx),
+                              }))
+                            }
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Calculated Sum Summary */}
+                  {(() => {
+                    const sum = mealForm.items.reduce((s, it) => s + (Number(it.individualPrice) || 0) * (Number(it.qty) || 1), 0);
+                    return (
+                      <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: '1px solid #CBD5E1', display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 800, color: '#0F172A' }}>
+                        <span>Total Individual Value Sum:</span>
+                        <span>₹{sum}</span>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* SPECIAL COMBO PRICE SETTER */}
+                <div style={{ background: '#DCFCE7', padding: '14px', borderRadius: '12px', border: '1px solid #BBF7D0', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                  <div>
+                    <label style={{ fontSize: '13px', fontWeight: 900, color: '#15803D' }}>
+                      Special Meal Bundle Discounted Price <span className="req">*</span>
+                    </label>
+                    <div style={{ fontSize: '12px', color: '#166534', marginTop: '2px' }}>
+                      Set a discounted price lower than total individual sum to offer attractive savings!
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '18px', fontWeight: 900, color: '#15803D' }}>₹</span>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="e.g. 499"
+                      value={mealForm.comboPrice}
+                      onChange={(e) => setMealForm((prev) => ({ ...prev, comboPrice: e.target.value }))}
+                      style={{ width: '100px', padding: '8px 10px', borderRadius: '8px', border: '2px solid #16A34A', fontWeight: 900, fontSize: '16px', textAlign: 'center' }}
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="crm-modal-footer" style={{ padding: '14px 20px', flexShrink: 0 }}>
+                <button type="button" className="crm-btn-secondary" onClick={() => setIsMealModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="crm-btn-primary" style={{ background: '#FF5E14' }}>
+                  Save Custom Meal Collection
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
