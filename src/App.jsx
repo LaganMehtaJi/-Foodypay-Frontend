@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
-import Navbar from './components/Navbar';
-import Footer from './components/Footer';
 import HomePage from './pages/HomePage';
 import DashboardPage from './pages/DashboardPage';
 import CreateWebsitePage from './pages/CreateWebsitePage';
@@ -18,7 +16,7 @@ const AppContent = ({ openSignup, openLogin, showToast }) => {
 
   return (
     <>
-      {!isDashboard && <Navbar onOpenSignup={openSignup} onOpenLogin={openLogin} />}
+     
 
       <Routes>
         <Route
@@ -43,8 +41,7 @@ const AppContent = ({ openSignup, openLogin, showToast }) => {
         />
       </Routes>
 
-      {!isDashboard && <Footer />}
-      {!isDashboard && <LiveOrderTicker onOpenSignup={openSignup} />}
+      
     </>
   );
 };

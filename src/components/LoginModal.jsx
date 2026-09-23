@@ -1,147 +1,419 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import confetti from 'canvas-confetti';
+import { playMilestoneCelebration } from '../utils/soundEffects';
+import { loginApi, googleAuthApi } from '../utils/api';
 
 export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSignup }) {
-  const [phoneOrEmail, setPhoneOrEmail] = useState('');
-  const [pin, setPin] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [isSuccess, setIsSuccess] = useState(false);
+  const [successUser, setSuccessUser] = useState(null);
+
+  const passwordInputRef = useRef(null);
 
   useEffect(() => {
     if (isOpen) {
-      setPhoneOrEmail('');
-      setPin('');
       setError('');
-      setIsSuccess(false);
+      setLoading(false);
+      setSuccessUser(null);
+
+      // Pre-fill remembered email & password
+      const savedEmail = localStorage.getItem('foodypay_remember_email');
+      const savedPass = localStorage.getItem('foodypay_remember_password');
+      if (savedEmail) setEmail(savedEmail);
+      if (savedPass) setPassword(savedPass);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (!phoneOrEmail.trim()) {
-      setError('Please enter your registered phone or email.');
-      return;
-    }
-    if (!pin.trim() || pin.length < 4) {
-      setError('Please enter your 4-digit security PIN or password.');
-      return;
-    }
-
+  const handleLoginSubmit = async (e) => {
+    if (e) e.preventDefault();
     setError('');
-    setIsSuccess(true);
-    if (onShowToast) {
-      onShowToast(`👋 Welcome back! Logged in as ${phoneOrEmail.trim()}`);
+
+    if (!email.trim() || !email.includes('@')) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    if (!password.trim()) {
+      setError('Please enter your password.');
+      return;
     }
 
-    setTimeout(() => {
-      onClose();
-    }, 1600);
+    setLoading(true);
+
+    try {
+      const response = await loginApi(email.trim(), password.trim());
+
+      if (response.success && response.data) {
+        const userData = response.data;
+        if (userData.token) {
+          localStorage.setItem('foodypay_token', userData.token);
+          localStorage.setItem('foodypay_user', JSON.stringify(userData));
+        }
+
+        if (rememberMe) {
+          localStorage.setItem('foodypay_remember_email', email.trim());
+          localStorage.setItem('foodypay_remember_password', password.trim());
+        } else {
+          localStorage.removeItem('foodypay_remember_email');
+          localStorage.removeItem('foodypay_remember_password');
+        }
+
+        setSuccessUser(userData);
+        playMilestoneCelebration();
+        confetti({ particleCount: 100, spread: 70, origin: { y: 0.5 } });
+
+        if (onShowToast) {
+          onShowToast(`👋 Welcome back, ${userData.name}!`);
+        }
+      } else {
+        setError('Login failed. Please check your credentials.');
+      }
+    } catch (err) {
+      setError(err.message || 'Invalid email or password.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleQuickDemoLogin = () => {
-    setPhoneOrEmail('9876543210');
-    setPin('1234');
+  const handleGoogleLogin = async () => {
+    setLoading(true);
     setError('');
-    setIsSuccess(true);
-    if (onShowToast) {
-      onShowToast("👋 Welcome back to Sharma's Kitchen POS!");
+    try {
+      const googlePayload = {
+        credential: 'demo_google_id_token_' + Date.now(),
+        email: email.trim() || 'owner@gmail.com',
+        name: 'Restaurant Owner',
+        picture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+        businessName: "Sharma's Kitchen",
+        googleId: 'google_sub_' + Date.now(),
+      };
+
+      const res = await googleAuthApi(googlePayload);
+      if (res.success && res.data) {
+        if (res.data.token) {
+          localStorage.setItem('foodypay_token', res.data.token);
+          localStorage.setItem('foodypay_user', JSON.stringify(res.data));
+        }
+        setSuccessUser(res.data);
+        playMilestoneCelebration();
+        confetti({ particleCount: 100, spread: 70, origin: { y: 0.5 } });
+        if (onShowToast) onShowToast(`👋 Logged in with Google as ${res.data.name}!`);
+      }
+    } catch (err) {
+      setError(err.message || 'Google Auth failed.');
+    } finally {
+      setLoading(false);
     }
-    setTimeout(() => {
-      onClose();
-    }, 1400);
   };
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
-        className="modal-dialog login-dialog"
+        className="modal-dialog auth-split-dialog"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
+        style={{
+          boxShadow: '0 25px 60px -15px rgba(0,0,0,0.3)',
+          border: '1px solid rgba(255,255,255,0.2)'
+        }}
       >
-        <button type="button" className="close" onClick={onClose} aria-label="Close">
+        <button
+          className="close"
+          onClick={onClose}
+          aria-label="Close"
+          style={{ top: '16px', right: '18px', color: '#64748B', zIndex: 10, fontSize: '1.4rem' }}
+        >
           ×
         </button>
 
-        {!isSuccess ? (
+        {/* LEFT BRAND SIDE PANEL */}
+        <div
+          className="auth-side-brand-panel"
+          style={{
+            background: 'linear-gradient(160deg, #1E293B 0%, #0F172A 100%)',
+            padding: '36px 28px'
+          }}
+        >
           <div>
-            <span className="chip">🔐 Restaurant Portal</span>
-            <h3>Login to FoodyPay</h3>
-            <p className="modal-sub">
-              Access your live Kitchen KDS, billing ledger, table QR settings &amp; online orders.
+            <div style={{ display: 'inline-block', background: '#FFFFFF', padding: '6px 14px', borderRadius: '12px', marginBottom: '20px', boxShadow: '0 4px 14px rgba(0,0,0,0.12)' }}>
+              <img src="/Logo.png" alt="FoodyPay Logo" style={{ height: '36px', objectFit: 'contain', display: 'block' }} />
+            </div>
+
+            <h3 style={{ fontSize: '1.35rem', fontWeight: 800, margin: '0 0 6px', color: '#FFFFFF', letterSpacing: '-0.02em' }}>
+              Welcome Back!
+            </h3>
+            <p style={{ fontSize: '0.84rem', color: '#94A3B8', margin: 0, lineHeight: 1.4 }}>
+              Sign in to manage your kitchen orders, billing &amp; QR settings.
             </p>
+          </div>
 
-            <form onSubmit={handleLogin}>
-              <label className="field">
-                Registered Phone / Email
-                <input
-                  type="text"
-                  placeholder="e.g. 98765 43210 or cafe@foodypay.in"
-                  value={phoneOrEmail}
-                  onChange={(e) => setPhoneOrEmail(e.target.value)}
-                  autoFocus
-                  required
-                />
-              </label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', margin: '28px 0' }}>
+            <div style={{ fontSize: '0.82rem', color: '#E2E8F0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: '#FF5E14' }}>⚡</span> Real-time Kitchen Order Streams
+            </div>
+            <div style={{ fontSize: '0.82rem', color: '#E2E8F0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: '#FF5E14' }}>📊</span> Sales Analytics &amp; Ledger
+            </div>
+            <div style={{ fontSize: '0.82rem', color: '#E2E8F0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: '#FF5E14' }}>📱</span> Table QR Standee Management
+            </div>
+          </div>
 
-              <label className="field">
-                POS PIN / Password
-                <input
-                  type="password"
-                  maxLength={8}
-                  placeholder="4-digit PIN (e.g. 1234)"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value)}
-                  required
-                />
-              </label>
+          <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)' }}>
+            © 2026 FoodyPay. All rights reserved.
+          </div>
+        </div>
 
-              {error && <div className="hint error-text">{error}</div>}
-
-              <button
-                type="submit"
-                className="btn primary"
-                style={{ width: '100%', marginTop: '12px' }}
-              >
-                🔐 Sign In to Dashboard
-              </button>
-
-              <div className="login-quick-demo-box">
-                <span className="quick-demo-divider">OR</span>
-                <button
-                  type="button"
-                  className="btn small full-w demo-fill-btn"
-                  onClick={handleQuickDemoLogin}
-                >
-                  ⚡ One-Click Demo Login (Sharma's Kitchen)
-                </button>
-              </div>
-
-              <div className="modal-switch-text">
-                New to FoodyPay?{' '}
-                <button
-                  type="button"
-                  className="link-btn-text"
-                  onClick={() => {
-                    onClose();
-                    if (onSwitchToSignup) onSwitchToSignup('Free');
+        {/* RIGHT MAIN FORM PANEL */}
+        <div className="auth-main-form-panel" style={{ padding: '40px 36px' }}>
+          {!successUser ? (
+            <div>
+              <div style={{ marginBottom: '22px' }}>
+                <span
+                  style={{
+                    background: '#FFF2EB',
+                    color: '#FF5E14',
+                    fontWeight: 800,
+                    fontSize: '0.78rem',
+                    padding: '4px 12px',
+                    borderRadius: '20px'
                   }}
                 >
-                  Request for create Account →
-                </button>
+                  🔐 RESTAURANT PORTAL
+                </span>
+                <h2 style={{ fontSize: '1.55rem', fontWeight: 800, color: '#0F172A', margin: '10px 0 4px', letterSpacing: '-0.02em' }}>
+                  Sign In to FoodyPay
+                </h2>
+                <p style={{ color: '#64748B', fontSize: '0.9rem', margin: 0 }}>
+                  Enter your credentials to open your command center.
+                </p>
               </div>
-            </form>
-          </div>
-        ) : (
-          <div className="login-success-box">
-            <div style={{ fontSize: '3rem', marginBottom: '10px' }}>✓</div>
-            <h3>Authentication Verified!</h3>
-            <p style={{ color: 'var(--muted)', marginTop: '8px' }}>
-              Redirecting you to your restaurant's live command center &amp; station telemetry...
-            </p>
-          </div>
-        )}
+
+              {/* GOOGLE LOGIN */}
+              <button
+                type="button"
+                onClick={handleGoogleLogin}
+                disabled={loading}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '10px',
+                  padding: '12px 16px',
+                  border: '1.5px solid #CBD5E1',
+                  borderRadius: '12px',
+                  backgroundColor: '#FFFFFF',
+                  fontWeight: 700,
+                  fontSize: '0.92rem',
+                  color: '#334155',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  marginBottom: '18px',
+                  boxShadow: '0 2px 5px rgba(0,0,0,0.04)'
+                }}
+              >
+                <svg viewBox="0 0 48 48" width="18" height="18">
+                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                </svg>
+                <span>Continue with Google</span>
+              </button>
+
+              <div style={{ display: 'flex', alignItems: 'center', margin: '14px 0 18px' }}>
+                <div style={{ flex: 1, borderBottom: '1px solid #E2E8F0' }} />
+                <span style={{ padding: '0 10px', color: '#94A3B8', fontSize: '0.75rem', fontWeight: 700 }}>
+                  OR SIGN IN WITH EMAIL
+                </span>
+                <div style={{ flex: 1, borderBottom: '1px solid #E2E8F0' }} />
+              </div>
+
+              {/* LOGIN FORM */}
+              <form onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <label className="field-label-lg">Email Address *</label>
+                  <input
+                    type="email"
+                    className="input-lg"
+                    placeholder="cafe@foodypay.in"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (passwordInputRef.current) passwordInputRef.current.focus();
+                      }
+                    }}
+                    required
+                    autoFocus
+                  />
+                </div>
+
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label className="field-label-lg">Password *</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      style={{ background: 'none', border: 'none', color: '#6366F1', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 700 }}
+                    >
+                      {showPassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                  <input
+                    ref={passwordInputRef}
+                    type={showPassword ? 'text' : 'password'}
+                    className="input-lg"
+                    placeholder="Enter password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleLoginSubmit();
+                      }
+                    }}
+                    required
+                  />
+                </div>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.9rem', color: '#475569' }}>
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                  />
+                  <span>Remember password</span>
+                </label>
+
+                {error && (
+                  <div
+                    style={{
+                      backgroundColor: '#FEF2F2',
+                      border: '1px solid #FECACA',
+                      color: '#EF4444',
+                      padding: '10px 14px',
+                      borderRadius: '10px',
+                      fontSize: '0.88rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    ⚠️ {error}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="btn primary"
+                  style={{
+                    width: '100%',
+                    marginTop: '8px',
+                    minHeight: '50px',
+                    borderRadius: '12px',
+                    fontSize: '1.05rem',
+                    fontWeight: 800,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px'
+                  }}
+                >
+                  {loading ? (
+                    <>
+                      <span className="spinner-icon" />
+                      <span>Authenticating...</span>
+                    </>
+                  ) : (
+                    <span>🔐 Sign In to Dashboard</span>
+                  )}
+                </button>
+
+                <div style={{ textAlign: 'center', marginTop: '12px', fontSize: '0.88rem', color: '#64748B' }}>
+                  Don't have an account?{' '}
+                  <button
+                    type="button"
+                    style={{ background: 'none', border: 'none', color: '#FF5E14', fontWeight: 800, cursor: 'pointer' }}
+                    onClick={() => {
+                      onClose();
+                      if (onSwitchToSignup) onSwitchToSignup();
+                    }}
+                  >
+                    Register Free Account →
+                  </button>
+                </div>
+              </form>
+            </div>
+          ) : (
+            /* RICH WELCOME BANNER ON LOGIN SUCCESS */
+            <div style={{ textAlign: 'center', padding: '20px 0' }}>
+              <div
+                style={{
+                  width: '68px',
+                  height: '68px',
+                  backgroundColor: '#22C55E',
+                  color: '#FFFFFF',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '2.4rem',
+                  margin: '0 auto 18px',
+                  boxShadow: '0 10px 25px rgba(34, 197, 94, 0.4)'
+                }}
+              >
+                ✓
+              </div>
+
+              <h2 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
+                WELCOME BACK, {successUser.name.toUpperCase()}!
+              </h2>
+
+              <p style={{ color: '#64748B', fontSize: '0.96rem', margin: '0 0 20px' }}>
+                Logged in successfully! Opening <b>{successUser.businessName || 'FoodyPay Dashboard'}</b>...
+              </p>
+
+              {successUser.logo?.url && (
+                <div style={{ marginBottom: '20px' }}>
+                  <img
+                    src={successUser.logo.url}
+                    alt="Business Logo"
+                    style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '4px solid #22C55E', boxShadow: '0 6px 18px rgba(0,0,0,0.1)' }}
+                  />
+                  <div style={{ fontSize: '0.86rem', color: '#059669', fontWeight: 800, marginTop: '6px' }}>
+                    {successUser.businessName} Verified
+                  </div>
+                </div>
+              )}
+
+              <a
+                href="/dashboard"
+                className="btn primary"
+                style={{
+                  display: 'inline-flex',
+                  width: '100%',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  textDecoration: 'none',
+                  fontSize: '1.1rem',
+                  fontWeight: 800,
+                  minHeight: '52px',
+                  borderRadius: '12px'
+                }}
+              >
+                🚀 Open Dashboard Now
+              </a>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

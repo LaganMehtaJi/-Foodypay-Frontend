@@ -5,11 +5,14 @@ import FourParts from '../components/FourParts';
 import GuestExperience from '../components/GuestExperience';
 import ControlGrid from '../components/ControlGrid';
 import PricingCalculator from '../components/PricingCalculator';
-
+import Navbar from '../components/Navbar';
+import Footer from '../components/Footer';
 // Main Landing Page with High Velocity Live Counter
 export default function HomePage({ onOpenSignup, onShowToast }) {
   return (
+   
     <main id="top" className="main-content">
+       <Navbar onOpenSignup={onOpenSignup} onShowToast={onShowToast} />
       {/* HERO SECTION */}
       <header className="hero wrap">
         {/* HIGH VELOCITY TICKING BANNER & 1,000-ORDER CELEBRATIONS */}
@@ -200,6 +203,7 @@ export default function HomePage({ onOpenSignup, onShowToast }) {
           </div>
         </div>
       </section>
+      <Footer />
     </main>
   );
 }

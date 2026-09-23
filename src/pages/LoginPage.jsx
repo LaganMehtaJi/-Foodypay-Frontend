@@ -1,530 +1,789 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
-import { playMilestoneCelebration, playOrderPlaced } from '../utils/soundEffects';
-import { parsePlanMeta } from '../components/SignupModal';
+import { playMilestoneCelebration } from '../utils/soundEffects';
+import { registerApi, loginApi, googleAuthApi } from '../utils/api';
 
 export default function LoginPage({ onShowToast }) {
-  const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup'
-  const [loginMethod, setLoginMethod] = useState('email'); // 'email' | 'pin'
-  const [selectedPlan, setSelectedPlan] = useState('Free'); // 'Free' | 'Growth' | 'Custom'
-  
-  // Credentials state
+  const [activeTab, setActiveTab] = useState('register'); // 'register' | 'login'
+  const [regStep, setRegStep] = useState(1); // 1, 2, 3, 4
+
+  // Form states
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [businessName, setBusinessName] = useState('');
+  const [contactNo, setContactNo] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [storeIdOrPhone, setStoreIdOrPhone] = useState('');
-  const [pin, setPin] = useState('');
-  const [restaurantName, setRestaurantName] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
+  const [logoFile, setLogoFile] = useState(null);
+  const [logoPreview, setLogoPreview] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successUser, setSuccessUser] = useState(null);
 
-  // Handle Google Login Simulation
-  const handleGoogleLogin = () => {
-    setLoading(true);
-    setError('');
-    setTimeout(() => {
-      setLoading(false);
-      const user = {
-        name: 'Sharma Gourmet Kitchen',
-        email: 'sharma.kitchen@gmail.com',
-        plan: selectedPlan,
-        method: 'Google Account'
-      };
-      setSuccessUser(user);
-      playMilestoneCelebration();
-      confetti({
-        particleCount: 100,
-        spread: 80,
-        origin: { y: 0.4 },
-        colors: ['#FF5E14', '#22C55E', '#4285F4', '#FBBC05']
-      });
-      if (onShowToast) {
-        onShowToast(`👋 Successfully signed in with Google (${user.email})!`);
+  // Input refs for Enter key auto focus
+  const lastNameRef = useRef(null);
+  const contactNoRef = useRef(null);
+  const passwordRef = useRef(null);
+  const loginPassRef = useRef(null);
+
+  useEffect(() => {
+    // Load remembered email/password
+    const savedEmail = localStorage.getItem('foodypay_remember_email');
+    const savedPass = localStorage.getItem('foodypay_remember_password');
+    if (savedEmail) setEmail(savedEmail);
+    if (savedPass) setPassword(savedPass);
+  }, []);
+
+  const handleLogoChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        setError('Logo image must be under 5MB');
+        return;
       }
-    }, 900);
+      setLogoFile(file);
+      setLogoPreview(URL.createObjectURL(file));
+      setError('');
+    }
   };
 
-  // Handle Form Submit
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const googlePayload = {
+        credential: 'demo_google_id_token_' + Date.now(),
+        email: email.trim() || 'owner@gmail.com',
+        name: `${firstName || 'Restaurant'} ${lastName || 'Owner'}`.trim(),
+        picture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+        businessName: businessName.trim() || "Sharma's Kitchen",
+        contactNo: contactNo.trim() || '+91 9876543210',
+        googleId: 'google_sub_' + Date.now(),
+      };
+
+      const res = await googleAuthApi(googlePayload);
+      if (res.success && res.data) {
+        if (res.data.token) {
+          localStorage.setItem('foodypay_token', res.data.token);
+          localStorage.setItem('foodypay_user', JSON.stringify(res.data));
+        }
+        setSuccessUser(res.data);
+        playMilestoneCelebration();
+        confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
+        if (onShowToast) onShowToast(`👋 Signed in with Google as ${res.data.name}!`);
+      }
+    } catch (err) {
+      setError(err.message || 'Google Auth failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLoginSubmit = async (e) => {
+    if (e) e.preventDefault();
     setError('');
 
-    if (authMode === 'login') {
-      if (loginMethod === 'email') {
-        if (!email.trim() || !email.includes('@')) {
-          setError('Please enter a valid restaurant owner email address.');
-          return;
-        }
-        if (!password.trim() || password.length < 4) {
-          setError('Please enter your account password (at least 4 characters).');
-          return;
-        }
-      } else {
-        if (!storeIdOrPhone.trim()) {
-          setError('Please enter your Restaurant Store ID or registered mobile.');
-          return;
-        }
-        if (!pin.trim() || pin.length < 4) {
-          setError('Please enter your 4-digit POS security PIN.');
-          return;
-        }
-      }
-    } else {
-      // Sign up mode
-      if (!restaurantName.trim()) {
-        setError('Please enter your Restaurant / Cafe name.');
-        return;
-      }
-      if (!email.trim() && !storeIdOrPhone.trim()) {
-        setError('Please provide your phone or email.');
-        return;
-      }
-
-      // Auto-open WhatsApp with pre-filled message to +91 7496888449
-      const targetPhone = '917496888449';
-      const cleanName = restaurantName.trim();
-      const contactVal = storeIdOrPhone.trim() || email.trim();
-      const planMeta = parsePlanMeta(selectedPlan);
-      const messageText = `Hello FoodyPay Team! 🍽️\n\nI want to *Request for create Account* on FoodyPay.\n\n📋 *Restaurant Details:*\n• Restaurant Name: ${cleanName}\n• Contact Info: ${contactVal}\n• Selected Plan: *${planMeta.whatsappTag}*\n\nPlease help me set up my restaurant digital menu and QR ordering system. Thank you!`;
-      const generatedWaUrl = `https://api.whatsapp.com/send?phone=${targetPhone}&text=${encodeURIComponent(messageText)}`;
-      try {
-        window.open(generatedWaUrl, '_blank', 'noopener,noreferrer');
-      } catch (err) {
-        console.warn('Could not auto-open WhatsApp:', err);
-      }
+    if (!email.trim() || !email.includes('@')) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    if (!password.trim()) {
+      setError('Please enter your password.');
+      return;
     }
 
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      const user = {
-        name: restaurantName || (loginMethod === 'email' ? email.split('@')[0] : storeIdOrPhone),
-        email: email || `${storeIdOrPhone}@foodypay.in`,
-        plan: selectedPlan,
-        method: authMode === 'signup' ? 'WhatsApp Request (+91 7496888449)' : (loginMethod === 'email' ? 'Email & Password' : 'POS PIN')
-      };
-      setSuccessUser(user);
-      playMilestoneCelebration();
-      confetti({
-        particleCount: 120,
-        spread: 90,
-        origin: { y: 0.4 },
-        colors: ['#FF5E14', '#22C55E', '#25D366', '#F59E0B']
-      });
-      if (onShowToast) {
-        onShowToast(authMode === 'signup' 
-          ? `💬 WhatsApp opened! Account request sent for ${restaurantName}.` 
-          : `🎉 Welcome to FoodyPay! Signed into ${selectedPlan} Plan.`
-        );
+    try {
+      const response = await loginApi(email.trim(), password.trim());
+      if (response.success && response.data) {
+        const userData = response.data;
+        if (userData.token) {
+          localStorage.setItem('foodypay_token', userData.token);
+          localStorage.setItem('foodypay_user', JSON.stringify(userData));
+        }
+
+        if (rememberMe) {
+          localStorage.setItem('foodypay_remember_email', email.trim());
+          localStorage.setItem('foodypay_remember_password', password.trim());
+        }
+
+        setSuccessUser(userData);
+        playMilestoneCelebration();
+        confetti({ particleCount: 100, spread: 70, origin: { y: 0.5 } });
+        if (onShowToast) onShowToast(`🎉 Welcome back, ${userData.name}!`);
       }
-    }, 750);
+    } catch (err) {
+      setError(err.message || 'Invalid email or password.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // 1-Click Demo Logins
-  const handleQuickDemo = (planType) => {
-    setSelectedPlan(planType);
-    if (planType === 'Free') {
-      setEmail('sharma.kitchen@foodypay.in');
-      setPassword('demo1234');
-      setStoreIdOrPhone('SHARMA-01');
-      setPin('1234');
-      setRestaurantName("Sharma's Kitchen Cafe");
-    } else {
-      setEmail('royal.palace@foodypay.in');
-      setPassword('growth999');
-      setStoreIdOrPhone('ROYAL-PRO');
-      setPin('9876');
-      setRestaurantName('Royal Palace Dine & Lounge');
-    }
+  const handleRegisterSubmit = async (e) => {
+    if (e) e.preventDefault();
+    setError('');
 
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const fullName = `${firstName.trim()} ${lastName.trim()}`;
+      const formData = new FormData();
+      formData.append('name', fullName);
+      formData.append('email', email.trim());
+      formData.append('password', password.trim());
+      formData.append('businessName', businessName.trim());
+      formData.append('contactNo', contactNo.trim());
+      if (logoFile) {
+        formData.append('logo', logoFile);
+      }
+
+      const response = await registerApi(formData);
+      if (response.success && response.data) {
+        const userData = response.data;
+        if (userData.token) {
+          localStorage.setItem('foodypay_token', userData.token);
+          localStorage.setItem('foodypay_user', JSON.stringify(userData));
+        }
+
+        if (rememberMe) {
+          localStorage.setItem('foodypay_remember_email', email.trim());
+          localStorage.setItem('foodypay_remember_password', password.trim());
+        }
+
+        setSuccessUser(userData);
+        playMilestoneCelebration();
+        confetti({ particleCount: 120, spread: 80, origin: { y: 0.4 } });
+        if (onShowToast) onShowToast(`🚀 Account created for ${userData.businessName}!`);
+      }
+    } catch (err) {
+      setError(err.message || 'Registration failed. Please check server.');
+    } finally {
       setLoading(false);
-      setSuccessUser({
-        name: planType === 'Free' ? "Sharma's Kitchen Cafe" : 'Royal Palace Dine & Lounge',
-        email: planType === 'Free' ? 'sharma.kitchen@foodypay.in' : 'royal.palace@foodypay.in',
-        plan: planType,
-        method: '1-Click Demo'
-      });
-      playOrderPlaced();
-      confetti({
-        particleCount: 90,
-        spread: 70,
-        origin: { y: 0.4 }
-      });
-    }, 600);
+    }
   };
 
   return (
-    <div className="login-page-wrapper">
-      {/* TOP BRAND NAVIGATION BAR */}
-      <header className="login-top-bar">
-        <div className="login-bar-wrap">
-          <a href="/" className="login-brand-back">
-            <span className="back-arrow">←</span>
-            <span>Return to FoodyPay Home</span>
-          </a>
-
-          <a href="/" className="login-logo-link">
-            <img src="/Logo.png" alt="FoodyPay Logo" className="login-bar-logo" />
-          </a>
-
-          <div className="login-security-tag">
-            <span className="sec-dot" />
-            <span>256-Bit SSL Cloud POS</span>
-          </div>
-        </div>
-      </header>
-
-      {/* MAIN SPLIT-SCREEN AUTH CONTAINER */}
-      <main className="login-split-main">
-        {/* LEFT SHOWCASE PANEL (Feature Highlights & Live Screenshot) */}
-        <div className="login-showcase-panel">
-          <div className="showcase-inner">
-            <div className="showcase-badge">
-              <span>🚀 THE ALL-IN-ONE OPERATING SYSTEM</span>
-            </div>
-            <h2>Unify Your Kitchen, Table QR &amp; Billing Ledger.</h2>
-            <p className="showcase-sub">
-              Access your real-time restaurant command center. Track orders placed table-side, walk-in counter tickets, and manage diner retention on any tablet or phone.
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#F8FAFC',
+        padding: '24px',
+        fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      }}
+    >
+      <div
+        className="auth-split-dialog"
+        style={{
+          boxShadow: '0 25px 60px -15px rgba(0,0,0,0.15)',
+          border: '1px solid #E2E8F0'
+        }}
+      >
+        {/* LEFT BRAND PANEL */}
+        <div
+          className="auth-side-brand-panel"
+          style={{
+            background: 'linear-gradient(160deg, #1E293B 0%, #0F172A 100%)',
+            padding: '36px 28px'
+          }}
+        >
+          <div>
+            <a href="/">
+              <div style={{ display: 'inline-block', background: '#FFFFFF', padding: '6px 14px', borderRadius: '12px', marginBottom: '20px', boxShadow: '0 4px 14px rgba(0,0,0,0.12)' }}>
+                <img src="/Logo.png" alt="FoodyPay Logo" style={{ height: '36px', objectFit: 'contain', display: 'block' }} />
+              </div>
+            </a>
+            <h3 style={{ fontSize: '1.35rem', fontWeight: 800, margin: '0 0 6px', color: '#FFFFFF', letterSpacing: '-0.02em' }}>
+              FoodyPay Platform
+            </h3>
+            <p style={{ fontSize: '0.84rem', color: '#94A3B8', margin: 0, lineHeight: 1.4 }}>
+              {activeTab === 'register' ? 'Free Step-by-Step Account Setup' : 'Restaurant Owner Portal'}
             </p>
+          </div>
 
-            {/* LIVE DASHBOARD SCREENSHOT */}
-            <div className="showcase-media-frame">
-              <img
-                src="/Section-Images/crm-analytics.png"
-                alt="FoodyPay Live CRM & Analytics Dashboard"
-                className="showcase-dashboard-img"
-              />
-              <div className="media-overlay-pill">
-                <span className="live-pulse-dot" />
-                <span>Live Telemetry: 1,451 Active Orders Today</span>
+          {activeTab === 'register' ? (
+            <div className="step-wizard-nav" style={{ margin: '28px 0' }}>
+              <div className={`step-wizard-item ${regStep === 1 ? 'active' : regStep > 1 ? 'completed' : ''}`}>
+                <div className="step-badge-num">{regStep > 1 ? '✓' : '1'}</div>
+                <span>1. Owner Name</span>
+              </div>
+              <div className={`step-wizard-item ${regStep === 2 ? 'active' : regStep > 2 ? 'completed' : ''}`}>
+                <div className="step-badge-num">{regStep > 2 ? '✓' : '2'}</div>
+                <span>2. Business Details</span>
+              </div>
+              <div className={`step-wizard-item ${regStep === 3 ? 'active' : regStep > 3 ? 'completed' : ''}`}>
+                <div className="step-badge-num">{regStep > 3 ? '✓' : '3'}</div>
+                <span>3. Account Security</span>
+              </div>
+              <div className={`step-wizard-item ${regStep === 4 ? 'active' : ''}`}>
+                <div className="step-badge-num">4</div>
+                <span>4. Logo Upload</span>
               </div>
             </div>
-
-            {/* VALUE PROPOSITION TICKS */}
-            <div className="showcase-perks-grid">
-              <div className="perk-item">
-                <span className="perk-icon">🟢</span>
-                <div>
-                  <b>Starter Free Plan</b>
-                  <span>₹0/month forever. Zero fixed commitment.</span>
-                </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', margin: '28px 0' }}>
+              <div style={{ fontSize: '0.82rem', color: '#E2E8F0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ color: '#FF5E14' }}>⚡</span> Real-time Kitchen Order Streams
               </div>
-              <div className="perk-item">
-                <span className="perk-icon">⚡</span>
-                <div>
-                  <b>0% Counter Commission</b>
-                  <span>Keep 100% of all cash &amp; counter UPI billing.</span>
-                </div>
+              <div style={{ fontSize: '0.82rem', color: '#E2E8F0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ color: '#FF5E14' }}>📊</span> Sales Analytics &amp; Ledger
               </div>
-              <div className="perk-item">
-                <span className="perk-icon">📱</span>
-                <div>
-                  <b>Table QR + Online Store</b>
-                  <span>Diners order at tables or from home directly.</span>
-                </div>
-              </div>
-              <div className="perk-item">
-                <span className="perk-icon">👨‍🍳</span>
-                <div>
-                  <b>Digital Kitchen KDS</b>
-                  <span>Real-time color-coded order prep countdowns.</span>
-                </div>
+              <div style={{ fontSize: '0.82rem', color: '#E2E8F0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ color: '#FF5E14' }}>📱</span> Table QR Standee Management
               </div>
             </div>
+          )}
+
+          <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)' }}>
+            © 2026 FoodyPay. All rights reserved.
           </div>
         </div>
 
-        {/* RIGHT AUTH CARD */}
-        <div className="login-form-panel">
-          <div className="auth-card">
-            {!successUser ? (
-              <>
-                {/* PLAN SELECTION CONTEXT */}
-                <div className="plan-context-container">
-                  <span className="plan-label">Select Your Account Tier:</span>
-                  <div className="plan-tabs-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
-                    <button
-                      type="button"
-                      className={`plan-tab-btn ${selectedPlan === 'Free' ? 'active free' : ''}`}
-                      onClick={() => setSelectedPlan('Free')}
-                    >
-                      <span className="plan-name">🟢 Free</span>
-                      <span className="plan-price">$0 /mo</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={`plan-tab-btn ${selectedPlan === '35 Dollar' || selectedPlan === 'Growth' ? 'active growth' : ''}`}
-                      onClick={() => setSelectedPlan('35 Dollar')}
-                    >
-                      <span className="plan-name">⚡ $35</span>
-                      <span className="plan-price">$35 /mo</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={`plan-tab-btn ${selectedPlan === '75 Dollar' || selectedPlan === 'Max' ? 'active max' : ''}`}
-                      onClick={() => setSelectedPlan('75 Dollar')}
-                    >
-                      <span className="plan-name">🌟 $75</span>
-                      <span className="plan-price">$75 /mo</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={`plan-tab-btn ${selectedPlan === 'Custom' ? 'active custom' : ''}`}
-                      onClick={() => setSelectedPlan('Custom')}
-                    >
-                      <span className="plan-name">🏢 Custom</span>
-                      <span className="plan-price">White-Label</span>
-                    </button>
-                  </div>
-                </div>
+        {/* RIGHT MAIN PANEL */}
+        <div className="auth-main-form-panel" style={{ padding: '40px 36px' }}>
+          {/* TAB TOGGLE */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '6px',
+              backgroundColor: '#F1F5F9',
+              padding: '4px',
+              borderRadius: '12px',
+              marginBottom: '24px'
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('register');
+                setError('');
+              }}
+              style={{
+                padding: '10px 12px',
+                borderRadius: '9px',
+                border: 'none',
+                fontWeight: activeTab === 'register' ? 800 : 600,
+                fontSize: '0.9rem',
+                backgroundColor: activeTab === 'register' ? '#FFFFFF' : 'transparent',
+                color: activeTab === 'register' ? '#FF5E14' : '#64748B',
+                boxShadow: activeTab === 'register' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+                cursor: 'pointer'
+              }}
+            >
+              🟢 Register Free Account
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('login');
+                setError('');
+              }}
+              style={{
+                padding: '10px 12px',
+                borderRadius: '9px',
+                border: 'none',
+                fontWeight: activeTab === 'login' ? 800 : 600,
+                fontSize: '0.9rem',
+                backgroundColor: activeTab === 'login' ? '#FFFFFF' : 'transparent',
+                color: activeTab === 'login' ? '#FF5E14' : '#64748B',
+                boxShadow: activeTab === 'login' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+                cursor: 'pointer'
+              }}
+            >
+              🔐 Sign In
+            </button>
+          </div>
 
-                {/* AUTH MODE TOGGLE (LOGIN VS SIGNUP) */}
-                <div className="auth-mode-switch">
-                  <button
-                    type="button"
-                    className={`mode-btn ${authMode === 'login' ? 'active' : ''}`}
-                    onClick={() => { setAuthMode('login'); setError(''); }}
-                  >
-                    Restaurant Sign In
-                  </button>
-                  <button
-                    type="button"
-                    className={`mode-btn ${authMode === 'signup' ? 'active' : ''}`}
-                    onClick={() => { setAuthMode('signup'); setError(''); }}
-                  >
-                    Request for create Account
-                  </button>
-                </div>
+          {!successUser ? (
+            <div>
+              {/* GOOGLE SIGN IN */}
+              <button
+                type="button"
+                onClick={handleGoogleLogin}
+                disabled={loading}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '10px',
+                  padding: '12px 16px',
+                  border: '1.5px solid #CBD5E1',
+                  borderRadius: '12px',
+                  backgroundColor: '#FFFFFF',
+                  fontWeight: 700,
+                  fontSize: '0.92rem',
+                  color: '#334155',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  marginBottom: '18px',
+                  boxShadow: '0 2px 5px rgba(0,0,0,0.04)'
+                }}
+              >
+                <svg viewBox="0 0 48 48" width="18" height="18">
+                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
+                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
+                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
+                </svg>
+                <span>Continue with Google</span>
+              </button>
 
-                <div className="auth-header-text">
-                  <h3>
-                    {authMode === 'login'
-                      ? `Sign In to ${selectedPlan} Portal`
-                      : `Start Your ${selectedPlan} Plan Registration`}
-                  </h3>
-                  <p>
-                    {authMode === 'login'
-                      ? 'Enter your credentials or use 1-click Google account sign-in.'
-                      : 'Zero setup fees. Zero credit card needed to begin.'}
-                  </p>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', margin: '14px 0 18px' }}>
+                <div style={{ flex: 1, borderBottom: '1px solid #E2E8F0' }} />
+                <span style={{ padding: '0 10px', color: '#94A3B8', fontSize: '0.75rem', fontWeight: 700 }}>
+                  OR {activeTab === 'register' ? 'REGISTER' : 'SIGN IN'} WITH EMAIL
+                </span>
+                <div style={{ flex: 1, borderBottom: '1px solid #E2E8F0' }} />
+              </div>
 
-                {/* 1. GOOGLE SIGN IN BUTTON */}
-                <button
-                  type="button"
-                  className="google-auth-btn"
-                  onClick={handleGoogleLogin}
-                  disabled={loading}
-                >
-                  <svg className="google-icon" viewBox="0 0 48 48" width="22" height="22">
-                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-                  </svg>
-                  <span>{loading ? 'Verifying Google Account...' : 'Continue with Google Account'}</span>
-                </button>
-
-                {/* OR DIVIDER */}
-                <div className="auth-divider">
-                  <span>OR WITH RESTAURANT CREDENTIALS</span>
-                </div>
-
-                {/* LOGIN METHOD SELECTOR (EMAIL VS STORE ID / PIN) */}
-                {authMode === 'login' && (
-                  <div className="credential-tabs">
-                    <button
-                      type="button"
-                      className={`cred-tab ${loginMethod === 'email' ? 'active' : ''}`}
-                      onClick={() => setLoginMethod('email')}
-                    >
-                      ✉️ Email &amp; Password
-                    </button>
-                    <button
-                      type="button"
-                      className={`cred-tab ${loginMethod === 'pin' ? 'active' : ''}`}
-                      onClick={() => setLoginMethod('pin')}
-                    >
-                      🔢 Store ID &amp; POS PIN
-                    </button>
-                  </div>
-                )}
-
-                {/* LOGIN / SIGNUP FORM */}
-                <form className="auth-form" onSubmit={handleSubmit}>
-                  {authMode === 'signup' && (
-                    <label className="field">
-                      Restaurant / Cafe Name *
-                      <input
-                        type="text"
-                        placeholder="e.g. Sharma's Kitchen, Downtown Bistro"
-                        value={restaurantName}
-                        onChange={(e) => setRestaurantName(e.target.value)}
-                        required
-                        autoFocus
-                      />
-                    </label>
-                  )}
-
-                  {authMode === 'login' && loginMethod === 'pin' ? (
-                    <>
-                      <label className="field">
-                        Restaurant Store ID / Registered Phone *
-                        <input
-                          type="text"
-                          placeholder="e.g. SHARMA-01 or 98765 43210"
-                          value={storeIdOrPhone}
-                          onChange={(e) => setStoreIdOrPhone(e.target.value)}
-                          required
-                          autoFocus
-                        />
-                      </label>
-
-                      <label className="field">
-                        4-Digit POS Security PIN *
-                        <input
-                          type="password"
-                          maxLength={6}
-                          placeholder="•••• (e.g. 1234)"
-                          value={pin}
-                          onChange={(e) => setPin(e.target.value)}
-                          required
-                        />
-                      </label>
-                    </>
-                  ) : (
-                    <>
-                      <label className="field">
-                        Registered Email Address *
-                        <input
-                          type="email"
-                          placeholder="e.g. owner@sharmakitchen.in"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          required
-                          autoFocus={authMode === 'login'}
-                        />
-                      </label>
-
-                      <label className="field">
-                        <div className="field-label-row">
-                          <span>Password *</span>
-                          <button
-                            type="button"
-                            className="toggle-pass-btn"
-                            onClick={() => setShowPassword(!showPassword)}
-                          >
-                            {showPassword ? 'Hide 👁️' : 'Show 👁️'}
-                          </button>
+              {/* MODE 1: STEP-BY-STEP REGISTER */}
+              {activeTab === 'register' ? (
+                <div>
+                  {regStep === 1 && (
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!firstName.trim()) return setError('Please enter First Name.');
+                      if (!lastName.trim()) return setError('Please enter Last Name.');
+                      setError('');
+                      setRegStep(2);
+                    }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div>
+                          <label className="field-label-lg">First Name *</label>
+                          <input
+                            type="text"
+                            className="input-lg"
+                            placeholder="e.g. Rahul"
+                            value={firstName}
+                            onChange={(e) => setFirstName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (lastNameRef.current) lastNameRef.current.focus();
+                              }
+                            }}
+                            autoFocus
+                            required
+                          />
                         </div>
-                        <input
-                          type={showPassword ? 'text' : 'password'}
-                          placeholder="••••••••"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          required
-                        />
-                      </label>
-                    </>
+                        <div>
+                          <label className="field-label-lg">Last Name *</label>
+                          <input
+                            ref={lastNameRef}
+                            type="text"
+                            className="input-lg"
+                            placeholder="e.g. Sharma"
+                            value={lastName}
+                            onChange={(e) => setLastName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (!firstName.trim()) return setError('Please enter First Name.');
+                                if (!lastName.trim()) return setError('Please enter Last Name.');
+                                setError('');
+                                setRegStep(2);
+                              }
+                            }}
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      {error && <div style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#EF4444', padding: '10px 14px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 600, marginTop: '14px' }}>⚠️ {error}</div>}
+
+                      <button type="submit" className="btn primary" style={{ width: '100%', marginTop: '24px', minHeight: '48px', borderRadius: '12px', fontSize: '1.05rem', fontWeight: 800 }}>
+                        Next: Business Details →
+                      </button>
+                    </form>
                   )}
 
-                  {error && <div className="hint error-text">{error}</div>}
+                  {regStep === 2 && (
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!businessName.trim()) return setError('Please enter Business Name.');
+                      if (!contactNo.trim()) return setError('Please enter Contact Number.');
+                      setError('');
+                      setRegStep(3);
+                    }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div>
+                          <label className="field-label-lg">Business / Restaurant Name *</label>
+                          <input
+                            type="text"
+                            className="input-lg"
+                            placeholder="e.g. Sharma's Kitchen"
+                            value={businessName}
+                            onChange={(e) => setBusinessName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (contactNoRef.current) contactNoRef.current.focus();
+                              }
+                            }}
+                            autoFocus
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="field-label-lg">Contact Phone Number *</label>
+                          <input
+                            ref={contactNoRef}
+                            type="tel"
+                            className="input-lg"
+                            placeholder="e.g. +91 98765 43210"
+                            value={contactNo}
+                            onChange={(e) => setContactNo(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (!businessName.trim()) return setError('Please enter Business Name.');
+                                if (!contactNo.trim()) return setError('Please enter Contact Number.');
+                                setError('');
+                                setRegStep(3);
+                              }
+                            }}
+                            required
+                          />
+                        </div>
+                      </div>
 
-                  <div className="remember-forgot-row">
-                    <label className="checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={rememberMe}
-                        onChange={(e) => setRememberMe(e.target.checked)}
-                      />
-                      <span>Keep me signed in</span>
-                    </label>
-                    <a href="#forgot" onClick={(e) => { e.preventDefault(); alert('Password recovery link sent to registered owner WhatsApp/Email!'); }}>
-                      Forgot credentials?
-                    </a>
+                      {error && <div style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#EF4444', padding: '10px 14px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 600, marginTop: '14px' }}>⚠️ {error}</div>}
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px', marginTop: '24px' }}>
+                        <button type="button" className="btn ghost" onClick={() => setRegStep(1)} style={{ borderRadius: '12px' }}>← Back</button>
+                        <button type="submit" className="btn primary" style={{ width: '100%', minHeight: '48px', borderRadius: '12px', fontSize: '1.05rem', fontWeight: 800 }}>Next: Security →</button>
+                      </div>
+                    </form>
+                  )}
+
+                  {regStep === 3 && (
+                    <form onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!email.trim() || !email.includes('@')) return setError('Please enter valid Email.');
+                      if (!password.trim() || password.length < 6) return setError('Password must be 6+ chars.');
+                      setError('');
+                      setRegStep(4);
+                    }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <div>
+                          <label className="field-label-lg">Email Address *</label>
+                          <input
+                            type="email"
+                            className="input-lg"
+                            placeholder="cafe@foodypay.in"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (passwordRef.current) passwordRef.current.focus();
+                              }
+                            }}
+                            autoFocus
+                            required
+                          />
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <label className="field-label-lg">Password *</label>
+                            <button
+                              type="button"
+                              onClick={() => setShowPassword(!showPassword)}
+                              style={{ background: 'none', border: 'none', color: '#6366F1', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 700 }}
+                            >
+                              {showPassword ? 'Hide' : 'Show'}
+                            </button>
+                          </div>
+                          <input
+                            ref={passwordRef}
+                            type={showPassword ? 'text' : 'password'}
+                            className="input-lg"
+                            placeholder="At least 6 characters"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (!email.trim() || !email.includes('@')) return setError('Please enter valid Email.');
+                                if (!password.trim() || password.length < 6) return setError('Password must be 6+ chars.');
+                                setError('');
+                                setRegStep(4);
+                              }
+                            }}
+                            required
+                          />
+                        </div>
+
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.9rem', color: '#475569' }}>
+                          <input
+                            type="checkbox"
+                            checked={rememberMe}
+                            onChange={(e) => setRememberMe(e.target.checked)}
+                          />
+                          <span>Remember password in browser</span>
+                        </label>
+                      </div>
+
+                      {error && <div style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#EF4444', padding: '10px 14px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 600, marginTop: '14px' }}>⚠️ {error}</div>}
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px', marginTop: '24px' }}>
+                        <button type="button" className="btn ghost" onClick={() => setRegStep(2)} style={{ borderRadius: '12px' }}>← Back</button>
+                        <button type="submit" className="btn primary" style={{ width: '100%', minHeight: '48px', borderRadius: '12px', fontSize: '1.05rem', fontWeight: 800 }}>Next: Logo &amp; Submit →</button>
+                      </div>
+                    </form>
+                  )}
+
+                  {regStep === 4 && (
+                    <form onSubmit={handleRegisterSubmit}>
+                      <div
+                        style={{
+                          border: '2px dashed #CBD5E1',
+                          borderRadius: '16px',
+                          padding: '24px 16px',
+                          textAlign: 'center',
+                          backgroundColor: '#F8FAFC',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: '12px',
+                          marginBottom: '20px'
+                        }}
+                        onClick={() => document.getElementById('pageLogoFileInput').click()}
+                      >
+                        <input
+                          id="pageLogoFileInput"
+                          type="file"
+                          accept="image/*"
+                          onChange={handleLogoChange}
+                          style={{ display: 'none' }}
+                        />
+
+                        {logoPreview ? (
+                          <img
+                            src={logoPreview}
+                            alt="Logo preview"
+                            style={{ width: '76px', height: '76px', borderRadius: '50%', objectFit: 'cover', border: '3px solid #FF5E14', boxShadow: '0 4px 14px rgba(255, 94, 20, 0.25)' }}
+                          />
+                        ) : (
+                          <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: '#FFF2EB', color: '#FF5E14', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem' }}>
+                            🖼️
+                          </div>
+                        )}
+
+                        <div>
+                          <div style={{ fontSize: '1rem', fontWeight: 800, color: '#1E293B' }}>
+                            {logoFile ? logoFile.name : 'Click to Upload Restaurant Logo'}
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: '#64748B', marginTop: '3px' }}>
+                            Saved directly to Cloudinary &amp; MongoDB
+                          </div>
+                        </div>
+                      </div>
+
+                      {error && <div style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#EF4444', padding: '10px 14px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 600, marginBottom: '14px' }}>⚠️ {error}</div>}
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px' }}>
+                        <button type="button" className="btn ghost" onClick={() => setRegStep(3)} disabled={loading} style={{ borderRadius: '12px' }}>← Back</button>
+                        <button
+                          type="submit"
+                          disabled={loading}
+                          className="btn primary"
+                          style={{
+                            width: '100%',
+                            borderRadius: '12px',
+                            minHeight: '50px',
+                            fontSize: '1.05rem',
+                            fontWeight: 800,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '10px'
+                          }}
+                        >
+                          {loading ? (
+                            <>
+                              <span className="spinner-icon" />
+                              <span>Uploading &amp; Registering...</span>
+                            </>
+                          ) : (
+                            <span>🟢 Register &amp; Launch Free Account</span>
+                          )}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              ) : (
+                /* MODE 2: LOGIN FORM */
+                <form onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div>
+                    <label className="field-label-lg">Email Address *</label>
+                    <input
+                      type="email"
+                      className="input-lg"
+                      placeholder="cafe@foodypay.in"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (loginPassRef.current) loginPassRef.current.focus();
+                        }
+                      }}
+                      required
+                      autoFocus
+                    />
                   </div>
+
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <label className="field-label-lg">Password *</label>
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        style={{ background: 'none', border: 'none', color: '#6366F1', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 700 }}
+                      >
+                        {showPassword ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
+                    <input
+                      ref={loginPassRef}
+                      type={showPassword ? 'text' : 'password'}
+                      className="input-lg"
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleLoginSubmit();
+                        }
+                      }}
+                      required
+                    />
+                  </div>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', fontSize: '0.9rem', color: '#475569' }}>
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                    />
+                    <span>Remember password</span>
+                  </label>
+
+                  {error && (
+                    <div
+                      style={{
+                        backgroundColor: '#FEF2F2',
+                        border: '1px solid #FECACA',
+                        color: '#EF4444',
+                        padding: '10px 14px',
+                        borderRadius: '10px',
+                        fontSize: '0.88rem',
+                        fontWeight: 600
+                      }}
+                    >
+                      ⚠️ {error}
+                    </div>
+                  )}
 
                   <button
                     type="submit"
-                    className="btn primary full-w auth-submit-btn"
                     disabled={loading}
+                    className="btn primary"
+                    style={{
+                      width: '100%',
+                      marginTop: '8px',
+                      minHeight: '50px',
+                      borderRadius: '12px',
+                      fontSize: '1.05rem',
+                      fontWeight: 800,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '10px'
+                    }}
                   >
-                    {loading
-                      ? 'Authenticating...'
-                      : authMode === 'login'
-                      ? `🚀 Sign In to ${selectedPlan} Portal`
-                      : `💬 Request for create Account`}
+                    {loading ? (
+                      <>
+                        <span className="spinner-icon" />
+                        <span>Authenticating...</span>
+                      </>
+                    ) : (
+                      <span>🔐 Sign In to Dashboard</span>
+                    )}
                   </button>
                 </form>
-
-                {/* 1-CLICK INSTANT DEMO LOGINS */}
-                <div className="demo-shortcuts-box">
-                  <span className="demo-tag-label">Instant 1-Click Sandbox Portals:</span>
-                  <div className="demo-btns-row">
-                    <button
-                      type="button"
-                      className="demo-pill-btn free-demo"
-                      onClick={() => handleQuickDemo('Free')}
-                    >
-                      ⚡ Demo: Sharma's Kitchen (Free Plan)
-                    </button>
-                    <button
-                      type="button"
-                      className="demo-pill-btn pro-demo"
-                      onClick={() => handleQuickDemo('Growth')}
-                    >
-                      🌟 Demo: Royal Palace Dine (Growth Plan)
-                    </button>
-                  </div>
-                </div>
-              </>
-            ) : (
-              /* SUCCESS AUTHENTICATION STATE */
-              <div className="login-success-state">
-                <div className="success-check-badge">✓</div>
-                <h3>Welcome Back, {successUser.name}!</h3>
-                <p className="success-sub">
-                  Authenticated successfully via <strong>{successUser.method}</strong> for the{' '}
-                  <span className="user-plan-badge">{successUser.plan} Plan</span>.
-                </p>
-
-                <div className="session-info-card">
-                  <div className="session-row">
-                    <span>Account Email</span>
-                    <b>{successUser.email}</b>
-                  </div>
-                  <div className="session-row">
-                    <span>Active Storefront</span>
-                    <b>Table QR &amp; Online Menu Live</b>
-                  </div>
-                  <div className="session-row">
-                    <span>Terminal Mode</span>
-                    <b>Kitchen KDS &amp; Billing Synchronized</b>
-                  </div>
-                </div>
-
-                <div className="success-action-group">
-                  <a href="/" className="btn primary full-w">
-                    🖥️ Launch Restaurant POS &amp; KDS Console
-                  </a>
-                  <button
-                    type="button"
-                    className="btn full-w"
-                    onClick={() => setSuccessUser(null)}
-                  >
-                    Sign In with Different Restaurant
-                  </button>
-                </div>
+              )}
+            </div>
+          ) : (
+            /* RICH WELCOME BANNER ON SUCCESS */
+            <div style={{ textAlign: 'center', padding: '20px 0' }}>
+              <div
+                style={{
+                  width: '68px',
+                  height: '68px',
+                  backgroundColor: '#22C55E',
+                  color: '#FFFFFF',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '2.4rem',
+                  margin: '0 auto 18px',
+                  boxShadow: '0 10px 25px rgba(34, 197, 94, 0.4)'
+                }}
+              >
+                ✓
               </div>
-            )}
-          </div>
+              <h2 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
+                WELCOME, {successUser.name.toUpperCase()}!
+              </h2>
+              <p style={{ color: '#64748B', fontSize: '0.96rem', margin: '0 0 20px' }}>
+                Authentication verified! Opening <b>{successUser.businessName || 'FoodyPay Dashboard'}</b>...
+              </p>
+
+              {successUser.logo?.url && (
+                <div style={{ marginBottom: '20px' }}>
+                  <img
+                    src={successUser.logo.url}
+                    alt="Business Logo"
+                    style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '4px solid #22C55E', boxShadow: '0 6px 18px rgba(0,0,0,0.1)' }}
+                  />
+                  <div style={{ fontSize: '0.86rem', color: '#059669', fontWeight: 800, marginTop: '6px' }}>
+                    {successUser.businessName} Verified
+                  </div>
+                </div>
+              )}
+
+              <a
+                href="/dashboard"
+                className="btn primary"
+                style={{
+                  display: 'inline-flex',
+                  width: '100%',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  textDecoration: 'none',
+                  fontSize: '1.1rem',
+                  fontWeight: 800,
+                  minHeight: '52px',
+                  borderRadius: '12px'
+                }}
+              >
+                🚀 Open Dashboard Now
+              </a>
+            </div>
+          )}
         </div>
-      </main>
+      </div>
     </div>
   );
 }
