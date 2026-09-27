@@ -198,6 +198,7 @@ export default function AdminDebugPage({ onShowToast }) {
 
   // Aggregate Metrics & Counts
   const totalRegisteredCount = registeredUsers.length;
+  const storesCreatedCount = registeredUsers.filter((u) => u.businessName && u.businessName.trim() !== '').length;
   const loggedInUsersCount = registeredUsers.filter((u) => u.isLoggedIn).length;
   const purchasedUsersCount = registeredUsers.filter((u) => u.hasPurchased).length;
   const freeUsersCount = registeredUsers.filter((u) => !u.hasPurchased).length;
@@ -220,11 +221,13 @@ export default function AdminDebugPage({ onShowToast }) {
 
     if (!matchesSearch) return false;
 
+    if (statusFilter === 'stores_created') return u.businessName && u.businessName.trim() !== '';
     if (statusFilter === 'logged_in') return u.isLoggedIn;
     if (statusFilter === 'purchased') return u.hasPurchased;
     if (statusFilter === 'free') return !u.hasPurchased;
     return true;
   });
+
 
   // Filtered Businesses List
   const filteredBusinesses = businesses.filter((b) => {
@@ -547,6 +550,17 @@ export default function AdminDebugPage({ onShowToast }) {
 
           <div style={{ backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: '16px', padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
+              <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>STORES CREATED IN DB</div>
+              <div style={{ fontSize: '28px', fontWeight: 900, color: '#FF5E14', marginTop: '4px' }}>{storesCreatedCount}</div>
+              <div style={{ fontSize: '12px', color: '#FF5E14', marginTop: '2px', fontWeight: 700 }}>🏪 Stores Registered</div>
+            </div>
+            <div style={{ backgroundColor: '#0F172A', padding: '12px', borderRadius: '12px', color: '#FF5E14' }}>
+              <Store size={26} />
+            </div>
+          </div>
+
+          <div style={{ backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: '16px', padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
               <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>LOGGED IN USERS</div>
               <div style={{ fontSize: '28px', fontWeight: 900, color: '#34D399', marginTop: '4px' }}>{loggedInUsersCount}</div>
               <div style={{ fontSize: '12px', color: '#34D399', marginTop: '2px', fontWeight: 700 }}>🟢 Active Sessions</div>
@@ -564,17 +578,6 @@ export default function AdminDebugPage({ onShowToast }) {
             </div>
             <div style={{ backgroundColor: '#0F172A', padding: '12px', borderRadius: '12px', color: '#F59E0B' }}>
               <Crown size={26} />
-            </div>
-          </div>
-
-          <div style={{ backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: '16px', padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>OUTLET BUSINESSES</div>
-              <div style={{ fontSize: '28px', fontWeight: 900, color: '#FF5E14', marginTop: '4px' }}>{businesses.length}</div>
-              <div style={{ fontSize: '12px', color: '#FF5E14', marginTop: '2px', fontWeight: 700 }}>🏪 Active Outlets</div>
-            </div>
-            <div style={{ backgroundColor: '#0F172A', padding: '12px', borderRadius: '12px', color: '#FF5E14' }}>
-              <Store size={26} />
             </div>
           </div>
 
@@ -666,6 +669,21 @@ export default function AdminDebugPage({ onShowToast }) {
                   All Users ({registeredUsers.length})
                 </button>
                 <button
+                  onClick={() => setStatusFilter('stores_created')}
+                  style={{
+                    backgroundColor: statusFilter === 'stores_created' ? '#7C2D12' : 'transparent',
+                    color: statusFilter === 'stores_created' ? '#FF5E14' : '#94A3B8',
+                    border: 'none',
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  🏪 Stores Created ({storesCreatedCount})
+                </button>
+                <button
                   onClick={() => setStatusFilter('logged_in')}
                   style={{
                     backgroundColor: statusFilter === 'logged_in' ? '#064E3B' : 'transparent',
@@ -680,6 +698,7 @@ export default function AdminDebugPage({ onShowToast }) {
                 >
                   🟢 Logged In ({loggedInUsersCount})
                 </button>
+
                 <button
                   onClick={() => setStatusFilter('purchased')}
                   style={{

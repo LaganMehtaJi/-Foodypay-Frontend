@@ -143,6 +143,12 @@ export default function SignupPage({ onShowToast }) {
       if (response.success && response.data) {
         const userData = response.data;
 
+        // Save session token and user profile for immediate auto-login
+        if (userData.token) {
+          localStorage.setItem('foodypay_token', userData.token);
+          localStorage.setItem('foodypay_user', JSON.stringify(userData));
+        }
+
         // Save to real user registry
         try {
           const saved = localStorage.getItem('foodypay_registered_users');
@@ -167,8 +173,11 @@ export default function SignupPage({ onShowToast }) {
 
         playMilestoneCelebration();
         confetti({ particleCount: 150, spread: 90, origin: { y: 0.4 } });
-        setSuccessMsg(`Registration Successful for ${userData.businessName || businessName}! Click Sign In to access Dashboard.`);
-        if (onShowToast) onShowToast(`🚀 Account Created! Please Sign In.`);
+        if (onShowToast) onShowToast(`🚀 Store Registered! Welcome to your FoodyPay Dashboard!`);
+
+        setTimeout(() => {
+          navigate('/dashboard');
+        }, 400);
       }
 
     } catch (err) {
@@ -177,6 +186,7 @@ export default function SignupPage({ onShowToast }) {
       setLoading(false);
     }
   };
+
 
   return (
     <div style={{ height: '100vh', maxHeight: '100vh', backgroundColor: '#F8FAFC', color: '#0F172A', fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
