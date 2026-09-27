@@ -1,6 +1,7 @@
-export const API_BASE_URL = typeof window !== 'undefined' && window.location.hostname === 'localhost'
-  ? 'http://localhost:3000/api'
+export const API_BASE_URL = typeof window !== 'undefined' && window.location.search.includes('use_local_api=true')
+  ? 'http://localhost:5001/api'
   : 'https://server-foodypay.onrender.com/api';
+
 
 /**
  * Register user with form data (including logo file upload)
