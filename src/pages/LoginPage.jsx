@@ -62,6 +62,29 @@ export default function LoginPage({ onShowToast }) {
           localStorage.setItem('foodypay_token', res.data.token);
           localStorage.setItem('foodypay_user', JSON.stringify(res.data));
         }
+
+        // Sync to real user registry
+        try {
+          const saved = localStorage.getItem('foodypay_registered_users');
+          let list = saved ? JSON.parse(saved) : [];
+          const emailLower = (res.data.email || email.trim() || '').toLowerCase();
+          list = list.filter((u) => u.email.toLowerCase() !== emailLower);
+          list.unshift({
+            _id: res.data._id || 'user_' + Date.now(),
+            email: res.data.email || email.trim(),
+            name: res.data.name || 'Merchant',
+            businessName: res.data.businessName || 'Restaurant Outlet',
+            contactNo: res.data.contactNo || '',
+            foodypayId: res.data.foodypayId || 'FP-' + Math.floor(100000 + Math.random() * 900000),
+            authProvider: 'google',
+            isLoggedIn: true,
+            hasPurchased: false,
+            planName: 'Free Plan',
+            createdAt: new Date().toISOString(),
+          });
+          localStorage.setItem('foodypay_registered_users', JSON.stringify(list));
+        } catch (e) {}
+
         playMilestoneCelebration();
         confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
         if (onShowToast) onShowToast(`👋 Verified with Google! Welcome ${res.data.name || 'Merchant'}!`);
@@ -101,6 +124,28 @@ export default function LoginPage({ onShowToast }) {
           localStorage.setItem('foodypay_user', JSON.stringify(userData));
         }
 
+        // Sync to real user registry
+        try {
+          const saved = localStorage.getItem('foodypay_registered_users');
+          let list = saved ? JSON.parse(saved) : [];
+          const emailLower = (userData.email || email.trim()).toLowerCase();
+          list = list.filter((u) => u.email.toLowerCase() !== emailLower);
+          list.unshift({
+            _id: userData._id || 'user_' + Date.now(),
+            email: userData.email || email.trim(),
+            name: userData.name || 'Merchant',
+            businessName: userData.businessName || 'Restaurant Outlet',
+            contactNo: userData.contactNo || '',
+            foodypayId: userData.foodypayId || 'FP-' + Math.floor(100000 + Math.random() * 900000),
+            authProvider: 'local',
+            isLoggedIn: true,
+            hasPurchased: false,
+            planName: 'Free Plan',
+            createdAt: new Date().toISOString(),
+          });
+          localStorage.setItem('foodypay_registered_users', JSON.stringify(list));
+        } catch (e) {}
+
         if (rememberMe) {
           localStorage.setItem('foodypay_remember_email', email.trim());
           localStorage.setItem('foodypay_remember_password', password.trim());
@@ -114,6 +159,7 @@ export default function LoginPage({ onShowToast }) {
           navigate('/dashboard');
         }, 500);
       }
+
     } catch (err) {
       setError(err.message || 'Invalid email or password. Please check your credentials.');
     } finally {

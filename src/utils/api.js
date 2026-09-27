@@ -54,6 +54,47 @@ export async function googleAuthApi(payload) {
 }
 
 /**
+ * Admin: Fetch all registered users from database
+ */
+export async function fetchRegisteredUsersApi() {
+  const response = await fetch(`${API_BASE_URL}/auth/users`);
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || 'Failed to fetch registered users');
+  }
+  return data;
+}
+
+/**
+ * Admin: Delete registered user by ID from database
+ */
+export async function deleteUserApi(userId) {
+  const response = await fetch(`${API_BASE_URL}/auth/users/${userId}`, {
+    method: 'DELETE',
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || 'Failed to delete user account');
+  }
+  return data;
+}
+
+/**
+ * Admin: Delete registered user by Email from database
+ */
+export async function deleteUserByEmailApi(email) {
+  const response = await fetch(`${API_BASE_URL}/auth/users/email/${encodeURIComponent(email)}`, {
+    method: 'DELETE',
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || 'Failed to delete user account');
+  }
+  return data;
+}
+
+
+/**
  * Fetch protected Dashboard summary data using JWT token
  */
 export async function getDashboardApi(token) {

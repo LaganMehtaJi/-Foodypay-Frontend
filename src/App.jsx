@@ -47,6 +47,14 @@ const AppContent = ({ showToast }) => {
           element={<DashboardPage />}
         />
         <Route
+          path="/Admin"
+          element={<AdminDebugPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/admin"
+          element={<AdminDebugPage onShowToast={showToast} />}
+        />
+        <Route
           path="/AdminDebug"
           element={<AdminDebugPage onShowToast={showToast} />}
         />
@@ -54,6 +62,7 @@ const AppContent = ({ showToast }) => {
           path="/admin-debug"
           element={<AdminDebugPage onShowToast={showToast} />}
         />
+
         <Route
           path="/:restaurantSlug/:merchantId/KitchenDisplaySystem"
           element={<KitchenDisplayPage onShowToast={showToast} />}

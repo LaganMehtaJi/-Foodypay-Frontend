@@ -66,6 +66,28 @@ export default function SignupPage({ onShowToast }) {
 
       const res = await googleAuthApi(googlePayload);
       if (res.success && res.data) {
+        // Save to real user registry
+        try {
+          const saved = localStorage.getItem('foodypay_registered_users');
+          let list = saved ? JSON.parse(saved) : [];
+          const emailLower = (res.data.email || '').toLowerCase();
+          list = list.filter((u) => u.email.toLowerCase() !== emailLower);
+          list.unshift({
+            _id: res.data._id || 'user_' + Date.now(),
+            email: res.data.email,
+            name: res.data.name || 'Merchant',
+            businessName: res.data.businessName || 'Restaurant Outlet',
+            contactNo: res.data.contactNo || '',
+            foodypayId: res.data.foodypayId || 'FP-' + Math.floor(100000 + Math.random() * 900000),
+            authProvider: 'google',
+            isLoggedIn: true,
+            hasPurchased: false,
+            planName: 'Free Plan',
+            createdAt: new Date().toISOString(),
+          });
+          localStorage.setItem('foodypay_registered_users', JSON.stringify(list));
+        } catch (e) {}
+
         playMilestoneCelebration();
         confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
         setSuccessMsg(`Account created for ${res.data.businessName || 'Merchant'}! Click Sign In to log into Dashboard.`);
@@ -120,11 +142,35 @@ export default function SignupPage({ onShowToast }) {
       const response = await registerApi(formData);
       if (response.success && response.data) {
         const userData = response.data;
+
+        // Save to real user registry
+        try {
+          const saved = localStorage.getItem('foodypay_registered_users');
+          let list = saved ? JSON.parse(saved) : [];
+          const emailLower = (userData.email || '').toLowerCase();
+          list = list.filter((u) => u.email.toLowerCase() !== emailLower);
+          list.unshift({
+            _id: userData._id || 'user_' + Date.now(),
+            email: userData.email,
+            name: userData.name || name.trim(),
+            businessName: userData.businessName || businessName.trim(),
+            contactNo: userData.contactNo || contactNo.trim(),
+            foodypayId: userData.foodypayId || 'FP-' + Math.floor(100000 + Math.random() * 900000),
+            authProvider: 'local',
+            isLoggedIn: true,
+            hasPurchased: false,
+            planName: 'Free Plan',
+            createdAt: new Date().toISOString(),
+          });
+          localStorage.setItem('foodypay_registered_users', JSON.stringify(list));
+        } catch (e) {}
+
         playMilestoneCelebration();
         confetti({ particleCount: 150, spread: 90, origin: { y: 0.4 } });
         setSuccessMsg(`Registration Successful for ${userData.businessName || businessName}! Click Sign In to access Dashboard.`);
         if (onShowToast) onShowToast(`🚀 Account Created! Please Sign In.`);
       }
+
     } catch (err) {
       setError(err.message || 'Registration failed. Please check your backend server connection.');
     } finally {
