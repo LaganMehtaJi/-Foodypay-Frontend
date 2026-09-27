@@ -33,11 +33,11 @@ import {
 } from 'lucide-react';
 import { playOrderPlaced } from '../utils/soundEffects';
 import { QrCodeComponent } from '../utils/qrGenerator';
-import { fetchDishesApi, createReviewApi, createPublicOrderApi } from '../utils/api';
-
+import { fetchDishesApi, fetchPublicDishesApi, fetchPublicMerchantApi, createReviewApi, createPublicOrderApi } from '../utils/api';
 
 // Default Fallback Dishes (Cleared as requested)
 const DEFAULT_DISHES = [];
+
 
 const AVAILABLE_COUPONS = [
   { code: 'WELCOME50', type: '50% OFF', discount: '50% OFF up to ₹100', minOrder: 199, desc: 'Valid on all food & beverage orders above ₹199', badge: 'POPULAR' },
@@ -132,19 +132,25 @@ export default function CustomerMenuPage({ onShowToast }) {
     } catch (e) {}
   }, [customerName, customerPhone, customerDob]);
 
-  // Load menu dataset dynamically from Dashboard storage
+  // Load menu dataset dynamically from Server API (Pure Live Data)
   const loadDynamicMenu = async () => {
     try {
-      const savedUser = localStorage.getItem('foodypay_user');
-      if (savedUser) {
-        const u = JSON.parse(savedUser);
-        setStoreInfo((prev) => ({
-          ...prev,
-          name: u.businessName || u.name || rawRestName,
-          logoUrl: u.logo?.url || prev.logoUrl,
-          gstPercent: u.gstPercent !== undefined ? u.gstPercent : 5,
-          upiId: u.upiId || 'lagandhaba@icici',
-        }));
+      const targetIdentifier = merchantId || restaurantSlug || 'FP-985569';
+
+      // 1. Fetch Merchant Info from Live Server
+      try {
+        const merchantData = await fetchPublicMerchantApi(targetIdentifier);
+        if (merchantData) {
+          setStoreInfo((prev) => ({
+            ...prev,
+            name: merchantData.businessName || merchantData.name || rawRestName,
+            logoUrl: merchantData.logo?.url || prev.logoUrl,
+            gstPercent: merchantData.gstPercent !== undefined ? merchantData.gstPercent : 5,
+            upiId: merchantData.upiId || 'lagandhaba@icici',
+          }));
+        }
+      } catch (e) {
+        // Fallback to name from URL slug if server details unavailable
       }
 
       const normalizeDishes = (list) => {
@@ -156,28 +162,18 @@ export default function CustomerMenuPage({ onShowToast }) {
         }));
       };
 
+      // 2. Fetch Catalog Dishes for THIS specific merchant from Live Server API
       try {
-        const apiDishes = await fetchDishesApi();
-        if (Array.isArray(apiDishes) && apiDishes.length > 0) {
+        const apiDishes = await fetchPublicDishesApi(merchantId, effectiveMerchantId);
+        if (Array.isArray(apiDishes)) {
           setDishes(normalizeDishes(apiDishes));
-        } else {
-          const savedDishes = localStorage.getItem('foodypay_crm_dishes_v3');
-          if (savedDishes) {
-            const parsed = JSON.parse(savedDishes);
-            setDishes(normalizeDishes(parsed));
-          } else {
-            setDishes([]);
-          }
-        }
-      } catch (err) {
-        const savedDishes = localStorage.getItem('foodypay_crm_dishes_v3');
-        if (savedDishes) {
-          const parsed = JSON.parse(savedDishes);
-          setDishes(normalizeDishes(parsed));
         } else {
           setDishes([]);
         }
+      } catch (err) {
+        setDishes([]);
       }
+
 
       const savedMeals = localStorage.getItem('foodypay_crm_meals_v1');
       if (savedMeals) {

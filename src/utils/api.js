@@ -175,6 +175,34 @@ export async function fetchDishesApi(token) {
   return data.data;
 }
 
+export async function fetchPublicDishesApi(merchantId, foodypayId) {
+  const queryParams = new URLSearchParams();
+  if (merchantId) queryParams.append('merchantId', merchantId);
+  if (foodypayId) queryParams.append('foodypayId', foodypayId);
+  const response = await fetch(`${API_BASE_URL}/dishes/public?${queryParams.toString()}`);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to fetch catalog dishes');
+  return data.data;
+}
+
+export async function fetchPublicOrdersApi(merchantId, foodypayId) {
+  const queryParams = new URLSearchParams();
+  if (merchantId) queryParams.append('merchantId', merchantId);
+  if (foodypayId) queryParams.append('foodypayId', foodypayId);
+  const response = await fetch(`${API_BASE_URL}/orders/public?${queryParams.toString()}`);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to fetch public orders');
+  return data.data;
+}
+
+export async function fetchPublicMerchantApi(identifier) {
+  const response = await fetch(`${API_BASE_URL}/auth/merchant/${encodeURIComponent(identifier)}`);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to fetch merchant details');
+  return data.data;
+}
+
+
 export async function createDishApi(token, dishData) {
   const isFormData = dishData instanceof FormData;
   const headers = {

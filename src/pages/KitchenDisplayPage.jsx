@@ -18,13 +18,13 @@ import {
   Check
 } from 'lucide-react';
 import { playOrderPlaced } from '../utils/soundEffects';
-import { fetchOrdersApi } from '../utils/api';
+import { fetchOrdersApi, fetchPublicOrdersApi } from '../utils/api';
 
 export default function KitchenDisplayPage({ onShowToast }) {
   const { restaurantSlug, merchantId } = useParams();
 
   const formatSlug = (str) => {
-    if (!str) return 'Lagan Crazy';
+    if (!str) return 'Kitchen Display';
     return str
       .split('-')
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
@@ -49,34 +49,30 @@ export default function KitchenDisplayPage({ onShowToast }) {
     note: 'Serve HOT',
   });
 
-  // Load orders from localStorage & API
+  // Load orders from Live Server API for THIS specific merchant
   const loadOrders = async () => {
     const token = localStorage.getItem('foodypay_token');
     if (token) {
       try {
         const fetched = await fetchOrdersApi(token);
-        if (Array.isArray(fetched) && fetched.length > 0) {
+        if (Array.isArray(fetched)) {
           setOrders(fetched);
           return;
         }
-      } catch (e) {
-        // silent fallback
-      }
+      } catch (e) {}
     }
+
     try {
-      const saved = localStorage.getItem('foodypay_crm_orders_v3');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setOrders(parsed);
-          return;
-        }
+      const fetchedPublic = await fetchPublicOrdersApi(merchantId, effectiveMerchantId);
+      if (Array.isArray(fetchedPublic)) {
+        setOrders(fetchedPublic);
+        return;
       }
-    } catch (e) {
-      console.warn('Failed to parse kitchen orders:', e);
-    }
+    } catch (e) {}
+
     setOrders([]);
   };
+
 
   useEffect(() => {
     loadOrders();

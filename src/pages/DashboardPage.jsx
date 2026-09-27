@@ -121,14 +121,8 @@ const formatExpiryDisplay = (expiryDate) => {
 
 const INITIAL_COUPONS = [];
 
-const INITIAL_TABLES = [
-  { id: 't1', name: 'Table 1', capacity: 4, section: 'Indoor AC Dining', purpose: 'Contactless Self Ordering', theme: 'acrylic', qrColor: '#1E293B', cornerColor: '#FF5E14', url: '', status: 'available' },
-  { id: 't2', name: 'Table 2', capacity: 2, section: 'Indoor AC Dining', purpose: 'Dine-In Contactless', theme: 'luxury', qrColor: '#F59E0B', cornerColor: '#F59E0B', url: '', status: 'available' },
-  { id: 't3', name: 'Table 3', capacity: 4, section: 'Indoor AC Dining', purpose: 'Contactless Self Ordering', theme: 'neon', qrColor: '#FF5E14', cornerColor: '#FF5E14', url: '', status: 'available' },
-  { id: 't4', name: 'Table 4', capacity: 6, section: 'Outdoor Garden', purpose: 'Garden Table Ordering', theme: 'acrylic', qrColor: '#059669', cornerColor: '#059669', url: '', status: 'available' },
-  { id: 't5', name: 'Table 5', capacity: 4, section: 'Outdoor Garden', purpose: 'Garden Table Ordering', theme: 'acrylic', qrColor: '#1E293B', cornerColor: '#FF5E14', url: '', status: 'available' },
-  { id: 't6', name: 'Table 6', capacity: 8, section: 'VIP Rooftop Lounge', purpose: 'VIP Rooftop Service', theme: 'luxury', qrColor: '#F59E0B', cornerColor: '#F59E0B', url: '', status: 'available' },
-];
+const INITIAL_TABLES = [];
+
 
 export default function DashboardPage({ onShowToast }) {
   const navigate = useNavigate();
@@ -243,11 +237,11 @@ export default function DashboardPage({ onShowToast }) {
           deliveryStatus: true,
           pickupStatus: true,
           storeType: 'Business to Customer (B2C)',
-          restName: u.businessName || u.name || "Lagan Da Dhaba",
+          restName: u.businessName || u.name || "My Restaurant",
           phone: u.contactNo || u.phone || '',
           logoUrl: u.logo?.url || '',
-          address: 'Connaught Place, New Delhi',
-          upiId: 'lagandhaba@icici',
+          address: u.address || 'India',
+          upiId: u.upiId || 'merchant@icici',
           gstPercent: 5,
           lockMarketingTab: false,
           lockTableCrud: false,
@@ -257,16 +251,16 @@ export default function DashboardPage({ onShowToast }) {
       }
     } catch (e) {}
     return {
-      foodypayId: 'FP-985569',
+      foodypayId: '',
       storeStatus: true,
       deliveryStatus: true,
       pickupStatus: true,
       storeType: 'Business to Customer (B2C)',
-      restName: "Lagan Da Dhaba",
+      restName: "My Restaurant",
       phone: '',
       logoUrl: '',
       address: '',
-      upiId: 'lagandhaba@icici',
+      upiId: 'merchant@icici',
       gstPercent: 5,
       lockMarketingTab: false,
       lockTableCrud: false,
@@ -274,6 +268,7 @@ export default function DashboardPage({ onShowToast }) {
       lockSettingsPanel: false,
     };
   });
+
 
   // Dynamically sync favicon, apple-touch-icon, and PWA manifest logo in head when store logo changes
   useEffect(() => {
