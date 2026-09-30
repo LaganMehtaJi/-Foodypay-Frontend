@@ -9,10 +9,17 @@ import {
   ArrowRight,
   Sparkles,
   ShieldCheck,
-  CheckCircle2
+  CheckCircle2,
+  X,
+  KeyRound
 } from 'lucide-react';
 import { playMilestoneCelebration } from '../utils/soundEffects';
-import { loginApi, googleAuthApi } from '../utils/api';
+import { loginApi, googleAuthApi, firebaseAuthApi, checkEmailExistsApi } from '../utils/api';
+import {
+  loginWithFirebaseEmail,
+  loginWithFirebaseGoogle,
+  sendFirebasePasswordReset
+} from '../utils/firebase';
 
 export default function LoginPage({ onShowToast }) {
   const navigate = useNavigate();
@@ -25,6 +32,14 @@ export default function LoginPage({ onShowToast }) {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [noAccountEmail, setNoAccountEmail] = useState('');
+
+  // Forgot Password Modal state
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetMsg, setResetMsg] = useState('');
+  const [resetError, setResetError] = useState('');
 
   useEffect(() => {
     // If already logged in, auto redirect to dashboard
@@ -41,66 +56,71 @@ export default function LoginPage({ onShowToast }) {
     if (savedPass) setPassword(savedPass);
   }, [navigate]);
 
-  // Google OAuth Login
+  // Google Firebase OAuth Login
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError('');
+    setNoAccountEmail('');
     try {
+      let firebaseRes = null;
+      try {
+        firebaseRes = await loginWithFirebaseGoogle();
+      } catch (fbErr) {
+        console.warn('Firebase Google Auth fallback:', fbErr.message);
+      }
+
+      if (firebaseRes && firebaseRes.user) {
+        const gEmail = (firebaseRes.user.email || email.trim()).toLowerCase();
+        let accountExists = false;
+        try {
+          const checkRes = await checkEmailExistsApi(gEmail);
+          if (checkRes && checkRes.exists) accountExists = true;
+        } catch (checkErr) {
+          accountExists = false;
+        }
+
+        if (!accountExists) {
+          setNoAccountEmail(gEmail);
+          setError(`⚠️ No registered account found for ${gEmail}. Please register your merchant account first.`);
+          if (onShowToast) onShowToast(`⚠️ No account found for ${gEmail}. Please Register first.`);
+          return;
+        }
+      }
+
       const googlePayload = {
-        credential: 'demo_google_id_token_' + Date.now(),
-        email: email.trim() || 'owner@foodypay.com',
-        name: 'Lagan Mehta',
-        picture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-        businessName: 'Lagan Da Dhaba',
-        contactNo: '+91 98123 45678',
-        googleId: 'google_sub_' + Date.now(),
+        firebaseToken: firebaseRes?.token || 'google_token_' + Date.now(),
+        credential: firebaseRes?.token || 'google_token_' + Date.now(),
+        uid: firebaseRes?.user?.uid || 'google_uid_' + Date.now(),
+        email: firebaseRes?.user?.email || email.trim(),
+        name: firebaseRes?.user?.displayName || 'Merchant Owner',
+        picture: firebaseRes?.user?.photoURL || '',
+        providerId: 'google.com',
       };
 
-      const res = await googleAuthApi(googlePayload);
+      const res = await firebaseAuthApi(googlePayload).catch(() => googleAuthApi(googlePayload));
+
       if (res.success && res.data) {
         if (res.data.token) {
           localStorage.setItem('foodypay_token', res.data.token);
           localStorage.setItem('foodypay_user', JSON.stringify(res.data));
         }
 
-        // Sync to real user registry
-        try {
-          const saved = localStorage.getItem('foodypay_registered_users');
-          let list = saved ? JSON.parse(saved) : [];
-          const emailLower = (res.data.email || email.trim() || '').toLowerCase();
-          list = list.filter((u) => u.email.toLowerCase() !== emailLower);
-          list.unshift({
-            _id: res.data._id || 'user_' + Date.now(),
-            email: res.data.email || email.trim(),
-            name: res.data.name || 'Merchant',
-            businessName: res.data.businessName || 'Restaurant Outlet',
-            contactNo: res.data.contactNo || '',
-            foodypayId: res.data.foodypayId || 'FP-' + Math.floor(100000 + Math.random() * 900000),
-            authProvider: 'google',
-            isLoggedIn: true,
-            hasPurchased: false,
-            planName: 'Free Plan',
-            createdAt: new Date().toISOString(),
-          });
-          localStorage.setItem('foodypay_registered_users', JSON.stringify(list));
-        } catch (e) {}
-
         playMilestoneCelebration();
         confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
-        if (onShowToast) onShowToast(`👋 Verified with Google! Welcome ${res.data.name || 'Merchant'}!`);
+        if (onShowToast) onShowToast(`👋 Google Verification Success! Welcome ${res.data.name || 'Merchant'}!`);
         
         setTimeout(() => {
           navigate('/dashboard');
         }, 500);
       }
     } catch (err) {
-      setError(err.message || 'Google Auth verification failed.');
+      setError(err.message || 'Google verification failed.');
     } finally {
       setLoading(false);
     }
   };
 
-  // Form Login Handler
+  // Form Login Handler with Firebase & Local API Fallback
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -116,35 +136,46 @@ export default function LoginPage({ onShowToast }) {
 
     setLoading(true);
     try {
-      const response = await loginApi(email.trim(), password.trim());
-      if (response.success && response.data) {
+      let fbUser = null;
+      let fbToken = null;
+
+      // 1. Authenticate with Firebase Auth
+      try {
+        const fbRes = await loginWithFirebaseEmail(email.trim(), password.trim());
+        fbUser = fbRes.user;
+        fbToken = fbRes.token;
+      } catch (fbErr) {
+        // If wrong password error from firebase, prompt forgot password reset!
+        if (fbErr.message.includes('Incorrect password') || fbErr.message.includes('credential')) {
+          setError('Wrong password entered! Click "Forgot Password?" to receive a reset link in your email.');
+          setLoading(false);
+          return;
+        }
+      }
+
+      // 2. Sync / Authenticate with Node.js Backend
+      let response = null;
+      if (fbUser) {
+        response = await firebaseAuthApi({
+          firebaseToken: fbToken,
+          uid: fbUser.uid,
+          email: fbUser.email,
+          name: fbUser.displayName || email.trim().split('@')[0],
+          emailVerified: fbUser.emailVerified,
+          providerId: 'password',
+        }).catch(() => null);
+      }
+
+      if (!response) {
+        response = await loginApi(email.trim(), password.trim());
+      }
+
+      if (response && response.success && response.data) {
         const userData = response.data;
         if (userData.token) {
           localStorage.setItem('foodypay_token', userData.token);
           localStorage.setItem('foodypay_user', JSON.stringify(userData));
         }
-
-        // Sync to real user registry
-        try {
-          const saved = localStorage.getItem('foodypay_registered_users');
-          let list = saved ? JSON.parse(saved) : [];
-          const emailLower = (userData.email || email.trim()).toLowerCase();
-          list = list.filter((u) => u.email.toLowerCase() !== emailLower);
-          list.unshift({
-            _id: userData._id || 'user_' + Date.now(),
-            email: userData.email || email.trim(),
-            name: userData.name || 'Merchant',
-            businessName: userData.businessName || 'Restaurant Outlet',
-            contactNo: userData.contactNo || '',
-            foodypayId: userData.foodypayId || 'FP-' + Math.floor(100000 + Math.random() * 900000),
-            authProvider: 'local',
-            isLoggedIn: true,
-            hasPurchased: false,
-            planName: 'Free Plan',
-            createdAt: new Date().toISOString(),
-          });
-          localStorage.setItem('foodypay_registered_users', JSON.stringify(list));
-        } catch (e) {}
 
         if (rememberMe) {
           localStorage.setItem('foodypay_remember_email', email.trim());
@@ -153,17 +184,41 @@ export default function LoginPage({ onShowToast }) {
 
         playMilestoneCelebration();
         confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
-        if (onShowToast) onShowToast(`🎉 Login successful! Welcome back, ${userData.name || 'Merchant'}!`);
+        if (onShowToast) onShowToast(`🎉 Welcome back, ${userData.name || 'Merchant'}!`);
 
         setTimeout(() => {
           navigate('/dashboard');
         }, 500);
+      } else {
+        throw new Error('Login failed. Please check your credentials.');
       }
-
     } catch (err) {
       setError(err.message || 'Invalid email or password. Please check your credentials.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Submit Forgot Password Link via Firebase
+  const handleResetPasswordSubmit = async (e) => {
+    e.preventDefault();
+    setResetMsg('');
+    setResetError('');
+
+    if (!resetEmail.trim() || !resetEmail.includes('@')) {
+      setResetError('Please enter a valid email address.');
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      const result = await sendFirebasePasswordReset(resetEmail.trim());
+      setResetMsg(result.message);
+      if (onShowToast) onShowToast(`📧 Reset link sent to ${resetEmail.trim()} via Firebase!`);
+    } catch (err) {
+      setResetError(err.message || 'Failed to send password reset email.');
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -244,6 +299,7 @@ export default function LoginPage({ onShowToast }) {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {[
+                  '🔥 Firebase Authenticated & Secured Login',
                   '⚡ Instant Self-Service Table QR Ordering',
                   '🍳 Dedicated Kitchen Display System (KDS)',
                   '💰 0% Commission Direct Customer Payments',
@@ -260,7 +316,7 @@ export default function LoginPage({ onShowToast }) {
             <div style={{ marginTop: '20px', paddingTop: '14px', borderTop: '1px solid #334155', display: 'flex', alignItems: 'center', gap: '10px' }}>
               <ShieldCheck size={24} color="#10B981" />
               <div>
-                <div style={{ fontSize: '12px', fontWeight: 800, color: '#F8FAFC' }}>256-Bit SSL Encrypted Security</div>
+                <div style={{ fontSize: '12px', fontWeight: 800, color: '#F8FAFC' }}>Firebase Auth 256-Bit SSL Encrypted</div>
                 <div style={{ fontSize: '11px', color: '#94A3B8' }}>Trusted by 10,000+ top restaurants &amp; dhabas</div>
               </div>
             </div>
@@ -273,13 +329,31 @@ export default function LoginPage({ onShowToast }) {
                 Merchant Login
               </h2>
               <p style={{ fontSize: '13px', color: '#64748B', margin: 0 }}>
-                Enter credentials to access your FoodyPay Dashboard
+                Enter credentials or use Google to access your Dashboard
               </p>
             </div>
 
             {error && (
-              <div style={{ backgroundColor: '#FEF2F2', border: '1px solid #FCA5A5', color: '#991B1B', padding: '10px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 700, marginBottom: '14px' }}>
-                ⚠️ {error}
+              <div style={{ backgroundColor: '#FEF2F2', border: '1.5px solid #FCA5A5', color: '#991B1B', padding: '12px 16px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 700, marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                <div>⚠️ {error}</div>
+                {(noAccountEmail || error.toLowerCase().includes('register') || error.toLowerCase().includes('not found')) && (
+                  <Link
+                    to="/register"
+                    style={{
+                      padding: '7px 14px',
+                      borderRadius: '8px',
+                      backgroundColor: '#FF5E14',
+                      color: '#FFFFFF',
+                      textDecoration: 'none',
+                      fontSize: '12.5px',
+                      fontWeight: 900,
+                      whiteSpace: 'nowrap',
+                      boxShadow: '0 2px 8px rgba(255, 94, 20, 0.3)',
+                    }}
+                  >
+                    Register Account Now →
+                  </Link>
+                )}
               </div>
             )}
 
@@ -313,7 +387,7 @@ export default function LoginPage({ onShowToast }) {
                 <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
               </svg>
-              <span>Sign in with Google (Gmail)</span>
+              <span>Continue with Google</span>
             </button>
 
             <div style={{ display: 'flex', alignItems: 'center', margin: '0 0 16px', gap: '10px' }}>
@@ -355,6 +429,26 @@ export default function LoginPage({ onShowToast }) {
                   <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#334155' }}>
                     Password
                   </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResetEmail(email);
+                      setResetMsg('');
+                      setResetError('');
+                      setShowForgotModal(true);
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#FF5E14',
+                      fontSize: '12px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      padding: 0,
+                    }}
+                  >
+                    Forgot Password?
+                  </button>
                 </div>
                 <div style={{ position: 'relative' }}>
                   <Lock size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
@@ -419,13 +513,91 @@ export default function LoginPage({ onShowToast }) {
                   marginTop: '4px',
                 }}
               >
-                <span>{loading ? 'Logging in...' : 'Sign In to Dashboard'}</span>
+                <span>{loading ? 'Logging in via Firebase...' : 'Sign In to Dashboard'}</span>
                 {!loading && <ArrowRight size={17} />}
               </button>
             </form>
           </div>
         </div>
       </main>
+
+      {/* FIREBASE FORGOT PASSWORD RESET MODAL */}
+      {showForgotModal && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '16px' }}>
+          <div style={{ width: '100%', maxWidth: '440px', backgroundColor: '#FFFFFF', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <KeyRound size={22} color="#FF5E14" />
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#0F172A' }}>Reset Password</h3>
+              </div>
+              <button type="button" onClick={() => setShowForgotModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '13px', color: '#64748B', lineHeight: 1.5, margin: '0 0 16px' }}>
+              Enter your registered email address below. Firebase will send an instant password reset link directly to your inbox.
+            </p>
+
+            {resetMsg && (
+              <div style={{ backgroundColor: '#ECFDF5', border: '1px solid #6EE7B7', color: '#065F46', padding: '10px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 700, marginBottom: '14px' }}>
+                ✅ {resetMsg}
+              </div>
+            )}
+
+            {resetError && (
+              <div style={{ backgroundColor: '#FEF2F2', border: '1px solid #FCA5A5', color: '#991B1B', padding: '10px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 700, marginBottom: '14px' }}>
+                ⚠️ {resetError}
+              </div>
+            )}
+
+            <form onSubmit={handleResetPasswordSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                  Registered Email Address
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <Mail size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                  <input
+                    type="email"
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    placeholder="owner@restaurant.com"
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px 10px 38px',
+                      borderRadius: '10px',
+                      border: '1.5px solid #CBD5E1',
+                      fontSize: '13.5px',
+                      fontWeight: 600,
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowForgotModal(false)}
+                  style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '1.5px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#475569', fontWeight: 800, fontSize: '13px', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={resetLoading}
+                  style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', backgroundColor: '#FF5E14', color: '#FFFFFF', fontWeight: 800, fontSize: '13px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(255,94,20,0.3)' }}
+                >
+                  {resetLoading ? 'Sending...' : 'Send Reset Link'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

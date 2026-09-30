@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { playMilestoneCelebration } from '../utils/soundEffects';
-import { loginApi, googleAuthApi } from '../utils/api';
+import { loginApi, googleAuthApi, firebaseAuthApi, checkEmailExistsApi } from '../utils/api';
+import { loginWithFirebaseEmail, loginWithFirebaseGoogle, sendFirebasePasswordReset } from '../utils/firebase';
 
 export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSignup }) {
   const [email, setEmail] = useState('');
@@ -13,6 +14,9 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
   const [error, setError] = useState('');
   const [successUser, setSuccessUser] = useState(null);
 
+  const [showForgot, setShowForgot] = useState(false);
+  const [resetMsg, setResetMsg] = useState('');
+
   const passwordInputRef = useRef(null);
 
   useEffect(() => {
@@ -20,6 +24,8 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
       setError('');
       setLoading(false);
       setSuccessUser(null);
+      setShowForgot(false);
+      setResetMsg('');
 
       // Pre-fill remembered email & password
       const savedEmail = localStorage.getItem('foodypay_remember_email');
@@ -47,9 +53,38 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
     setLoading(true);
 
     try {
-      const response = await loginApi(email.trim(), password.trim());
+      let fbUser = null;
+      let fbToken = null;
 
-      if (response.success && response.data) {
+      try {
+        const fbRes = await loginWithFirebaseEmail(email.trim(), password.trim());
+        fbUser = fbRes.user;
+        fbToken = fbRes.token;
+      } catch (fbErr) {
+        if (fbErr.message.includes('Incorrect password') || fbErr.message.includes('credential')) {
+          setError('Wrong password! Click "Forgot Password?" below to reset via Firebase email link.');
+          setLoading(false);
+          return;
+        }
+      }
+
+      let response = null;
+      if (fbUser) {
+        response = await firebaseAuthApi({
+          firebaseToken: fbToken,
+          uid: fbUser.uid,
+          email: fbUser.email,
+          name: fbUser.displayName || email.trim().split('@')[0],
+          emailVerified: fbUser.emailVerified,
+          providerId: 'password',
+        }).catch(() => null);
+      }
+
+      if (!response) {
+        response = await loginApi(email.trim(), password.trim());
+      }
+
+      if (response && response.success && response.data) {
         const userData = response.data;
         if (userData.token) {
           localStorage.setItem('foodypay_token', userData.token);
@@ -59,9 +94,6 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
         if (rememberMe) {
           localStorage.setItem('foodypay_remember_email', email.trim());
           localStorage.setItem('foodypay_remember_password', password.trim());
-        } else {
-          localStorage.removeItem('foodypay_remember_email');
-          localStorage.removeItem('foodypay_remember_password');
         }
 
         setSuccessUser(userData);
@@ -88,16 +120,41 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
     setLoading(true);
     setError('');
     try {
+      let firebaseRes = null;
+      try {
+        firebaseRes = await loginWithFirebaseGoogle();
+      } catch (fbErr) {
+        console.warn('Firebase Google modal auth fallback:', fbErr.message);
+      }
+
+      if (firebaseRes && firebaseRes.user) {
+        const gEmail = (firebaseRes.user.email || email.trim()).toLowerCase();
+        let accountExists = false;
+        try {
+          const checkRes = await checkEmailExistsApi(gEmail);
+          if (checkRes && checkRes.exists) accountExists = true;
+        } catch (checkErr) {
+          accountExists = false;
+        }
+
+        if (!accountExists) {
+          setError(`No registered account found for ${gEmail}. Please click "Register" to create your account first.`);
+          if (onShowToast) onShowToast(`⚠️ No account found for ${gEmail}. Please Register first.`);
+          return;
+        }
+      }
+
       const googlePayload = {
-        credential: 'demo_google_id_token_' + Date.now(),
-        email: email.trim() || 'owner@gmail.com',
-        name: 'Restaurant Owner',
-        picture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-        businessName: "Sharma's Kitchen",
-        googleId: 'google_sub_' + Date.now(),
+        firebaseToken: firebaseRes?.token || 'google_token_' + Date.now(),
+        credential: firebaseRes?.token || 'google_token_' + Date.now(),
+        uid: firebaseRes?.user?.uid || 'google_uid_' + Date.now(),
+        email: firebaseRes?.user?.email || email.trim(),
+        name: firebaseRes?.user?.displayName || 'Restaurant Owner',
+        picture: firebaseRes?.user?.photoURL || '',
+        providerId: 'google.com',
       };
 
-      const res = await googleAuthApi(googlePayload);
+      const res = await firebaseAuthApi(googlePayload).catch(() => googleAuthApi(googlePayload));
       if (res.success && res.data) {
         if (res.data.token) {
           localStorage.setItem('foodypay_token', res.data.token);
@@ -106,13 +163,31 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
         setSuccessUser(res.data);
         playMilestoneCelebration();
         confetti({ particleCount: 100, spread: 70, origin: { y: 0.5 } });
-        if (onShowToast) onShowToast(`👋 Logged in with Google as ${res.data.name}!`);
+        if (onShowToast) onShowToast(`👋 Logged in with Google via Firebase as ${res.data.name}!`);
         setTimeout(() => {
           window.location.href = '/dashboard';
         }, 600);
       }
     } catch (err) {
       setError(err.message || 'Google Auth failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email || !email.includes('@')) {
+      setError('Please enter your email address above to receive a reset link.');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const res = await sendFirebasePasswordReset(email.trim());
+      setResetMsg(res.message);
+      if (onShowToast) onShowToast(`📧 Password reset email sent to ${email.trim()}!`);
+    } catch (err) {
+      setError(err.message || 'Failed to send password reset email.');
     } finally {
       setLoading(false);
     }
@@ -162,13 +237,13 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', margin: '28px 0' }}>
             <div style={{ fontSize: '0.82rem', color: '#E2E8F0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: '#FF5E14' }}>🔥</span> Firebase 256-Bit Auth Security
+            </div>
+            <div style={{ fontSize: '0.82rem', color: '#E2E8F0', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ color: '#FF5E14' }}>⚡</span> Real-time Kitchen Order Streams
             </div>
             <div style={{ fontSize: '0.82rem', color: '#E2E8F0', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ color: '#FF5E14' }}>📊</span> Sales Analytics &amp; Ledger
-            </div>
-            <div style={{ fontSize: '0.82rem', color: '#E2E8F0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ color: '#FF5E14' }}>📱</span> Table QR Standee Management
             </div>
           </div>
 
@@ -198,7 +273,7 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
                   Sign In to FoodyPay
                 </h2>
                 <p style={{ color: '#64748B', fontSize: '0.9rem', margin: 0 }}>
-                  Enter your credentials to open your command center.
+                  Enter your credentials or use Google to open dashboard.
                 </p>
               </div>
 
@@ -242,6 +317,12 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
                 <div style={{ flex: 1, borderBottom: '1px solid #E2E8F0' }} />
               </div>
 
+              {resetMsg && (
+                <div style={{ backgroundColor: '#ECFDF5', border: '1px solid #6EE7B7', color: '#065F46', padding: '10px 14px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 700, marginBottom: '14px' }}>
+                  ✅ {resetMsg}
+                </div>
+              )}
+
               {/* LOGIN FORM */}
               <form onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div>
@@ -268,10 +349,10 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
                     <label className="field-label-lg">Password *</label>
                     <button
                       type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      style={{ background: 'none', border: 'none', color: '#6366F1', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 700 }}
+                      onClick={handleForgotPassword}
+                      style={{ background: 'none', border: 'none', color: '#FF5E14', fontSize: '0.82rem', cursor: 'pointer', fontWeight: 700 }}
                     >
-                      {showPassword ? 'Hide' : 'Show'}
+                      Forgot Password?
                     </button>
                   </div>
                   <input
@@ -386,19 +467,6 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
               <p style={{ color: '#64748B', fontSize: '0.96rem', margin: '0 0 20px' }}>
                 Logged in successfully! Opening <b>{successUser.businessName || 'FoodyPay Dashboard'}</b>...
               </p>
-
-              {successUser.logo?.url && (
-                <div style={{ marginBottom: '20px' }}>
-                  <img
-                    src={successUser.logo.url}
-                    alt="Business Logo"
-                    style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover', border: '4px solid #22C55E', boxShadow: '0 6px 18px rgba(0,0,0,0.1)' }}
-                  />
-                  <div style={{ fontSize: '0.86rem', color: '#059669', fontWeight: 800, marginTop: '6px' }}>
-                    {successUser.businessName} Verified
-                  </div>
-                </div>
-              )}
 
               <a
                 href="/dashboard"

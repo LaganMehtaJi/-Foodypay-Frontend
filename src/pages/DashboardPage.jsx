@@ -63,6 +63,8 @@ import {
 import { QrCodeComponent } from '../utils/qrGenerator';
 import {
   fetchOrdersApi,
+  fetchOrderStatsApi,
+  markOrderSeenApi,
   createOrderApi,
   updateOrderApi,
   updateOrderStatusApi,
@@ -173,6 +175,7 @@ export default function DashboardPage({ onShowToast }) {
 
   // Datasets - default to empty array if user token is present, otherwise fallback
   const [orders, setOrders] = useState([]);
+  const [todayStats, setTodayStats] = useState(null);
   const [dishes, setDishes] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [custSearch, setCustSearch] = useState('');
@@ -614,14 +617,18 @@ export default function DashboardPage({ onShowToast }) {
       const token = localStorage.getItem('foodypay_token');
       if (!token) return;
       try {
-        const fetchedOrders = await fetchOrdersApi(token);
+        const res = await fetchOrdersApi(token);
+        const fetchedOrders = res.orders || (Array.isArray(res) ? res : []);
+        if (res.todayStats) setTodayStats(res.todayStats);
         if (Array.isArray(fetchedOrders) && fetchedOrders.length > 0) {
           setOrders((prev) => {
             if (fetchedOrders.length > prev.length) {
               const newest = fetchedOrders[0];
-              triggerSound(playOrderPlaced);
-              addToast(`🔔 Live Order Received! ${newest.orderId || newest.id} from ${newest.table || 'Table'} (${newest.customer || 'Customer'})`, <Bell size={18} />);
-              sendBrowserNotification('🔔 New FoodyPay Order!', `${newest.orderId || newest.id} - ${newest.table || 'Table'} (${newest.customer || 'Customer'})`);
+              if (!newest.seen) {
+                triggerSound(playOrderPlaced);
+                addToast(`🔔 Live Order Received! ${newest.orderId || newest.id} from ${newest.table || 'Table'} (${newest.customer || 'Customer'})`, <Bell size={18} />);
+                sendBrowserNotification('🔔 New FoodyPay Order!', `${newest.orderId || newest.id} - ${newest.table || 'Table'} (${newest.customer || 'Customer'})`);
+              }
             }
             return fetchedOrders;
           });
@@ -651,7 +658,7 @@ export default function DashboardPage({ onShowToast }) {
       return;
     }
 
-    const hasUnseen = (orders || []).some((o) => o && (o.seen === false || o.status === 'new'));
+    const hasUnseen = (orders || []).some((o) => o && !o.seen && o.status === 'new');
 
     if (hasUnseen) {
       startContinuousAlarm();
@@ -664,26 +671,45 @@ export default function DashboardPage({ onShowToast }) {
     };
   }, [orders, soundEnabled]);
 
-  const handleMarkOrderSeen = (orderId) => {
+  const handleMarkOrderSeen = async (orderId) => {
     setOrders((prev) =>
       prev.map((o) => {
         if (o._id === orderId || o.id === orderId) {
-          return { ...o, seen: true, status: o.status === 'new' ? 'new_seen' : o.status };
+          return { ...o, seen: true };
         }
         return o;
       })
     );
+    if (token) {
+      const orderObj = orders.find((o) => o._id === orderId || o.id === orderId);
+      const targetId = (orderObj && orderObj._id) || orderId;
+      if (targetId && !targetId.startsWith('ord_')) {
+        try {
+          const res = await markOrderSeenApi(token, targetId);
+          if (res.todayStats) setTodayStats(res.todayStats);
+        } catch (err) {}
+      }
+    }
+    stopContinuousAlarm();
     addToast('👁️ Order marked as SEEN! Alarm bell stopped.', <Check size={18} />);
   };
 
-  const handleMarkAllSeen = () => {
+  const handleMarkAllSeen = async () => {
     setOrders((prev) =>
       prev.map((o) => ({
         ...o,
         seen: true,
-        status: o.status === 'new' ? 'new_seen' : o.status,
       }))
     );
+    if (token) {
+      orders.forEach(async (o) => {
+        if (o._id && !o._id.startsWith('ord_')) {
+          try {
+            await markOrderSeenApi(token, o._id);
+          } catch (e) {}
+        }
+      });
+    }
     stopContinuousAlarm();
     addToast('👁️ All orders marked SEEN! Alarm bell stopped.', <Check size={18} />);
   };
@@ -726,8 +752,17 @@ export default function DashboardPage({ onShowToast }) {
           fetchReviewsApi(),
         ]);
 
-        if (ordersRes.status === 'fulfilled' && Array.isArray(ordersRes.value)) setOrders(ordersRes.value);
-        else setOrders(INITIAL_ORDERS);
+        if (ordersRes.status === 'fulfilled') {
+          const val = ordersRes.value;
+          if (val && Array.isArray(val.orders)) {
+            setOrders(val.orders);
+            if (val.todayStats) setTodayStats(val.todayStats);
+          } else if (Array.isArray(val)) {
+            setOrders(val);
+          } else {
+            setOrders(INITIAL_ORDERS);
+          }
+        } else setOrders(INITIAL_ORDERS);
 
         if (dishesRes.status === 'fulfilled' && Array.isArray(dishesRes.value)) setDishes(dishesRes.value);
         else setDishes(INITIAL_DISHES);
@@ -744,15 +779,30 @@ export default function DashboardPage({ onShowToast }) {
         else setTables(INITIAL_TABLES);
         if (settingsRes.status === 'fulfilled' && settingsRes.value) {
           const s = settingsRes.value;
-          setStoreControls((prev) => ({
-            ...prev,
-            restName: s.restName || prev.restName,
-            phone: s.phone || prev.phone,
-            address: s.address || prev.address,
-            upiId: s.upiId || prev.upiId,
-            gstPercent: s.gstPercent !== undefined ? s.gstPercent : prev.gstPercent,
-            storeStatus: s.storeStatus !== undefined ? s.storeStatus : prev.storeStatus,
-          }));
+          let uBusName = '';
+          try {
+            const uStr = localStorage.getItem('foodypay_user');
+            if (uStr) {
+              const uObj = JSON.parse(uStr);
+              uBusName = uObj.businessName || '';
+            }
+          } catch (e) {}
+
+          setStoreControls((prev) => {
+            const effectiveName = (uBusName && uBusName !== 'Lagan Da Dhaba')
+              ? uBusName
+              : (s.restName && s.restName !== 'Lagan Da Dhaba' ? s.restName : prev.restName);
+
+            return {
+              ...prev,
+              restName: effectiveName,
+              phone: s.phone || prev.phone,
+              address: s.address || prev.address,
+              upiId: s.upiId || prev.upiId,
+              gstPercent: s.gstPercent !== undefined ? s.gstPercent : prev.gstPercent,
+              storeStatus: s.storeStatus !== undefined ? s.storeStatus : prev.storeStatus,
+            };
+          });
           if (s.creditsBalance !== undefined) setCreditsBalance(s.creditsBalance);
         }
       } catch (err) {
@@ -1085,9 +1135,11 @@ export default function DashboardPage({ onShowToast }) {
       if (token) {
         try {
           const createdOrder = await createOrderApi(token, newOrderPayload);
-          setOrders((prev) => [createdOrder, ...prev]);
+          setOrders((prev) => [{ ...createdOrder, seen: true }, ...prev]);
           const updatedCustomers = await fetchCustomersApi(token);
           setCustomers(updatedCustomers || []);
+          const stats = await fetchOrderStatsApi(token);
+          if (stats) setTodayStats(stats);
         } catch (err) {
           console.warn('API error creating order:', err);
         }
@@ -1099,6 +1151,7 @@ export default function DashboardPage({ onShowToast }) {
           time: 'Just now',
           timestamp: Date.now(),
           status: 'new',
+          seen: true, // Auto-seen for manual orders
         };
         setOrders((prev) => [newOrder, ...prev]);
       }
@@ -1172,14 +1225,16 @@ export default function DashboardPage({ onShowToast }) {
     setOrders((prev) =>
       prev.map((ord) =>
         ord.id === orderId || ord._id === orderId
-          ? { ...ord, total: finalTotal, status: 'completed', paymentStatus: 'cash', paymentLabel: 'Cash on Counter' }
+          ? { ...ord, total: finalTotal, status: 'completed', seen: true, paymentStatus: 'cash', paymentLabel: 'Cash on Counter' }
           : ord
       )
     );
 
     if (token) {
       try {
-        await updateOrderApi(token, orderId, { ...activeBillSettlementOrder, total: finalTotal, status: 'completed', paymentStatus: 'cash' });
+        await updateOrderApi(token, orderId, { ...activeBillSettlementOrder, total: finalTotal, status: 'completed', seen: true, paymentStatus: 'cash' });
+        const stats = await fetchOrderStatsApi(token);
+        if (stats) setTodayStats(stats);
       } catch (err) {}
     }
 
@@ -1197,14 +1252,16 @@ export default function DashboardPage({ onShowToast }) {
     setOrders((prev) =>
       prev.map((ord) =>
         ord.id === orderId || ord._id === orderId
-          ? { ...ord, total: finalTotal, status: 'completed', paymentStatus: 'paid-upi', paymentLabel: 'Paid via UPI QR' }
+          ? { ...ord, total: finalTotal, status: 'completed', seen: true, paymentStatus: 'paid-upi', paymentLabel: 'Paid via UPI QR' }
           : ord
       )
     );
 
     if (token) {
       try {
-        await updateOrderApi(token, orderId, { ...activeBillSettlementOrder, total: finalTotal, status: 'completed', paymentStatus: 'paid-upi' });
+        await updateOrderApi(token, orderId, { ...activeBillSettlementOrder, total: finalTotal, status: 'completed', seen: true, paymentStatus: 'paid-upi' });
+        const stats = await fetchOrderStatsApi(token);
+        if (stats) setTodayStats(stats);
       } catch (err) {}
     }
 
@@ -2419,7 +2476,7 @@ export default function DashboardPage({ onShowToast }) {
               <div className="crm-kpi-card">
                 <div>
                   <div className="crm-kpi-label" style={{ fontWeight: 600, color: '#475569' }}>Today's Orders</div>
-                  <div className="crm-kpi-value">{orders.length}</div>
+                  <div className="crm-kpi-value">{todayStats?.todayOrders ?? orders.length}</div>
                 </div>
                 <div className="crm-kpi-icon-box" style={{ background: '#EFF6FF', color: '#1D4ED8', width: '56px', height: '56px' }}>
                   <ShoppingBag size={26} />
@@ -2429,7 +2486,9 @@ export default function DashboardPage({ onShowToast }) {
               <div className="crm-kpi-card">
                 <div>
                   <div className="crm-kpi-label" style={{ fontWeight: 600, color: '#475569' }}>Today's Sales</div>
-                  <div className="crm-kpi-value" style={{ color: '#059669' }}>₹{(orders || []).reduce((sum, o) => sum + (o ? (Number(o.total) || 0) : 0), 0).toLocaleString()}</div>
+                  <div className="crm-kpi-value" style={{ color: '#059669' }}>
+                    ₹{(todayStats?.todaySales ?? (orders || []).reduce((sum, o) => sum + (o ? (Number(o.total) || 0) : 0), 0)).toLocaleString()}
+                  </div>
                 </div>
                 <div className="crm-kpi-icon-box" style={{ background: '#ECFDF5', color: '#059669' }}>
                   <CreditCard size={26} />
@@ -4388,6 +4447,155 @@ export default function DashboardPage({ onShowToast }) {
                   Edit UPI
                 </button>
               </div>
+            </div>
+
+            {/* Payment Routing & Razorpay Gateway Section */}
+            <div className="crm-control-section-card" style={{ marginTop: '20px' }}>
+              <div className="crm-control-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CreditCard size={20} color="#10B981" /> Payment Gateway & Routing Controls
+              </div>
+
+              <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '16px' }}>
+                Select how customer order payments are collected and routed at checkout.
+              </div>
+
+              {/* 3 Routing Modes */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+                {/* Mode 1: FoodyPay Gateway (Default) */}
+                <div
+                  onClick={() => setStoreControls((prev) => ({ ...prev, paymentRoutingMode: 'foodypay_default' }))}
+                  style={{
+                    padding: '16px',
+                    borderRadius: '12px',
+                    border: storeControls.paymentRoutingMode === 'foodypay_default' ? '2px solid #FF5E14' : '1px solid #CBD5E1',
+                    backgroundColor: storeControls.paymentRoutingMode === 'foodypay_default' ? '#FFF0EB' : '#FFFFFF',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <div style={{ fontWeight: 800, fontSize: '14px', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>🍊 FoodyPay Gateway (Default)</span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '6px', lineHeight: 1.4 }}>
+                    Zero-config instant Razorpay payment collection via FoodyPay default gateway.
+                  </div>
+                </div>
+
+                {/* Mode 2: Merchant Own Razorpay */}
+                <div
+                  onClick={() => setStoreControls((prev) => ({ ...prev, paymentRoutingMode: 'merchant_razorpay' }))}
+                  style={{
+                    padding: '16px',
+                    borderRadius: '12px',
+                    border: storeControls.paymentRoutingMode === 'merchant_razorpay' ? '2px solid #1D4ED8' : '1px solid #CBD5E1',
+                    backgroundColor: storeControls.paymentRoutingMode === 'merchant_razorpay' ? '#EFF6FF' : '#FFFFFF',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <div style={{ fontWeight: 800, fontSize: '14px', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>💳 Merchant Own Razorpay</span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '6px', lineHeight: 1.4 }}>
+                    Directly collect funds into your own Razorpay merchant account using API keys.
+                  </div>
+                </div>
+
+                {/* Mode 3: Direct Merchant UPI QR */}
+                <div
+                  onClick={() => setStoreControls((prev) => ({ ...prev, paymentRoutingMode: 'merchant_upi' }))}
+                  style={{
+                    padding: '16px',
+                    borderRadius: '12px',
+                    border: storeControls.paymentRoutingMode === 'merchant_upi' ? '2px solid #10B981' : '1px solid #CBD5E1',
+                    backgroundColor: storeControls.paymentRoutingMode === 'merchant_upi' ? '#ECFDF5' : '#FFFFFF',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <div style={{ fontWeight: 800, fontSize: '14px', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>📱 Direct Merchant UPI QR</span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '6px', lineHeight: 1.4 }}>
+                    Diners scan your store's direct UPI QR code (`upiId`) to send payments.
+                  </div>
+                </div>
+              </div>
+
+              {/* Input fields based on selected mode */}
+              {storeControls.paymentRoutingMode === 'merchant_razorpay' && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', background: '#F8FAFC', padding: '16px', borderRadius: '12px', marginBottom: '16px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                      Razorpay Key ID
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="rzp_live_xxxxxxxxxxxx"
+                      value={storeControls.razorpayKeyId || ''}
+                      onChange={(e) => setStoreControls((prev) => ({ ...prev, razorpayKeyId: e.target.value }))}
+                      style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                      Razorpay Key Secret
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="••••••••••••••••"
+                      value={storeControls.razorpayKeySecret || ''}
+                      onChange={(e) => setStoreControls((prev) => ({ ...prev, razorpayKeySecret: e.target.value }))}
+                      style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px' }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {storeControls.paymentRoutingMode === 'merchant_upi' && (
+                <div style={{ background: '#F8FAFC', padding: '16px', borderRadius: '12px', marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    Direct Merchant UPI ID (VPA)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="merchant@icici"
+                    value={storeControls.upiId || ''}
+                    onChange={(e) => setStoreControls((prev) => ({ ...prev, upiId: e.target.value }))}
+                    style={{ width: '100%', maxWidth: '360px', padding: '8px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px' }}
+                  />
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={async () => {
+                  if (token) {
+                    try {
+                      await updateSettingsApi(token, {
+                        paymentRoutingMode: storeControls.paymentRoutingMode,
+                        razorpayKeyId: storeControls.razorpayKeyId,
+                        razorpayKeySecret: storeControls.razorpayKeySecret,
+                        upiId: storeControls.upiId,
+                      });
+                    } catch (e) {}
+                  }
+                  addToast('💳 Payment Routing & Gateway settings saved successfully!', <Check size={18} />);
+                }}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '10px',
+                  background: '#FF5E14',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  fontWeight: 800,
+                  fontSize: '13.5px',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(255, 94, 20, 0.3)',
+                }}
+              >
+                Save Payment Settings
+              </button>
             </div>
           </div>
         )}

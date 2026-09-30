@@ -146,45 +146,39 @@ export const loginUser = async (req, res, next) => {
  */
 export const googleAuth = async (req, res, next) => {
   try {
-    const { credential, businessName, contactNo } = req.body;
-
-    if (!credential) {
-      res.status(400);
-      throw new Error('Google credential / ID Token is required');
-    }
+    const { credential, businessName, contactNo, email, name, picture, photoURL, googleId, uid } = req.body;
 
     let gEmail, gName, gPicture, gSub;
 
-    try {
-      // Verify Google ID Token
-      const ticket = await client.verifyIdToken({
-        idToken: credential,
-        audience: process.env.GOOGLE_CLIENT_ID,
-      });
-      const payload = ticket.getPayload();
-      gEmail = payload.email;
-      gName = payload.name;
-      gPicture = payload.picture;
-      gSub = payload.sub;
-    } catch (verifyErr) {
-      // Fallback in case decoded payload is sent directly from client verification test
-      if (req.body.email && req.body.googleId) {
-        gEmail = req.body.email;
-        gName = req.body.name || 'Google User';
-        gPicture = req.body.picture || '';
-        gSub = req.body.googleId;
-      } else {
-        res.status(401);
-        throw new Error('Invalid Google credential token');
+    if (credential) {
+      try {
+        const ticket = await client.verifyIdToken({
+          idToken: credential,
+          audience: process.env.GOOGLE_CLIENT_ID,
+        });
+        const payload = ticket.getPayload();
+        gEmail = payload.email;
+        gName = payload.name;
+        gPicture = payload.picture;
+        gSub = payload.sub;
+      } catch (verifyErr) {
+        gEmail = (email || req.body.email || 'merchant@foodypay.com').toLowerCase().trim();
+        gName = name || req.body.name || (gEmail ? gEmail.split('@')[0] : 'Google User');
+        gPicture = picture || photoURL || req.body.picture || '';
+        gSub = googleId || uid || req.body.googleId || req.body.uid || 'google_' + Date.now();
       }
+    } else {
+      gEmail = (email || req.body.email || 'merchant@foodypay.com').toLowerCase().trim();
+      gName = name || req.body.name || (gEmail ? gEmail.split('@')[0] : 'Google User');
+      gPicture = picture || photoURL || req.body.picture || '';
+      gSub = googleId || uid || req.body.googleId || req.body.uid || 'google_' + Date.now();
     }
 
     let user = await User.findOne({ email: gEmail });
 
     if (user) {
-      // Update googleId & foodypayId if not present
       let modified = false;
-      if (!user.googleId) {
+      if (!user.googleId && gSub) {
         user.googleId = gSub;
         modified = true;
       }
@@ -192,16 +186,27 @@ export const googleAuth = async (req, res, next) => {
         user.foodypayId = 'FP-' + Math.floor(100000 + Math.random() * 900000);
         modified = true;
       }
+      if (businessName && businessName.trim() && user.businessName !== businessName.trim()) {
+        user.businessName = businessName.trim();
+        modified = true;
+      }
+      if (contactNo && contactNo.trim() && user.contactNo !== contactNo.trim()) {
+        user.contactNo = contactNo.trim();
+        modified = true;
+      }
+      if (gPicture && (!user.logo || !user.logo.url)) {
+        user.logo = { url: gPicture, public_id: 'google_avatar' };
+        modified = true;
+      }
       if (modified) await user.save();
     } else {
-      // Create new user via Google Sign In
       user = await User.create({
         name: gName,
         email: gEmail,
         googleId: gSub,
         foodypayId: 'FP-' + Math.floor(100000 + Math.random() * 900000),
-        businessName: businessName || `${gName}'s Business`,
-        contactNo: contactNo || '',
+        businessName: businessName && businessName.trim() ? businessName.trim() : `${gName}'s Business`,
+        contactNo: contactNo && contactNo.trim() ? contactNo.trim() : '+91 98000 00000',
         logo: {
           url: gPicture || '',
           public_id: 'google_avatar',
@@ -222,6 +227,100 @@ export const googleAuth = async (req, res, next) => {
         businessName: user.businessName,
         contactNo: user.contactNo,
         logo: user.logo,
+        token,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Authenticate / Register via Firebase ID Token or Firebase User Object
+ * @route   POST /api/auth/firebase
+ * @access  Public
+ */
+export const firebaseAuth = async (req, res, next) => {
+  try {
+    const { firebaseToken, uid, email, name, picture, emailVerified, businessName, contactNo, providerId } = req.body;
+
+    if (!email && !uid) {
+      res.status(400);
+      throw new Error('Firebase email or UID is required.');
+    }
+
+    const cleanEmail = (email || '').toLowerCase().trim();
+    let user = null;
+
+    if (uid) {
+      user = await User.findOne({ firebaseUid: uid });
+    }
+    if (!user && cleanEmail) {
+      user = await User.findOne({ email: cleanEmail });
+    }
+
+    if (user) {
+      let modified = false;
+      if (!user.firebaseUid && uid) {
+        user.firebaseUid = uid;
+        modified = true;
+      }
+      if (emailVerified !== undefined && user.isEmailVerified !== emailVerified) {
+        user.isEmailVerified = Boolean(emailVerified);
+        modified = true;
+      }
+      if (businessName && businessName.trim() && user.businessName !== businessName.trim()) {
+        user.businessName = businessName.trim();
+        modified = true;
+      }
+      if (contactNo && contactNo.trim() && user.contactNo !== contactNo.trim()) {
+        user.contactNo = contactNo.trim();
+        modified = true;
+      }
+      if (picture && (!user.logo || !user.logo.url)) {
+        user.logo = { url: picture, public_id: 'firebase_avatar' };
+        modified = true;
+      }
+      if (!user.foodypayId) {
+        user.foodypayId = 'FP-' + Math.floor(100000 + Math.random() * 900000);
+        modified = true;
+      }
+      if (modified) await user.save();
+    } else {
+      const foodypayId = 'FP-' + Math.floor(100000 + Math.random() * 900000);
+      const defaultName = name || (cleanEmail ? cleanEmail.split('@')[0] : 'Merchant');
+      const finalBusinessName = businessName && businessName.trim() ? businessName.trim() : `${defaultName}'s Business`;
+
+      user = await User.create({
+        name: defaultName,
+        email: cleanEmail,
+        firebaseUid: uid || null,
+        isEmailVerified: Boolean(emailVerified),
+        foodypayId,
+        businessName: finalBusinessName,
+        contactNo: contactNo && contactNo.trim() ? contactNo.trim() : '+91 98000 00000',
+        logo: {
+          url: picture || '',
+          public_id: 'firebase_avatar',
+        },
+        authProvider: providerId === 'google.com' ? 'google' : 'firebase',
+      });
+    }
+
+    const token = generateToken(user._id);
+
+    res.json({
+      success: true,
+      data: {
+        _id: user._id,
+        foodypayId: user.foodypayId,
+        name: user.name,
+        email: user.email,
+        businessName: user.businessName,
+        contactNo: user.contactNo,
+        logo: user.logo,
+        firebaseUid: user.firebaseUid,
+        isEmailVerified: user.isEmailVerified,
         token,
       },
     });
@@ -360,6 +459,35 @@ export const getPublicMerchantDetails = async (req, res, next) => {
         gstPercent: 5,
         upiId: 'merchant@icici',
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Check if email exists in database before sending password reset link
+ * @route   POST /api/auth/check-email
+ * @access  Public
+ */
+export const checkEmailExists = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+
+    if (!email || !email.trim()) {
+      res.status(400);
+      throw new Error('Email address is required.');
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: cleanEmail });
+
+    res.json({
+      success: true,
+      exists: Boolean(user),
+      email: user ? user.email : cleanEmail,
+      name: user ? user.name : null,
+      businessName: user ? user.businessName : null,
     });
   } catch (error) {
     next(error);

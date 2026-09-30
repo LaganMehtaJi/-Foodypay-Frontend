@@ -1,13 +1,43 @@
-export const API_BASE_URL = typeof window !== 'undefined' && window.location.search.includes('use_local_api=true')
-  ? 'http://localhost:5001/api'
-  : 'https://server-foodypay.onrender.com/api';
+export const LOCAL_API_URL = 'http://localhost:3000/api';
+export const REMOTE_API_URL = typeof window !== 'undefined' && window.location.origin
+  ? `${window.location.origin}/api`
+  : '/api';
 
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ||
+  (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? LOCAL_API_URL
+    : REMOTE_API_URL);
+
+/**
+ * Universal safe fetch helper with automatic server fallback
+ */
+export async function safeFetch(path, options = {}) {
+  const cleanPath = path.startsWith('/api') ? path.replace('/api', '') : (path.startsWith('/') ? path : `/${path}`);
+  const primaryUrl = `${API_BASE_URL}${cleanPath}`;
+  try {
+    const res = await fetch(primaryUrl, options);
+    return res;
+  } catch (err) {
+    if (err.name === 'TypeError' || err.message.includes('fetch')) {
+      const isLocal = primaryUrl.includes('localhost') || primaryUrl.includes('127.0.0.1');
+      const fallbackBase = isLocal ? REMOTE_API_URL : LOCAL_API_URL;
+      const fallbackUrl = `${fallbackBase}${cleanPath}`;
+      try {
+        const fallbackRes = await fetch(fallbackUrl, options);
+        return fallbackRes;
+      } catch (fbErr) {
+        throw new Error('Backend server is unreachable. Please verify local Node backend server is running on port 3000.');
+      }
+    }
+    throw err;
+  }
+}
 
 /**
  * Register user with form data (including logo file upload)
  */
 export async function registerApi(formData) {
-  const response = await fetch(`${API_BASE_URL}/auth/register`, {
+  const response = await safeFetch('/auth/register', {
     method: 'POST',
     body: formData,
   });
@@ -22,7 +52,7 @@ export async function registerApi(formData) {
  * Login user with email & password
  */
 export async function loginApi(email, password) {
-  const response = await fetch(`${API_BASE_URL}/auth/login`, {
+  const response = await safeFetch('/auth/login', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -40,7 +70,7 @@ export async function loginApi(email, password) {
  * Google Auth API
  */
 export async function googleAuthApi(payload) {
-  const response = await fetch(`${API_BASE_URL}/auth/google`, {
+  const response = await safeFetch('/auth/google', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -50,6 +80,42 @@ export async function googleAuthApi(payload) {
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data.message || 'Google Auth failed');
+  }
+  return data;
+}
+
+/**
+ * Firebase Auth Sync API (Syncs Firebase UID & ID Tokens with MongoDB Backend)
+ */
+export async function firebaseAuthApi(payload) {
+  const response = await safeFetch('/auth/firebase', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || 'Firebase Auth sync failed');
+  }
+  return data;
+}
+
+/**
+ * Check if registered email exists in system database
+ */
+export async function checkEmailExistsApi(email) {
+  const response = await safeFetch('/auth/check-email', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email: (email || '').trim() }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || 'No account found with this email address.');
   }
   return data;
 }
@@ -153,6 +219,28 @@ export async function createPublicOrderApi(orderData) {
   return data.data;
 }
 
+export async function createRazorpayOrderApi(payload) {
+  const response = await fetch(`${API_BASE_URL}/payments/create-razorpay-order`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to create Razorpay order');
+  return data;
+}
+
+export async function verifyRazorpaySignatureApi(payload) {
+  const response = await fetch(`${API_BASE_URL}/payments/verify-signature`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to verify Razorpay signature');
+  return data;
+}
+
 
 export async function updateOrderStatusApi(token, orderId, status) {
   const response = await fetch(`${API_BASE_URL}/orders/${orderId}/status`, {
@@ -165,6 +253,27 @@ export async function updateOrderStatusApi(token, orderId, status) {
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || 'Failed to update order status');
+  return data.data;
+}
+
+export async function markOrderSeenApi(token, orderId) {
+  const response = await fetch(`${API_BASE_URL}/orders/${orderId}/seen`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to mark order seen');
+  return data.data;
+}
+
+export async function fetchOrderStatsApi(token) {
+  const response = await fetch(`${API_BASE_URL}/orders/stats`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to fetch order stats');
   return data.data;
 }
 

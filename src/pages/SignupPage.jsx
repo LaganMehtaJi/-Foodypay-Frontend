@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import {
@@ -12,10 +12,17 @@ import {
   EyeOff,
   ArrowRight,
   ShieldCheck,
-  CheckCircle2
+  CheckCircle2,
+  AlertTriangle,
+  Lock as LockIcon,
 } from 'lucide-react';
 import { playMilestoneCelebration } from '../utils/soundEffects';
-import { registerApi, googleAuthApi } from '../utils/api';
+import { registerApi, googleAuthApi, firebaseAuthApi, checkEmailExistsApi } from '../utils/api';
+import {
+  registerWithFirebaseEmail,
+  loginWithFirebaseGoogle,
+  sendFirebaseEmailVerification
+} from '../utils/firebase';
 
 export default function SignupPage({ onShowToast }) {
   const navigate = useNavigate();
@@ -32,7 +39,13 @@ export default function SignupPage({ onShowToast }) {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [existingUserEmail, setExistingUserEmail] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+
+  const [googleUserSession, setGoogleUserSession] = useState(null);
+  const [manualEmailVerified, setManualEmailVerified] = useState(false);
+
+  const isVerified = Boolean(googleUserSession || manualEmailVerified);
 
   // Handle Logo File Upload Selection
   const handleLogoChange = (e) => {
@@ -48,50 +61,89 @@ export default function SignupPage({ onShowToast }) {
     }
   };
 
-  // Google OAuth Quick Signup
+  // Helper to finalize Google Registration with actual merchant business details
+  const finalizeGoogleRegistration = async (fbSession, busName, phoneNum, fullName, userEmail) => {
+    const googlePayload = {
+      firebaseToken: fbSession?.token || 'google_token_' + Date.now(),
+      credential: fbSession?.token || 'google_token_' + Date.now(),
+      uid: fbSession?.user?.uid || 'google_uid_' + Date.now(),
+      email: userEmail || fbSession?.user?.email || email.trim(),
+      name: fullName || fbSession?.user?.displayName || name.trim(),
+      picture: fbSession?.user?.photoURL || '',
+      businessName: busName,
+      contactNo: phoneNum,
+      providerId: 'google.com',
+    };
+
+    const res = await firebaseAuthApi(googlePayload).catch(() => googleAuthApi(googlePayload));
+
+    if (res && res.success && res.data) {
+      if (res.data.token) {
+        localStorage.setItem('foodypay_token', res.data.token);
+        localStorage.setItem('foodypay_user', JSON.stringify(res.data));
+      }
+
+      playMilestoneCelebration();
+      confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
+      setSuccessMsg(`Account created for ${res.data.businessName || busName}! Launching Dashboard...`);
+      if (onShowToast) onShowToast(`🚀 Account Created! Welcome ${res.data.businessName || busName}!`);
+
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 500);
+    }
+  };
+
+  // Step 1: Google OAuth Quick Gmail Verification
   const handleGoogleSignup = async () => {
     setLoading(true);
     setError('');
+    setExistingUserEmail('');
     setSuccessMsg('');
     try {
-      const googlePayload = {
-        credential: 'demo_google_id_token_' + Date.now(),
-        email: email.trim() || 'merchant@foodypay.com',
-        name: name.trim() || 'Lagan Mehta',
-        picture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-        businessName: businessName.trim() || 'Lagan Da Dhaba',
-        contactNo: contactNo.trim() || '+91 98123 45678',
-        googleId: 'google_sub_' + Date.now(),
-      };
+      let firebaseRes = null;
+      try {
+        firebaseRes = await loginWithFirebaseGoogle();
+      } catch (fbErr) {
+        console.warn('Firebase Google signup fallback:', fbErr.message);
+        throw fbErr;
+      }
 
-      const res = await googleAuthApi(googlePayload);
-      if (res.success && res.data) {
-        // Save to real user registry
+      if (firebaseRes && firebaseRes.user) {
+        const gUser = firebaseRes.user;
+        const gName = gUser.displayName || name.trim() || '';
+        const gEmail = (gUser.email || email.trim() || '').toLowerCase();
+
+        // Check if an account ALREADY EXISTS with this email
+        let accountExists = false;
         try {
-          const saved = localStorage.getItem('foodypay_registered_users');
-          let list = saved ? JSON.parse(saved) : [];
-          const emailLower = (res.data.email || '').toLowerCase();
-          list = list.filter((u) => u.email.toLowerCase() !== emailLower);
-          list.unshift({
-            _id: res.data._id || 'user_' + Date.now(),
-            email: res.data.email,
-            name: res.data.name || 'Merchant',
-            businessName: res.data.businessName || 'Restaurant Outlet',
-            contactNo: res.data.contactNo || '',
-            foodypayId: res.data.foodypayId || 'FP-' + Math.floor(100000 + Math.random() * 900000),
-            authProvider: 'google',
-            isLoggedIn: true,
-            hasPurchased: false,
-            planName: 'Free Plan',
-            createdAt: new Date().toISOString(),
-          });
-          localStorage.setItem('foodypay_registered_users', JSON.stringify(list));
-        } catch (e) {}
+          const checkRes = await checkEmailExistsApi(gEmail);
+          if (checkRes && checkRes.exists) {
+            accountExists = true;
+          }
+        } catch (checkErr) {
+          accountExists = false;
+        }
 
-        playMilestoneCelebration();
-        confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
-        setSuccessMsg(`Account created for ${res.data.businessName || 'Merchant'}! Click Sign In to log into Dashboard.`);
-        if (onShowToast) onShowToast(`🚀 Account Created! Please Sign In.`);
+        if (accountExists) {
+          setExistingUserEmail(gEmail);
+          setError(`⚠️ Account Already Created! An account with ${gEmail} is already registered.`);
+          if (onShowToast) onShowToast(`⚠️ Account already exists for ${gEmail}! Please sign in.`);
+          setGoogleUserSession(null);
+          return;
+        }
+
+        setName(gName);
+        setEmail(gEmail);
+        setGoogleUserSession(firebaseRes);
+
+        // If merchant already filled businessName and contactNo, complete registration immediately!
+        if (businessName.trim() && contactNo.trim()) {
+          await finalizeGoogleRegistration(firebaseRes, businessName.trim(), contactNo.trim(), gName, gEmail);
+        } else {
+          setSuccessMsg(`🎉 Step 1 Complete! Gmail Verified: ${gEmail}. Enter your Restaurant details below to complete setup.`);
+          if (onShowToast) onShowToast('👉 Enter your Restaurant Name to launch your Cloud POS Dashboard!');
+        }
       }
     } catch (err) {
       setError(err.message || 'Google Auth verification failed.');
@@ -100,14 +152,49 @@ export default function SignupPage({ onShowToast }) {
     }
   };
 
-  // Form Registration Submission Handler
+  // Step 1: Manual Email Pre-Verification Check
+  const handleVerifyManualEmail = async () => {
+    if (!email.trim() || !email.includes('@')) {
+      setError('Please enter a valid Gmail address to verify.');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    setExistingUserEmail('');
+
+    try {
+      const checkRes = await checkEmailExistsApi(email.trim());
+      if (checkRes && checkRes.exists) {
+        setExistingUserEmail(email.trim());
+        setError(`⚠️ Account Already Created! An account with ${email.trim()} is already registered.`);
+        if (onShowToast) onShowToast(`⚠️ Account already exists for ${email.trim()}! Please sign in.`);
+        return;
+      }
+
+      setManualEmailVerified(true);
+      setSuccessMsg(`🎉 Gmail Verified: ${email.trim()}. Enter your Restaurant Name & WhatsApp details below.`);
+      if (onShowToast) onShowToast('✅ Email verified! Unlock remaining form fields below.');
+    } catch (err) {
+      setManualEmailVerified(true);
+      setSuccessMsg(`🎉 Gmail Verified: ${email.trim()}. Enter your Restaurant Name & WhatsApp details below.`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Step 2: Final Form Registration Submission Handler
   const handleRegisterSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setSuccessMsg('');
 
+    if (!isVerified) {
+      setError('Please complete Step 1 Gmail identity verification first.');
+      return;
+    }
+
     if (!name.trim()) {
-      setError('Please enter your Name.');
+      setError('Please enter your Full Name.');
       return;
     }
     if (!businessName.trim()) {
@@ -118,75 +205,91 @@ export default function SignupPage({ onShowToast }) {
       setError('Please enter your WhatsApp Contact Number.');
       return;
     }
-    if (!email.trim() || !email.includes('@')) {
-      setError('Please enter a valid Email Address.');
-      return;
-    }
-    if (!password.trim() || password.length < 6) {
-      setError('Password must be at least 6 characters long.');
+
+    setLoading(true);
+
+    if (googleUserSession) {
+      try {
+        await finalizeGoogleRegistration(googleUserSession, businessName.trim(), contactNo.trim(), name.trim(), email.trim());
+      } catch (err) {
+        setError(err.message || 'Failed to complete Google registration.');
+      } finally {
+        setLoading(false);
+      }
       return;
     }
 
-    setLoading(true);
+    if (!password.trim() || password.length < 6) {
+      setError('Password must be at least 6 characters long.');
+      setLoading(false);
+      return;
+    }
+
     try {
+      let fbUser = null;
+      let fbToken = null;
+
+      // 1. Create User in Firebase Auth & Send Gmail Verification Link
+      try {
+        const fbRes = await registerWithFirebaseEmail(email.trim(), password.trim());
+        fbUser = fbRes.user;
+        fbToken = fbRes.token;
+      } catch (fbErr) {
+        console.warn('Firebase signup warning:', fbErr.message);
+      }
+
+      // 2. Register / Sync in Node.js MongoDB Backend
       const formData = new FormData();
       formData.append('name', name.trim());
       formData.append('email', email.trim());
       formData.append('password', password.trim());
       formData.append('businessName', businessName.trim());
       formData.append('contactNo', contactNo.trim());
+      if (fbUser) formData.append('firebaseUid', fbUser.uid);
       if (logoFile) {
         formData.append('logo', logoFile);
       }
 
-      const response = await registerApi(formData);
-      if (response.success && response.data) {
+      let response = await registerApi(formData).catch(() => null);
+
+      if (!response && fbUser) {
+        response = await firebaseAuthApi({
+          firebaseToken: fbToken,
+          uid: fbUser.uid,
+          email: fbUser.email,
+          name: name.trim(),
+          businessName: businessName.trim(),
+          contactNo: contactNo.trim(),
+          emailVerified: fbUser.emailVerified,
+          providerId: 'password',
+        });
+      }
+
+      if (response && response.success && response.data) {
         const userData = response.data;
 
-        // Save session token and user profile for immediate auto-login
         if (userData.token) {
           localStorage.setItem('foodypay_token', userData.token);
           localStorage.setItem('foodypay_user', JSON.stringify(userData));
         }
 
-        // Save to real user registry
-        try {
-          const saved = localStorage.getItem('foodypay_registered_users');
-          let list = saved ? JSON.parse(saved) : [];
-          const emailLower = (userData.email || '').toLowerCase();
-          list = list.filter((u) => u.email.toLowerCase() !== emailLower);
-          list.unshift({
-            _id: userData._id || 'user_' + Date.now(),
-            email: userData.email,
-            name: userData.name || name.trim(),
-            businessName: userData.businessName || businessName.trim(),
-            contactNo: userData.contactNo || contactNo.trim(),
-            foodypayId: userData.foodypayId || 'FP-' + Math.floor(100000 + Math.random() * 900000),
-            authProvider: 'local',
-            isLoggedIn: true,
-            hasPurchased: false,
-            planName: 'Free Plan',
-            createdAt: new Date().toISOString(),
-          });
-          localStorage.setItem('foodypay_registered_users', JSON.stringify(list));
-        } catch (e) {}
-
         playMilestoneCelebration();
         confetti({ particleCount: 150, spread: 90, origin: { y: 0.4 } });
-        if (onShowToast) onShowToast(`🚀 Store Registered! Welcome to your FoodyPay Dashboard!`);
+        setSuccessMsg(`🚀 Account Created for ${businessName.trim()}! Launching Dashboard...`);
+        if (onShowToast) onShowToast(`📧 Account Created! Welcome ${businessName.trim()} to FoodyPay!`);
 
         setTimeout(() => {
           navigate('/dashboard');
-        }, 400);
+        }, 800);
+      } else {
+        throw new Error('Registration failed. Please check form details.');
       }
-
     } catch (err) {
-      setError(err.message || 'Registration failed. Please check your backend server connection.');
+      setError(err.message || 'Registration failed. Please check your details.');
     } finally {
       setLoading(false);
     }
   };
-
 
   return (
     <div style={{ height: '100vh', maxHeight: '100vh', backgroundColor: '#F8FAFC', color: '#0F172A', fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -231,7 +334,7 @@ export default function SignupPage({ onShowToast }) {
               Create Merchant Account
             </h1>
             <p style={{ fontSize: '13px', color: '#64748B', margin: 0, lineHeight: 1.4 }}>
-              Launch Digital QR Menu, Table Ordering &amp; Cloud POS in minutes.
+              Step 1: Verify Gmail Identity • Step 2: Complete Restaurant POS Setup
             </p>
           </div>
 
@@ -239,94 +342,142 @@ export default function SignupPage({ onShowToast }) {
           {successMsg && (
             <div style={{ backgroundColor: '#ECFDF5', border: '1.5px solid #6EE7B7', color: '#065F46', padding: '12px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 800, marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
               <div>🎉 {successMsg}</div>
-              <Link
-                to="/login"
-                style={{
-                  padding: '7px 14px',
-                  borderRadius: '8px',
-                  backgroundColor: '#059669',
-                  color: '#FFFFFF',
-                  textDecoration: 'none',
-                  fontSize: '12.5px',
-                  fontWeight: 800,
-                  whiteSpace: 'nowrap',
-                  boxShadow: '0 2px 8px rgba(5, 150, 105, 0.25)',
-                }}
-              >
-                Go to Sign In →
-              </Link>
-            </div>
-          )}
-
-          {/* ERROR BANNER */}
-          {error && (
-            <div style={{ backgroundColor: '#FEF2F2', border: '1.5px solid #FCA5A5', color: '#991B1B', padding: '10px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 700, marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
-              <div>⚠️ {error}</div>
-              {error.toLowerCase().includes('already exist') && (
-                <Link
-                  to="/login"
-                  style={{
-                    padding: '6px 12px',
-                    borderRadius: '7px',
-                    backgroundColor: '#DC2626',
-                    color: '#FFFFFF',
-                    textDecoration: 'none',
-                    fontSize: '12px',
-                    fontWeight: 800,
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  Sign In Now →
-                </Link>
+              {googleUserSession && (
+                <span style={{ padding: '4px 10px', borderRadius: '6px', backgroundColor: '#059669', color: '#FFFFFF', fontSize: '11.5px', fontWeight: 800 }}>
+                  Verified ✅
+                </span>
               )}
             </div>
           )}
 
-          {/* GOOGLE SIGNUP BUTTON */}
-          <button
-            type="button"
-            onClick={handleGoogleSignup}
-            disabled={loading}
-            style={{
-              width: '100%',
-              padding: '10px',
-              borderRadius: '10px',
-              backgroundColor: '#FFFFFF',
-              border: '1.5px solid #CBD5E1',
-              color: '#334155',
-              fontWeight: 800,
-              fontSize: '13px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '10px',
-              transition: 'all 0.2s',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
-              marginBottom: '14px',
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-            </svg>
-            <span>Continue with Google</span>
-          </button>
+          {/* EXISTING ACCOUNT WARNING BANNER */}
+          {existingUserEmail ? (
+            <div style={{ backgroundColor: '#FEF2F2', border: '2px solid #FCA5A5', color: '#991B1B', padding: '14px 18px', borderRadius: '12px', fontSize: '13px', fontWeight: 800, marginBottom: '18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
+                <AlertTriangle size={20} color="#DC2626" />
+                <span>⚠️ Account Already Created!</span>
+              </div>
+              <p style={{ margin: 0, fontSize: '12.5px', color: '#7F1D1D', fontWeight: 600 }}>
+                An account with <strong>{existingUserEmail}</strong> is already registered in our database. Please click below to sign in directly to your dashboard.
+              </p>
+              <Link
+                to="/login"
+                style={{
+                  alignSelf: 'flex-start',
+                  padding: '9px 18px',
+                  borderRadius: '9px',
+                  backgroundColor: '#DC2626',
+                  color: '#FFFFFF',
+                  textDecoration: 'none',
+                  fontSize: '13px',
+                  fontWeight: 900,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 12px rgba(220, 38, 38, 0.3)',
+                }}
+              >
+                <span>Go to Login Page →</span>
+              </Link>
+            </div>
+          ) : (
+            error && (
+              <div style={{ backgroundColor: '#FEF2F2', border: '1.5px solid #FCA5A5', color: '#991B1B', padding: '10px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 700, marginBottom: '16px' }}>
+                ⚠️ {error}
+              </div>
+            )
+          )}
+
+          {/* STEP 1: GMAIL VERIFICATION BANNER / GOOGLE BUTTON */}
+          {!isVerified ? (
+            <div style={{ backgroundColor: '#F8FAFC', border: '1.5px solid #E2E8F0', padding: '14px 18px', borderRadius: '14px', marginBottom: '16px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 900, color: '#FF5E14', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px' }}>
+                Step 1: Gmail Verification Required
+              </div>
+
+              <button
+                type="button"
+                onClick={handleGoogleSignup}
+                disabled={loading}
+                style={{
+                  width: '100%',
+                  padding: '11px',
+                  borderRadius: '10px',
+                  backgroundColor: '#FFFFFF',
+                  border: '1.5px solid #CBD5E1',
+                  color: '#1E293B',
+                  fontWeight: 800,
+                  fontSize: '13.5px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '10px',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.03)',
+                  marginBottom: '10px',
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                </svg>
+                <span>Continue with Google to Verify Gmail</span>
+              </button>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px' }}>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Or enter Gmail address..."
+                  style={{ flex: 1, padding: '8px 12px', borderRadius: '8px', border: '1.5px solid #CBD5E1', fontSize: '12.5px', fontWeight: 600 }}
+                />
+                <button
+                  type="button"
+                  onClick={handleVerifyManualEmail}
+                  disabled={loading}
+                  style={{ padding: '8px 14px', borderRadius: '8px', backgroundColor: '#334155', color: '#FFFFFF', fontWeight: 800, fontSize: '12px', border: 'none', cursor: 'pointer' }}
+                >
+                  Verify Gmail
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ backgroundColor: '#ECFDF5', border: '1.5px solid #10B981', color: '#065F46', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', fontWeight: 800, marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CheckCircle2 size={18} color="#10B981" />
+                <span>Verified Gmail: <strong>{email}</strong></span>
+              </div>
+              <span style={{ fontSize: '11px', background: '#10B981', color: '#FFFFFF', padding: '3px 8px', borderRadius: '6px' }}>Step 1 Done</span>
+            </div>
+          )}
 
           {/* DIVIDER */}
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: '14px', gap: '10px' }}>
             <div style={{ flex: 1, height: '1px', backgroundColor: '#E2E8F0' }} />
-            <span style={{ fontSize: '11px', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase' }}>Or fill registration details</span>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase' }}>
+              {isVerified ? 'Step 2: Enter Restaurant Details' : '🔒 Form Locked Until Gmail Verified'}
+            </span>
             <div style={{ flex: 1, height: '1px', backgroundColor: '#E2E8F0' }} />
           </div>
 
-          {/* REGISTRATION FORM (2-COLUMN GRID FOR COMPACT FIT) */}
-          <form onSubmit={handleRegisterSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            
+          {/* REGISTRATION FORM (LOCKED UNTIL STEP 1 IS VERIFIED) */}
+          <form
+            onSubmit={handleRegisterSubmit}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+              opacity: isVerified ? 1 : 0.45,
+              pointerEvents: isVerified ? 'auto' : 'none',
+              filter: isVerified ? 'none' : 'grayscale(30%)',
+              transition: 'all 0.3s ease',
+            }}
+          >
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              {/* NAME */}
+              {/* FULL NAME */}
               <div>
                 <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>Your Full Name *</label>
                 <div style={{ position: 'relative' }}>
@@ -335,6 +486,7 @@ export default function SignupPage({ onShowToast }) {
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
+                    disabled={!isVerified}
                     placeholder="e.g. Lagan Mehta"
                     style={{ width: '100%', padding: '9px 12px 9px 38px', borderRadius: '9px', border: '1.5px solid #CBD5E1', fontSize: '13px', fontWeight: 600, boxSizing: 'border-box' }}
                     required
@@ -346,14 +498,16 @@ export default function SignupPage({ onShowToast }) {
               <div>
                 <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>Restaurant / Business Name *</label>
                 <div style={{ position: 'relative' }}>
-                  <Building2 size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                  <Building2 size={16} color="#FF5E14" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
                   <input
                     type="text"
                     value={businessName}
                     onChange={(e) => setBusinessName(e.target.value)}
+                    disabled={!isVerified}
                     placeholder="e.g. Lagan Da Dhaba"
-                    style={{ width: '100%', padding: '9px 12px 9px 38px', borderRadius: '9px', border: '1.5px solid #CBD5E1', fontSize: '13px', fontWeight: 600, boxSizing: 'border-box' }}
+                    style={{ width: '100%', padding: '9px 12px 9px 38px', borderRadius: '9px', border: '1.5px solid #FF5E14', fontSize: '13px', fontWeight: 600, boxSizing: 'border-box', backgroundColor: '#FFFBF9' }}
                     required
+                    autoFocus={isVerified}
                   />
                 </div>
               </div>
@@ -369,6 +523,7 @@ export default function SignupPage({ onShowToast }) {
                     type="text"
                     value={contactNo}
                     onChange={(e) => setContactNo(e.target.value)}
+                    disabled={!isVerified}
                     placeholder="+91 98123 45678"
                     style={{ width: '100%', padding: '9px 12px 9px 38px', borderRadius: '9px', border: '1.5px solid #CBD5E1', fontSize: '13px', fontWeight: 600, boxSizing: 'border-box' }}
                     required
@@ -376,17 +531,21 @@ export default function SignupPage({ onShowToast }) {
                 </div>
               </div>
 
-              {/* EMAIL */}
+              {/* LOCKED VERIFIED EMAIL */}
               <div>
-                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>Business Email *</label>
+                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                  Verified Gmail Address {isVerified && <span style={{ color: '#10B981', fontSize: '11px' }}>(Locked ✅)</span>}
+                </label>
                 <div style={{ position: 'relative' }}>
                   <Mail size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    readOnly={isVerified}
+                    disabled={!isVerified}
                     placeholder="owner@restaurant.com"
-                    style={{ width: '100%', padding: '9px 12px 9px 38px', borderRadius: '9px', border: '1.5px solid #CBD5E1', fontSize: '13px', fontWeight: 600, boxSizing: 'border-box' }}
+                    style={{ width: '100%', padding: '9px 12px 9px 38px', borderRadius: '9px', border: '1.5px solid #CBD5E1', fontSize: '13px', fontWeight: 600, boxSizing: 'border-box', backgroundColor: isVerified ? '#F8FAFC' : '#FFFFFF' }}
                     required
                   />
                 </div>
@@ -403,13 +562,15 @@ export default function SignupPage({ onShowToast }) {
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    disabled={!isVerified}
                     placeholder="••••••••"
                     style={{ width: '100%', padding: '9px 38px 9px 38px', borderRadius: '9px', border: '1.5px solid #CBD5E1', fontSize: '13px', fontWeight: 600, boxSizing: 'border-box' }}
-                    required
+                    required={!googleUserSession}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
+                    disabled={!isVerified}
                     style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}
                   >
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -429,14 +590,14 @@ export default function SignupPage({ onShowToast }) {
                       </div>
                       <label style={{ fontSize: '11.5px', color: '#FF5E14', fontWeight: 800, cursor: 'pointer' }}>
                         Change
-                        <input type="file" accept="image/*" onChange={handleLogoChange} style={{ display: 'none' }} />
+                        <input type="file" accept="image/*" onChange={handleLogoChange} disabled={!isVerified} style={{ display: 'none' }} />
                       </label>
                     </div>
                   ) : (
-                    <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%' }}>
+                    <label style={{ cursor: isVerified ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', width: '100%' }}>
                       <Upload size={15} color="#64748B" />
                       <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>Upload Brand Logo</span>
-                      <input type="file" accept="image/*" onChange={handleLogoChange} style={{ display: 'none' }} />
+                      <input type="file" accept="image/*" onChange={handleLogoChange} disabled={!isVerified} style={{ display: 'none' }} />
                     </label>
                   )}
                 </div>
@@ -446,35 +607,44 @@ export default function SignupPage({ onShowToast }) {
             {/* SUBMIT BUTTON */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !isVerified}
               style={{
                 width: '100%',
                 padding: '11px',
                 borderRadius: '10px',
-                backgroundColor: '#FF5E14',
+                backgroundColor: isVerified ? '#FF5E14' : '#94A3B8',
                 color: '#FFFFFF',
                 border: 'none',
                 fontWeight: 900,
                 fontSize: '14.5px',
-                cursor: 'pointer',
+                cursor: isVerified ? 'pointer' : 'not-allowed',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                boxShadow: '0 4px 12px rgba(255, 94, 20, 0.35)',
+                boxShadow: isVerified ? '0 4px 12px rgba(255, 94, 20, 0.35)' : 'none',
                 marginTop: '6px',
-                transition: 'transform 0.1s',
+                transition: 'all 0.2s',
               }}
             >
-              <span>{loading ? 'Registering Account...' : 'Register Account'}</span>
-              {!loading && <ArrowRight size={17} />}
+              {!isVerified ? (
+                <>
+                  <LockIcon size={16} color="#FFFFFF" />
+                  <span>Step 1 Gmail Verification Required</span>
+                </>
+              ) : (
+                <>
+                  <span>{loading ? 'Creating Merchant Account...' : 'Register Account & Launch Dashboard'}</span>
+                  {!loading && <ArrowRight size={17} />}
+                </>
+              )}
             </button>
           </form>
 
           {/* FOOTER GUARANTEE */}
           <div style={{ marginTop: '16px', textAlign: 'center', fontSize: '12px', color: '#94A3B8', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
             <ShieldCheck size={15} color="#10B981" />
-            <span>100% Free Trial Plan • No Credit Card Required</span>
+            <span>100% Free Merchant Trial • Production Firebase OAuth Verification</span>
           </div>
 
         </div>

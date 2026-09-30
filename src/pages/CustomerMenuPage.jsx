@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 import { playOrderPlaced } from '../utils/soundEffects';
 import { QrCodeComponent } from '../utils/qrGenerator';
-import { fetchDishesApi, fetchPublicDishesApi, fetchPublicMerchantApi, createReviewApi, createPublicOrderApi } from '../utils/api';
+import { fetchDishesApi, fetchPublicDishesApi, fetchPublicMerchantApi, createReviewApi, createPublicOrderApi, createRazorpayOrderApi, verifyRazorpaySignatureApi } from '../utils/api';
 
 // Default Fallback Dishes (Cleared as requested)
 const DEFAULT_DISHES = [];
@@ -345,7 +345,7 @@ export default function CustomerMenuPage({ onShowToast }) {
     }
   };
 
-  const handleInitiateOrder = (e) => {
+  const handleInitiateOrder = async (e) => {
     e.preventDefault();
 
     if (getCartCount() === 0) {
@@ -401,8 +401,86 @@ export default function CustomerMenuPage({ onShowToast }) {
       restaurantName: storeInfo.name,
     };
 
-    if (paymentMode === 'upi') {
+    if (paymentMode === 'upi' || paymentMode === 'razorpay') {
       setPendingOrderObj(newOrder);
+
+      // Dynamically load Razorpay SDK Checkout script
+      const loadRazorpayScript = () => {
+        return new Promise((resolve) => {
+          if (window.Razorpay) {
+            resolve(true);
+            return;
+          }
+          const script = document.createElement('script');
+          script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+          script.onload = () => resolve(true);
+          script.onerror = () => resolve(false);
+          document.body.appendChild(script);
+        });
+      };
+
+      try {
+        const rzpRes = await createRazorpayOrderApi({
+          amount: newOrder.total,
+          currency: 'INR',
+          merchantId: storeInfo.merchantId,
+          foodypayId: effectiveMerchantId,
+          orderId: newOrder.id,
+        });
+
+        if (rzpRes && rzpRes.routingMode === 'merchant_upi') {
+          // Direct Merchant UPI QR Code option
+          setShowUpiModal(true);
+          setIsCartOpen(false);
+          return;
+        }
+
+        const scriptLoaded = await loadRazorpayScript();
+        if (scriptLoaded && window.Razorpay && rzpRes && rzpRes.razorpayOrderId) {
+          const options = {
+            key: rzpRes.keyId || 'rzp_test_FoodyPayDefaultKey123',
+            amount: rzpRes.amount,
+            currency: rzpRes.currency || 'INR',
+            name: storeInfo.name || 'FoodyPay Order',
+            description: `Order ${newOrder.id} at ${storeInfo.name}`,
+            image: storeInfo.logoUrl || '/Logo.png',
+            order_id: rzpRes.razorpayOrderId,
+            handler: async function (response) {
+              try {
+                await verifyRazorpaySignatureApi({
+                  razorpayOrderId: response.razorpay_order_id,
+                  razorpayPaymentId: response.razorpay_payment_id,
+                  razorpaySignature: response.razorpay_signature,
+                  orderId: newOrder.id,
+                  merchantId: storeInfo.merchantId,
+                });
+              } catch (e) {}
+
+              const paidOrder = {
+                ...newOrder,
+                paymentStatus: 'paid-razorpay',
+                paymentLabel: 'Paid via Razorpay',
+              };
+              finalizeAndSaveOrder(paidOrder);
+            },
+            prefill: {
+              name: customerName,
+              contact: customerPhone,
+            },
+            theme: {
+              color: '#FF5E14',
+            },
+          };
+
+          const rzpInstance = new window.Razorpay(options);
+          rzpInstance.open();
+          setIsCartOpen(false);
+          return;
+        }
+      } catch (err) {
+        console.warn('Razorpay checkout error, fallback to direct UPI QR:', err);
+      }
+
       setShowUpiModal(true);
       setIsCartOpen(false);
     } else {
@@ -427,7 +505,7 @@ export default function CustomerMenuPage({ onShowToast }) {
     try {
       await createPublicOrderApi({
         merchantId: storeInfo.merchantId,
-        foodypayId: foodypayId,
+        foodypayId: effectiveMerchantId,
         type: orderObj.type,
         table: orderObj.table,
         customer: orderObj.customer,

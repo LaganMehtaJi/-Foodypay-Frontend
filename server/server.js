@@ -2,7 +2,11 @@ import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import mongoose from 'mongoose';
+
+//Conection with MongoDB
 import connectDB from './src/config/db.js';
+
+
 import authRoutes from './src/routes/authRoutes.js';
 import dashboardRoutes from './src/routes/dashboardRoutes.js';
 import orderRoutes from './src/routes/orderRoutes.js';
@@ -12,6 +16,7 @@ import couponRoutes from './src/routes/couponRoutes.js';
 import tableRoutes from './src/routes/tableRoutes.js';
 import settingRoutes from './src/routes/settingRoutes.js';
 import reviewRoutes from './src/routes/reviewRoutes.js';
+import paymentRoutes from './src/routes/paymentRoutes.js';
 import { notFound, errorHandler } from './src/middlewares/errorMiddleware.js';
 
 // Load environment variables
@@ -111,6 +116,7 @@ app.use('/api/coupons', couponRoutes);
 app.use('/api/tables', tableRoutes);
 app.use('/api/settings', settingRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // Error Handling Middlewares
 app.use(notFound);
