@@ -97,9 +97,25 @@ export default function LoginPage({ onShowToast }) {
         providerId: 'google.com',
       };
 
-      const res = await firebaseAuthApi(googlePayload).catch(() => googleAuthApi(googlePayload));
+      let res = null;
+      try {
+        res = await firebaseAuthApi(googlePayload);
+      } catch (e1) {
+        try {
+          res = await googleAuthApi(googlePayload);
+        } catch (e2) {
+          if (firebaseRes?.user?.uid) {
+            try {
+              res = await loginApi(
+                (firebaseRes.user.email || email).toLowerCase(),
+                'GoogleAuthPass_' + firebaseRes.user.uid.slice(-8)
+              );
+            } catch (e3) {}
+          }
+        }
+      }
 
-      if (res.success && res.data) {
+      if (res && res.success && res.data) {
         if (res.data.token) {
           localStorage.setItem('foodypay_token', res.data.token);
           localStorage.setItem('foodypay_user', JSON.stringify(res.data));
@@ -107,11 +123,13 @@ export default function LoginPage({ onShowToast }) {
 
         playMilestoneCelebration();
         confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
-        if (onShowToast) onShowToast(`👋 Google Verification Success! Welcome ${res.data.name || 'Merchant'}!`);
+        if (onShowToast) onShowToast(`👋 Gmail Verified! Logged in as ${res.data.name || 'Merchant'} without password!`);
         
         setTimeout(() => {
           navigate('/dashboard');
         }, 500);
+      } else {
+        throw new Error('Google authentication succeeded, but could not log into POS session.');
       }
     } catch (err) {
       setError(err.message || 'Google verification failed.');

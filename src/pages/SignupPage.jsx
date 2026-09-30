@@ -158,10 +158,56 @@ export default function SignupPage({ onShowToast }) {
         }
 
         if (accountExists) {
+          // USER REQUEST: If Gmail is verified and account ALREADY exists, log in WITHOUT requiring a password!
+          const googlePayload = {
+            firebaseToken: firebaseRes?.token || 'google_token_' + Date.now(),
+            credential: firebaseRes?.token || 'google_token_' + Date.now(),
+            uid: gUser.uid || 'google_uid_' + Date.now(),
+            email: gEmail,
+            name: gName || 'Merchant Owner',
+            picture: gUser.photoURL || '',
+            providerId: 'google.com',
+          };
+
+          let loginRes = null;
+          try {
+            loginRes = await firebaseAuthApi(googlePayload);
+          } catch (err1) {
+            try {
+              loginRes = await googleAuthApi(googlePayload);
+            } catch (err2) {
+              try {
+                loginRes = await loginApi(gEmail, 'GoogleAuthPass_' + gUser.uid.slice(-8));
+              } catch (err3) {
+                // Ignore fallback error
+              }
+            }
+          }
+
+          if (loginRes && loginRes.success && loginRes.data) {
+            if (loginRes.data.token) {
+              localStorage.setItem('foodypay_token', loginRes.data.token);
+              localStorage.setItem('foodypay_user', JSON.stringify(loginRes.data));
+            }
+
+            playMilestoneCelebration();
+            confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
+            setSuccessMsg(`🎉 Verified! Account found for ${gEmail}. Logging you in without password...`);
+            if (onShowToast) onShowToast(`🚀 Welcome back ${loginRes.data.name || gName || 'Merchant'}! Logged in via Gmail.`);
+
+            setTimeout(() => {
+              navigate('/dashboard');
+            }, 500);
+            return;
+          }
+
           setExistingUserEmail(gEmail);
-          setError(`⚠️ Account Already Created! An account with ${gEmail} is already registered.`);
-          if (onShowToast) onShowToast(`⚠️ Account already exists for ${gEmail}! Please sign in.`);
+          setError(`⚠️ Account Already Exists for ${gEmail}. Redirecting to sign in...`);
+          if (onShowToast) onShowToast(`⚠️ Account already exists for ${gEmail}! Redirecting to login...`);
           setGoogleUserSession(null);
+          setTimeout(() => {
+            navigate('/login');
+          }, 1200);
           return;
         }
 
