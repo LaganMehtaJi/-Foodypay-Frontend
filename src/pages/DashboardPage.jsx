@@ -545,14 +545,16 @@ export default function DashboardPage({ onShowToast }) {
 
   // Unique Table URL Generator: Domain / BusinessName / FoodypayId / TableNo
   const getUniqueTableUrl = (tableName, customUrl = '') => {
-    if (customUrl && customUrl.trim()) {
-      let trimmed = customUrl.trim();
-      if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
-        trimmed = `https://${trimmed}`;
-      }
-      return trimmed;
-    }
-    const bizSlug = (storeControls.restName || 'lagan-da-dhaba')
+    const currentOrigin = typeof window !== 'undefined' && window.location.origin
+      ? window.location.origin
+      : 'https://foodypay.in';
+
+    const isLocalHost = currentOrigin.includes('localhost') || currentOrigin.includes('127.0.0.1');
+    const effectiveOrigin = isLocalHost
+      ? currentOrigin
+      : (currentOrigin.startsWith('http://') ? currentOrigin.replace('http://', 'https://') : currentOrigin);
+
+    const bizSlug = (storeControls.restName || 'foodypay')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
@@ -561,17 +563,20 @@ export default function DashboardPage({ onShowToast }) {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
     const fpId = storeControls.foodypayId || 'FP-985569';
-    
-    let origin = typeof window !== 'undefined' ? window.location.origin : 'https://foodypay.netlify.app';
 
-    // In local dev environment keep http://, otherwise force full https://
-    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
-      return `${origin}/${bizSlug}/${fpId}/${tableSlug}`;
+    if (customUrl && customUrl.trim()) {
+      let trimmed = customUrl.trim();
+      // Replace legacy localhost / 127.0.0.1 origins with effective live origin
+      if (!isLocalHost && (trimmed.includes('localhost') || trimmed.includes('127.0.0.1'))) {
+        trimmed = trimmed.replace(/^https?:\/\/[^\/]+/, effectiveOrigin);
+      }
+      if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+        trimmed = `https://${trimmed}`;
+      }
+      return trimmed;
     }
 
-    // Strip any existing protocol and force https:// explicitly
-    origin = origin.replace(/^https?:\/\//i, '');
-    return `https://${origin}/${bizSlug}/${fpId}/${tableSlug}`;
+    return `${effectiveOrigin}/${bizSlug}/${fpId}/${tableSlug}`;
   };
 
   const sendBrowserNotification = (title, body) => {
@@ -3521,8 +3526,16 @@ export default function DashboardPage({ onShowToast }) {
                       </div>
                     </div>
 
-                    <div style={{ textAlign: 'center', fontSize: '11.5px', color: '#64748B', fontWeight: 600, wordBreak: 'break-all' }}>
-                      {targetUrl.replace('https://', '')}
+                    <div style={{ textAlign: 'center', fontSize: '11.5px', color: '#64748B', fontWeight: 700, wordBreak: 'break-all', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <a
+                        href={targetUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: '#FF5E14', textDecoration: 'underline', fontWeight: 800 }}
+                        title="Click to open & test live customer menu"
+                      >
+                        {targetUrl} 🔗
+                      </a>
                     </div>
 
                     <div className="crm-table-card-actions" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>

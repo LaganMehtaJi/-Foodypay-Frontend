@@ -149,7 +149,7 @@ export function generateQrSvgString(text, options = {}) {
 }
 
 export function QrCodeComponent({
-  text = 'http://localhost:5173',
+  text = typeof window !== 'undefined' ? window.location.origin : 'https://foodypay.in',
   size = 180,
   showLogo = true,
   logoUrl = '',
