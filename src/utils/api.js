@@ -20,28 +20,62 @@ export const getApiBaseUrl = () => {
 export const API_BASE_URL = getApiBaseUrl();
 
 /**
- * High-speed safe fetch helper with automatic server fallback
+ * Universal HTML-Safe JSON Parser helper (prevents Unexpected token '<' crashes)
+ */
+export async function parseJsonResponse(res) {
+  const text = await res.text();
+  if (!text || text.trim().startsWith('<') || text.trim().startsWith('<!DOCTYPE')) {
+    throw new Error('Backend server returned an HTML error response. Please verify Node backend is running on port 3000 / 5001.');
+  }
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new Error('Invalid JSON response from backend server.');
+  }
+}
+
+/**
+ * High-speed safe fetch helper with multi-port auto-discovery (ports 3000, 5001, 3001)
  */
 export async function safeFetch(path, options = {}) {
   const cleanPath = path.startsWith('/api') ? path.replace('/api', '') : (path.startsWith('/') ? path : `/${path}`);
   const primaryUrl = `${API_BASE_URL}${cleanPath}`;
-  
+  const ports = [3000, 5001, 3001];
+
+  // 1. Try Primary URL
   try {
     const res = await fetch(primaryUrl, options);
-    return res;
-  } catch (err) {
-    if (err.name === 'TypeError' || err.message.includes('fetch')) {
-      const isLocal = primaryUrl.includes('localhost') || primaryUrl.includes('127.0.0.1');
-      const fallbackUrl = isLocal ? `http://${window.location.hostname}:3000/api${cleanPath}` : `/api${cleanPath}`;
-      try {
-        const fallbackRes = await fetch(fallbackUrl, options);
-        return fallbackRes;
-      } catch (fbErr) {
-        throw new Error('Backend server is unreachable. Please verify backend server is running.');
+    const contentType = res.headers.get('content-type') || '';
+    if (res.ok || contentType.includes('application/json')) {
+      const clone = res.clone();
+      const text = await clone.text();
+      if (text && !text.trim().startsWith('<')) {
+        return res;
       }
     }
-    throw err;
+  } catch (err) {}
+
+  // 2. Try Local Fallback Ports (3000, 5001, 3001) if on local machine / LAN
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    const isLocal = hostname === 'localhost' || hostname === '127.0.0.1' || /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
+    if (isLocal) {
+      for (const port of ports) {
+        try {
+          const testUrl = `http://${hostname}:${port}/api${cleanPath}`;
+          const res = await fetch(testUrl, options);
+          const clone = res.clone();
+          const text = await clone.text();
+          if (res.ok && text && !text.trim().startsWith('<')) {
+            return res;
+          }
+        } catch (e) {}
+      }
+    }
   }
+
+  // 3. Fallback to direct fetch
+  return fetch(primaryUrl, options);
 }
 
 /**
@@ -52,7 +86,7 @@ export async function registerApi(formData) {
     method: 'POST',
     body: formData,
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) {
     throw new Error(data.message || 'Registration failed');
   }
@@ -70,7 +104,7 @@ export async function loginApi(email, password) {
     },
     body: JSON.stringify({ email, password }),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) {
     throw new Error(data.message || 'Login failed');
   }
@@ -88,7 +122,7 @@ export async function googleAuthApi(payload) {
     },
     body: JSON.stringify(payload),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) {
     throw new Error(data.message || 'Google Auth failed');
   }
@@ -106,7 +140,7 @@ export async function firebaseAuthApi(payload) {
     },
     body: JSON.stringify(payload),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) {
     throw new Error(data.message || 'Firebase Auth sync failed');
   }
@@ -124,7 +158,7 @@ export async function checkEmailExistsApi(email) {
     },
     body: JSON.stringify({ email: (email || '').trim() }),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) {
     throw new Error(data.message || 'No account found with this email address.');
   }
