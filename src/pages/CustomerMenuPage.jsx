@@ -366,6 +366,51 @@ export default function CustomerMenuPage({ onShowToast }) {
     return matchesSearch && matchesCat && matchesDiet;
   });
 
+  const getAssignedCouponsForUser = () => {
+    let list = [];
+    try {
+      const savedCrmCoupons = localStorage.getItem('foodypay_crm_coupons_v1');
+      if (savedCrmCoupons) {
+        const parsed = JSON.parse(savedCrmCoupons);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((c) => {
+            const isTargetUser =
+              (c.targetPhone && customerPhone && c.targetPhone.includes(customerPhone.trim())) ||
+              (c.targetName && customerName && c.targetName.toLowerCase().includes(customerName.trim().toLowerCase())) ||
+              c.assignedToAll;
+
+            if (isTargetUser || c.type === 'General') {
+              list.push({
+                code: c.code || 'VIPOFFER',
+                type: c.discount || 'SPECIAL OFFER',
+                discount: c.title || c.discount || 'Assigned VIP Discount',
+                minOrder: c.minOrder || 149,
+                desc: c.description || 'Exclusive voucher assigned specifically to your mobile account',
+                badge: c.badge || 'VIP VOUCHER',
+                assignedReason: c.targetPhone ? 'Personal VIP Gift' : 'Store Member Offer'
+              });
+            }
+          });
+        }
+      }
+    } catch (e) {}
+
+    AVAILABLE_COUPONS.forEach((cp) => {
+      let reason = 'Assigned to All Store Diners';
+      if (cp.code === 'WELCOME50') reason = 'Welcome Bonus for New Diners';
+      if (cp.code === 'BIRTHDAY50') reason = customerDob ? `Birthday Gift for ${customerName || 'You'}` : 'Birthday Reward Voucher';
+      if (cp.code === 'FLAT50') reason = 'Best Value Meal Perk';
+      if (cp.code === 'FIRSTORDER') reason = 'Digital Table Scan Perk';
+
+      list.push({
+        ...cp,
+        assignedReason: reason
+      });
+    });
+
+    return list;
+  };
+
   const handleApplyCoupon = (e) => {
     e.preventDefault();
     if (!couponInput.trim()) return;
@@ -900,7 +945,7 @@ export default function CustomerMenuPage({ onShowToast }) {
         )}
 
         {/* -----------------------------------------------------------------------
-            VIEW 1: COUPONS & OFFERS TAB
+            VIEW 1: COUPONS & OFFERS TAB (Assigned Specifically to Current Diner)
             ----------------------------------------------------------------------- */}
         {navTab === 'coupons' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -910,76 +955,100 @@ export default function CustomerMenuPage({ onShowToast }) {
                   <Tag size={22} />
                 </div>
                 <div>
-                  <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#0F172A' }}>Available Promo Coupons &amp; Offers</h2>
-                  <div style={{ fontSize: '12.5px', color: '#64748B' }}>Apply coupons to get instant discounts on your order bill at {storeInfo.name}</div>
+                  <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#0F172A' }}>Coupons Assigned to You</h2>
+                  <div style={{ fontSize: '12.5px', color: '#64748B' }}>
+                    Showing promo codes &amp; vouchers unlocked for {customerName ? <strong>{customerName}</strong> : 'you'} {customerPhone ? `(${customerPhone})` : ''} at {storeInfo.name}
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
-              {AVAILABLE_COUPONS.map((cp) => {
-                const isApplied = appliedCoupon?.code === cp.code;
+            {/* Assigned Coupons List */}
+            {(() => {
+              const assignedList = getAssignedCouponsForUser();
+              if (assignedList.length === 0) {
                 return (
-                  <div
-                    key={cp.code}
-                    style={{
-                      backgroundColor: '#FFF',
-                      borderRadius: '18px',
-                      border: isApplied ? '2px solid #16A34A' : '1.5px dashed #FF5E14',
-                      padding: '16px',
-                      boxShadow: '0 4px 14px rgba(255,94,20,0.06)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      gap: '12px',
-                      position: 'relative'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-                      <div>
-                        <span style={{ backgroundColor: isApplied ? '#DCFCE7' : '#FFEDD5', color: isApplied ? '#15803D' : '#C2410C', fontSize: '10px', fontWeight: 800, padding: '3px 8px', borderRadius: '8px' }}>
-                          {isApplied ? '✓ ACTIVE COUPON' : cp.badge}
-                        </span>
-                        <h3 style={{ margin: '8px 0 2px', fontSize: '16px', fontWeight: 900, color: '#0F172A' }}>
-                          {cp.discount}
-                        </h3>
-                        <p style={{ margin: 0, fontSize: '12px', color: '#64748B', lineHeight: '1.4' }}>
-                          {cp.desc}
-                        </p>
-                      </div>
-
-                      <div style={{ backgroundColor: '#F8FAFC', border: '1px solid #CBD5E1', padding: '6px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 900, color: '#0F172A', letterSpacing: '0.5px' }}>
-                        {cp.code}
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #F1F5F9', paddingTop: '10px', marginTop: '4px' }}>
-                      <span style={{ fontSize: '11.5px', color: '#64748B', fontWeight: 600 }}>Min Order: ₹{cp.minOrder}</span>
-                      <button
-                        onClick={() => {
-                          setAppliedCoupon({ code: cp.code, label: cp.discount });
-                          if (onShowToast) onShowToast(`🎉 Promo Coupon ${cp.code} Applied!`);
-                          setNavTab('menu');
-                        }}
-                        style={{
-                          backgroundColor: isApplied ? '#16A34A' : '#FF5E14',
-                          color: '#FFF',
-                          border: 'none',
-                          padding: '7px 16px',
-                          borderRadius: '10px',
-                          fontSize: '12.5px',
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          boxShadow: '0 3px 10px rgba(255,94,20,0.2)'
-                        }}
-                      >
-                        {isApplied ? '✓ APPLIED' : 'APPLY COUPON'}
-                      </button>
-                    </div>
+                  <div style={{ textAlign: 'center', padding: '40px 20px', backgroundColor: '#FFF', borderRadius: '20px', border: '1px dashed #CBD5E1', color: '#64748B' }}>
+                    <Tag size={36} color="#94A3B8" style={{ marginBottom: '8px' }} />
+                    <div style={{ fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>No Assigned Coupons Available</div>
+                    <div style={{ fontSize: '13px', marginTop: '4px' }}>Update your profile details to unlock personalized VIP vouchers.</div>
                   </div>
                 );
-              })}
-            </div>
+              }
+
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
+                  {assignedList.map((cp) => {
+                    const isApplied = appliedCoupon?.code === cp.code;
+                    return (
+                      <div
+                        key={cp.code}
+                        style={{
+                          backgroundColor: '#FFF',
+                          borderRadius: '18px',
+                          border: isApplied ? '2px solid #16A34A' : '1.5px dashed #FF5E14',
+                          padding: '16px',
+                          boxShadow: '0 4px 14px rgba(255,94,20,0.06)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          gap: '12px',
+                          position: 'relative'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                              <span style={{ backgroundColor: isApplied ? '#DCFCE7' : '#FFEDD5', color: isApplied ? '#15803D' : '#C2410C', fontSize: '10px', fontWeight: 800, padding: '3px 8px', borderRadius: '8px' }}>
+                                {isApplied ? '✓ ACTIVE COUPON' : cp.badge}
+                              </span>
+                              <span style={{ backgroundColor: '#F1F5F9', color: '#475569', fontSize: '10px', fontWeight: 700, padding: '3px 8px', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+                                👤 {cp.assignedReason}
+                              </span>
+                            </div>
+
+                            <h3 style={{ margin: '4px 0 2px', fontSize: '16px', fontWeight: 900, color: '#0F172A' }}>
+                              {cp.discount}
+                            </h3>
+                            <p style={{ margin: 0, fontSize: '12px', color: '#64748B', lineHeight: '1.4' }}>
+                              {cp.desc}
+                            </p>
+                          </div>
+
+                          <div style={{ backgroundColor: '#F8FAFC', border: '1px solid #CBD5E1', padding: '6px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 900, color: '#0F172A', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>
+                            {cp.code}
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #F1F5F9', paddingTop: '10px', marginTop: '4px' }}>
+                          <span style={{ fontSize: '11.5px', color: '#64748B', fontWeight: 600 }}>Min Order: ₹{cp.minOrder}</span>
+                          <button
+                            onClick={() => {
+                              setAppliedCoupon({ code: cp.code, label: cp.discount });
+                              if (onShowToast) onShowToast(`🎉 Assigned Coupon ${cp.code} Applied!`);
+                              setNavTab('menu');
+                            }}
+                            style={{
+                              backgroundColor: isApplied ? '#16A34A' : '#FF5E14',
+                              color: '#FFF',
+                              border: 'none',
+                              padding: '7px 16px',
+                              borderRadius: '10px',
+                              fontSize: '12.5px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              boxShadow: '0 3px 10px rgba(255,94,20,0.2)'
+                            }}
+                          >
+                            {isApplied ? '✓ APPLIED' : 'APPLY COUPON'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         )}
 
