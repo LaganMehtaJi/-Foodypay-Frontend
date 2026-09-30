@@ -1,32 +1,43 @@
-export const LOCAL_API_URL = 'http://localhost:3000/api';
-export const REMOTE_API_URL = typeof window !== 'undefined' && window.location.origin
-  ? `${window.location.origin}/api`
-  : '/api';
+/**
+ * Dynamic API Base URL resolution for Local, LAN (Mobile on Wi-Fi), and Production (foodypay.in)
+ */
+export const getApiBaseUrl = () => {
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  if (typeof window !== 'undefined') {
+    const { hostname, protocol, origin } = window.location;
+    // Localhost or LAN IP (e.g. 192.168.x.x, 10.x.x.x)
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)) {
+      return `${protocol}//${hostname}:3000/api`;
+    }
+    // Live domain (e.g. foodypay.in)
+    return `${origin}/api`;
+  }
+  return 'http://localhost:3000/api';
+};
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ||
-  (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-    ? LOCAL_API_URL
-    : REMOTE_API_URL);
+export const API_BASE_URL = getApiBaseUrl();
 
 /**
- * Universal safe fetch helper with automatic server fallback
+ * High-speed safe fetch helper with automatic server fallback
  */
 export async function safeFetch(path, options = {}) {
   const cleanPath = path.startsWith('/api') ? path.replace('/api', '') : (path.startsWith('/') ? path : `/${path}`);
   const primaryUrl = `${API_BASE_URL}${cleanPath}`;
+  
   try {
     const res = await fetch(primaryUrl, options);
     return res;
   } catch (err) {
     if (err.name === 'TypeError' || err.message.includes('fetch')) {
       const isLocal = primaryUrl.includes('localhost') || primaryUrl.includes('127.0.0.1');
-      const fallbackBase = isLocal ? REMOTE_API_URL : LOCAL_API_URL;
-      const fallbackUrl = `${fallbackBase}${cleanPath}`;
+      const fallbackUrl = isLocal ? `http://${window.location.hostname}:3000/api${cleanPath}` : `/api${cleanPath}`;
       try {
         const fallbackRes = await fetch(fallbackUrl, options);
         return fallbackRes;
       } catch (fbErr) {
-        throw new Error('Backend server is unreachable. Please verify local Node backend server is running on port 3000.');
+        throw new Error('Backend server is unreachable. Please verify backend server is running.');
       }
     }
     throw err;

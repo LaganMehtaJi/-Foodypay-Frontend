@@ -480,7 +480,15 @@ export const checkEmailExists = async (req, res, next) => {
     }
 
     const cleanEmail = email.toLowerCase().trim();
-    const user = await User.findOne({ email: cleanEmail });
+    const escapedEmail = cleanEmail.replace(/[-[\]{}()*+?#\\^$|]/g, '\\$&');
+
+    // Case-insensitive exact match with .lean() for maximum speed
+    const user = await User.findOne({
+      $or: [
+        { email: cleanEmail },
+        { email: { $regex: new RegExp(`^${escapedEmail}$`, 'i') } }
+      ]
+    }).lean();
 
     res.json({
       success: true,
