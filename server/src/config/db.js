@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-const FALLBACK_ATLAS_URI = 'mongodb+srv://mackenziestays:Mahipal2025@cluster0.cg5h3oa.mongodb.net/foodypay?retryWrites=true&w=majority&appName=Cluster0';
+const FALLBACK_ATLAS_URI = 'mongodb+srv://foodypayin_db_user:zPvWNpwDprIcY0R8@cluster0.cg5h3oa.mongodb.net/foodypay?retryWrites=true&w=majority';
 
 const connectDB = async () => {
   const mongoUri = process.env.MONGO_URI || process.env.MONGO_URL || FALLBACK_ATLAS_URI;
