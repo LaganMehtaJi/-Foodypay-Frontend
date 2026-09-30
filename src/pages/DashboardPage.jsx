@@ -794,9 +794,7 @@ export default function DashboardPage({ onShowToast }) {
           } catch (e) {}
 
           setStoreControls((prev) => {
-            const effectiveName = (uBusName && uBusName !== 'Lagan Da Dhaba')
-              ? uBusName
-              : (s.restName && s.restName !== 'Lagan Da Dhaba' ? s.restName : prev.restName);
+            const effectiveName = uBusName || (s.restName && s.restName !== 'Lagan Da Dhaba' ? s.restName : prev.restName) || "My Restaurant";
 
             return {
               ...prev,
@@ -3456,7 +3454,7 @@ export default function DashboardPage({ onShowToast }) {
                       }}
                     >
                       <div style={{ fontSize: '15px', fontWeight: 900, marginBottom: '6px', letterSpacing: '-0.01em' }}>
-                        {storeControls.restName || "Lagan Da Dhaba"}
+                        {storeControls.restName || "My Restaurant"}
                       </div>
 
                       <div
@@ -7787,7 +7785,7 @@ export default function DashboardPage({ onShowToast }) {
                     }}
                   >
                     <div style={{ fontSize: '15px', fontWeight: 900, marginBottom: '6px', letterSpacing: '-0.01em' }}>
-                      {storeControls.restName || "Lagan Da Dhaba"}
+                      {storeControls.restName || "My Restaurant"}
                     </div>
 
                     <div
