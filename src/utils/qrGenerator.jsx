@@ -101,6 +101,44 @@ const PRESET_ICON_PATHS = {
   store: 'M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM9 22V12h6v10',
 };
 
+export function ensureValidUrl(rawText, fallbackOrigin) {
+  if (!rawText) {
+    return typeof window !== 'undefined' && window.location.origin
+      ? window.location.origin
+      : 'https://foodypay.in';
+  }
+
+  let text = String(rawText).trim();
+
+  // If it's a UPI payment protocol link (upi://pay?...), preserve it untouched!
+  if (text.startsWith('upi://')) {
+    return text;
+  }
+
+  // If it already starts with http:// or https://
+  if (text.startsWith('http://') || text.startsWith('https://')) {
+    return text;
+  }
+
+  // If text contains localhost / IP / domain with a dot
+  if (text.includes('.') || text.includes('localhost') || text.includes('127.0.0.1')) {
+    return `https://${text.replace(/^https?:\/\//, '')}`;
+  }
+
+  // If rawText is plain text like "TheFoodypay" or "Table 1"
+  const defaultOrigin = fallbackOrigin || (typeof window !== 'undefined' && window.location.origin ? window.location.origin : 'https://foodypay.in');
+  const effectiveOrigin = (defaultOrigin.includes('localhost') || defaultOrigin.includes('127.0.0.1'))
+    ? defaultOrigin
+    : 'https://foodypay.in';
+
+  const cleanSlug = text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+
+  return `${effectiveOrigin}/${cleanSlug || 'menu'}`;
+}
+
 export function generateQrSvgString(text, options = {}) {
   const {
     size = 220,
@@ -113,9 +151,10 @@ export function generateQrSvgString(text, options = {}) {
     logoBgColor = '#FFFFFF',
   } = options;
 
+  const safeText = ensureValidUrl(text);
   const cleanColor = (color || '#1E293B').replace('#', '');
   const cleanBg = (bgColor || '#FFFFFF').replace('#', '');
-  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(text)}&color=${cleanColor}&bgcolor=${cleanBg}`;
+  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(safeText)}&color=${cleanColor}&bgcolor=${cleanBg}`;
   
   const cx = size / 2;
   const cy = size / 2;
@@ -160,9 +199,10 @@ export function QrCodeComponent({
   logoBgColor = '#FFFFFF',
   className = '',
 }) {
+  const safeText = ensureValidUrl(text);
   const cleanColor = (qrColor || '#1E293B').replace('#', '');
   const cleanBg = (bgColor || '#FFFFFF').replace('#', '');
-  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(text)}&color=${cleanColor}&bgcolor=${cleanBg}`;
+  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(safeText)}&color=${cleanColor}&bgcolor=${cleanBg}`;
 
   return (
     <div

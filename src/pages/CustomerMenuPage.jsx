@@ -1720,7 +1720,7 @@ export default function CustomerMenuPage({ onShowToast }) {
               Merchant: <strong>{storeInfo.name}</strong> • UPI: <code>{storeInfo.upiId}</code>
             </div>
 
-            <div style={{ backgroundColor: '#F8FAFC', padding: '16px', borderRadius: '16px', border: '1px solid #E2E8F0', display: 'inline-block', marginBottom: '16px' }}>
+            <div style={{ backgroundColor: '#F8FAFC', padding: '16px', borderRadius: '16px', border: '1px solid #E2E8F0', display: 'inline-block', marginBottom: '12px' }}>
               <QrCodeComponent
                 text={upiPayUrl}
                 size={180}
@@ -1730,8 +1730,109 @@ export default function CustomerMenuPage({ onShowToast }) {
               />
             </div>
 
-            <div style={{ fontSize: '22px', fontWeight: 900, color: '#FF5E14', marginBottom: '16px' }}>
+            <div style={{ fontSize: '22px', fontWeight: 900, color: '#FF5E14', marginBottom: '14px' }}>
               ₹{pendingOrderObj.total}
+            </div>
+
+            {/* DIRECT UPI APP SELECTION BUTTONS (No Camera / Scanner Needed on Mobile) */}
+            <div style={{ marginBottom: '16px', width: '100%', textAlign: 'left' }}>
+              <div style={{ fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '8px', textAlign: 'center', letterSpacing: '0.03em' }}>
+                ⚡ Tap Below to Pay Direct via UPI App (No Scanner Required):
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                {/* Google Pay */}
+                <a
+                  href={`gpay://upi/pay?pa=${storeInfo.upiId || 'merchant@icici'}&pn=${encodeURIComponent(storeInfo.name || 'FoodyPay')}&am=${pendingOrderObj.total}&cu=INR`}
+                  onClick={(e) => {
+                    // Fallback to standard upi:// if deep link scheme isn't registered
+                    window.location.href = upiPayUrl;
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '10px 8px',
+                    borderRadius: '12px',
+                    border: '1.5px solid #CBD5E1',
+                    backgroundColor: '#FFFFFF',
+                    color: '#1E293B',
+                    fontWeight: 800,
+                    fontSize: '13px',
+                    textDecoration: 'none',
+                    boxShadow: '0 2px 5px rgba(0,0,0,0.04)'
+                  }}
+                >
+                  <span style={{ fontSize: '16px' }}>🔵</span> Google Pay
+                </a>
+
+                {/* PhonePe */}
+                <a
+                  href={upiPayUrl}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '10px 8px',
+                    borderRadius: '12px',
+                    border: '1.5px solid #CBD5E1',
+                    backgroundColor: '#FFFFFF',
+                    color: '#5F259F',
+                    fontWeight: 800,
+                    fontSize: '13px',
+                    textDecoration: 'none',
+                    boxShadow: '0 2px 5px rgba(0,0,0,0.04)'
+                  }}
+                >
+                  <span style={{ fontSize: '16px' }}>🟣</span> PhonePe
+                </a>
+
+                {/* Paytm */}
+                <a
+                  href={upiPayUrl}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '10px 8px',
+                    borderRadius: '12px',
+                    border: '1.5px solid #CBD5E1',
+                    backgroundColor: '#FFFFFF',
+                    color: '#00BAF2',
+                    fontWeight: 800,
+                    fontSize: '13px',
+                    textDecoration: 'none',
+                    boxShadow: '0 2px 5px rgba(0,0,0,0.04)'
+                  }}
+                >
+                  <span style={{ fontSize: '16px' }}>🟦</span> Paytm
+                </a>
+
+                {/* Any UPI / BHIM */}
+                <a
+                  href={upiPayUrl}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '10px 8px',
+                    borderRadius: '12px',
+                    border: '1.5px solid #FF5E14',
+                    backgroundColor: '#FFF0EB',
+                    color: '#FF5E14',
+                    fontWeight: 900,
+                    fontSize: '13px',
+                    textDecoration: 'none',
+                    boxShadow: '0 2px 6px rgba(255,94,20,0.15)'
+                  }}
+                >
+                  <span style={{ fontSize: '16px' }}>⚡</span> Pay Any UPI
+                </a>
+              </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>

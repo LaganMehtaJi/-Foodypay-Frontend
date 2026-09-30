@@ -552,7 +552,7 @@ export default function DashboardPage({ onShowToast }) {
     const isLocalHost = currentOrigin.includes('localhost') || currentOrigin.includes('127.0.0.1');
     const effectiveOrigin = isLocalHost
       ? currentOrigin
-      : (currentOrigin.startsWith('http://') ? currentOrigin.replace('http://', 'https://') : currentOrigin);
+      : 'https://foodypay.in';
 
     const bizSlug = (storeControls.restName || 'foodypay')
       .toLowerCase()
@@ -570,10 +570,15 @@ export default function DashboardPage({ onShowToast }) {
       if (!isLocalHost && (trimmed.includes('localhost') || trimmed.includes('127.0.0.1'))) {
         trimmed = trimmed.replace(/^https?:\/\/[^\/]+/, effectiveOrigin);
       }
-      if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
-        trimmed = `https://${trimmed}`;
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        return trimmed;
       }
-      return trimmed;
+      if (trimmed.includes('.')) {
+        return `https://${trimmed}`;
+      }
+      // If customUrl is plain text (e.g. "TheFoodypay"), format it into valid web URL!
+      const customSlug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      return `${effectiveOrigin}/${customSlug}/${fpId}/${tableSlug}`;
     }
 
     return `${effectiveOrigin}/${bizSlug}/${fpId}/${tableSlug}`;
@@ -6050,8 +6055,91 @@ export default function DashboardPage({ onShowToast }) {
                       />
                     </div>
 
-                    <div style={{ fontSize: '13px', color: '#64748B', marginTop: '12px', fontWeight: 600 }}>
-                      Scan using Google Pay, PhonePe, Paytm, or BHIM UPI app
+                    <div style={{ fontSize: '13px', color: '#64748B', marginTop: '10px', marginBottom: '12px', fontWeight: 600 }}>
+                      Scan QR code or tap below to launch payment app directly:
+                    </div>
+
+                    {/* DIRECT UPI APP SELECTION BUTTONS */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '16px' }}>
+                      <a
+                        href={`upi://pay?pa=${storeControls.upiId}&pn=${encodeURIComponent(storeControls.restName)}&am=${finalTotal}&cu=INR`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          padding: '10px 8px',
+                          borderRadius: '12px',
+                          border: '1.5px solid #CBD5E1',
+                          backgroundColor: '#FFFFFF',
+                          color: '#1E293B',
+                          fontWeight: 800,
+                          fontSize: '13px',
+                          textDecoration: 'none'
+                        }}
+                      >
+                        <span style={{ fontSize: '16px' }}>🔵</span> Google Pay
+                      </a>
+
+                      <a
+                        href={`upi://pay?pa=${storeControls.upiId}&pn=${encodeURIComponent(storeControls.restName)}&am=${finalTotal}&cu=INR`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          padding: '10px 8px',
+                          borderRadius: '12px',
+                          border: '1.5px solid #CBD5E1',
+                          backgroundColor: '#FFFFFF',
+                          color: '#5F259F',
+                          fontWeight: 800,
+                          fontSize: '13px',
+                          textDecoration: 'none'
+                        }}
+                      >
+                        <span style={{ fontSize: '16px' }}>🟣</span> PhonePe
+                      </a>
+
+                      <a
+                        href={`upi://pay?pa=${storeControls.upiId}&pn=${encodeURIComponent(storeControls.restName)}&am=${finalTotal}&cu=INR`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          padding: '10px 8px',
+                          borderRadius: '12px',
+                          border: '1.5px solid #CBD5E1',
+                          backgroundColor: '#FFFFFF',
+                          color: '#00BAF2',
+                          fontWeight: 800,
+                          fontSize: '13px',
+                          textDecoration: 'none'
+                        }}
+                      >
+                        <span style={{ fontSize: '16px' }}>🟦</span> Paytm
+                      </a>
+
+                      <a
+                        href={`upi://pay?pa=${storeControls.upiId}&pn=${encodeURIComponent(storeControls.restName)}&am=${finalTotal}&cu=INR`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          padding: '10px 8px',
+                          borderRadius: '12px',
+                          border: '1.5px solid #1D4ED8',
+                          backgroundColor: '#EFF6FF',
+                          color: '#1D4ED8',
+                          fontWeight: 900,
+                          fontSize: '13px',
+                          textDecoration: 'none'
+                        }}
+                      >
+                        <span style={{ fontSize: '16px' }}>⚡</span> Pay Any UPI
+                      </a>
                     </div>
 
                     <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
