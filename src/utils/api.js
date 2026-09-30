@@ -1,3 +1,5 @@
+export const REMOTE_CLOUD_API_URL = 'https://server-foodypay.onrender.com/api';
+
 /**
  * Dynamic API Base URL resolution for Local, LAN (Mobile on Wi-Fi), and Production (foodypay.in)
  */
@@ -6,15 +8,15 @@ export const getApiBaseUrl = () => {
     return import.meta.env.VITE_API_BASE_URL;
   }
   if (typeof window !== 'undefined') {
-    const { hostname, protocol, origin } = window.location;
+    const { hostname, protocol } = window.location;
     // Localhost or LAN IP (e.g. 192.168.x.x, 10.x.x.x)
     if (hostname === 'localhost' || hostname === '127.0.0.1' || /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)) {
       return `${protocol}//${hostname}:3000/api`;
     }
-    // Live domain (e.g. foodypay.in)
-    return `${origin}/api`;
+    // Live domain (foodypay.in) -> Live Render Cloud Backend
+    return REMOTE_CLOUD_API_URL;
   }
-  return 'http://localhost:3000/api';
+  return REMOTE_CLOUD_API_URL;
 };
 
 export const API_BASE_URL = getApiBaseUrl();
@@ -25,7 +27,7 @@ export const API_BASE_URL = getApiBaseUrl();
 export async function parseJsonResponse(res) {
   const text = await res.text();
   if (!text || text.trim().startsWith('<') || text.trim().startsWith('<!DOCTYPE')) {
-    throw new Error('Backend server returned an HTML error response. Please verify Node backend is running on port 3000 / 5001.');
+    throw new Error('Backend server returned an HTML error response. Please verify Node backend is running.');
   }
   try {
     return JSON.parse(text);
@@ -35,7 +37,7 @@ export async function parseJsonResponse(res) {
 }
 
 /**
- * High-speed safe fetch helper with multi-port auto-discovery (ports 3000, 5001, 3001)
+ * High-speed safe fetch helper with multi-port auto-discovery and Cloud Render fallback
  */
 export async function safeFetch(path, options = {}) {
   const cleanPath = path.startsWith('/api') ? path.replace('/api', '') : (path.startsWith('/') ? path : `/${path}`);
@@ -71,6 +73,17 @@ export async function safeFetch(path, options = {}) {
           }
         } catch (e) {}
       }
+    } else {
+      // Production Fallback: Try live Render backend directly
+      try {
+        const cloudUrl = `${REMOTE_CLOUD_API_URL}${cleanPath}`;
+        const res = await fetch(cloudUrl, options);
+        const clone = res.clone();
+        const text = await clone.text();
+        if (res.ok && text && !text.trim().startsWith('<')) {
+          return res;
+        }
+      } catch (cloudErr) {}
     }
   }
 
