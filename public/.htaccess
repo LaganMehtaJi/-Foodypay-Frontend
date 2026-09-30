@@ -1,9 +1,14 @@
+# Hostinger & Apache SPA Rewrite Configuration for FoodyPay
 <IfModule mod_rewrite.c>
+  Options -MultiViews
   RewriteEngine On
   RewriteBase /
   RewriteRule ^index\.html$ - [L]
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteCond %{REQUEST_FILENAME} !-l
-  RewriteRule . /index.html [L]
+  RewriteRule ^(.*)$ /index.html [L]
 </IfModule>
+
+# Fallback Error Document for Static Hosting Environments
+ErrorDocument 404 /index.html

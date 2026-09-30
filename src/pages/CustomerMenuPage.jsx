@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import {
   Utensils,
   ShoppingBag,
@@ -47,8 +47,40 @@ const AVAILABLE_COUPONS = [
 ];
 
 export default function CustomerMenuPage({ onShowToast }) {
-  const { restaurantSlug, merchantId, tableId } = useParams();
+  const routeParams = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
+
+  // Extract parameters from route params, hash routing (#/), or search query
+  const getEffectiveParams = () => {
+    let slug = routeParams.restaurantSlug;
+    let merchant = routeParams.merchantId;
+    let table = routeParams.tableId;
+
+    if (!slug || slug === 'undefined') {
+      const queryParams = new URLSearchParams(location.search);
+      if (queryParams.get('slug')) slug = queryParams.get('slug');
+      if (queryParams.get('merchant')) merchant = queryParams.get('merchant');
+      if (queryParams.get('table')) table = queryParams.get('table');
+
+      if (location.hash && location.hash.includes('/')) {
+        const parts = location.hash.replace('#/', '').replace('#', '').split('/');
+        if (parts.length >= 2) {
+          slug = parts[0];
+          merchant = parts[1];
+          table = parts[2] || table;
+        }
+      }
+    }
+
+    return {
+      restaurantSlug: slug,
+      merchantId: merchant,
+      tableId: table,
+    };
+  };
+
+  const { restaurantSlug, merchantId, tableId } = getEffectiveParams();
 
   // App Navigation Tab ('menu' | 'coupons' | 'profile')
   const [navTab, setNavTab] = useState('menu');
@@ -61,7 +93,7 @@ export default function CustomerMenuPage({ onShowToast }) {
       .join(' ');
   };
 
-  const rawRestName = formatSlug(restaurantSlug || 'Lagan Da Dhaba');
+  const rawRestName = formatSlug(restaurantSlug || 'FoodyPay Store');
   const rawTable = tableId ? formatSlug(tableId) : 'Table 1';
   const effectiveMerchantId = merchantId || 'FP-985569';
 
