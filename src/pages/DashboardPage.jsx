@@ -651,10 +651,22 @@ export default function DashboardPage({ onShowToast }) {
     const pollInterval = setInterval(pollBackendOrders, 5000);
 
 
+    let bc = null;
+    try {
+      bc = new BroadcastChannel('foodypay_live_orders_channel');
+      bc.onmessage = (msg) => {
+        if (msg && msg.data) {
+          handleNewOrderEvent();
+          pollBackendOrders();
+        }
+      };
+    } catch (e) {}
+
     window.addEventListener('foodypay_order_created', handleNewOrderEvent);
     window.addEventListener('storage', handleNewOrderEvent);
     return () => {
       clearInterval(pollInterval);
+      if (bc) bc.close();
       window.removeEventListener('foodypay_order_created', handleNewOrderEvent);
       window.removeEventListener('storage', handleNewOrderEvent);
     };
@@ -725,6 +737,7 @@ export default function DashboardPage({ onShowToast }) {
   };
 
   const handleStartPreparingOrder = (orderId) => {
+    stopContinuousAlarm();
     setOrders((prev) =>
       prev.map((o) => {
         if (o._id === orderId || o.id === orderId) {
@@ -1282,8 +1295,9 @@ export default function DashboardPage({ onShowToast }) {
 
   // Status Progression
   const handleUpdateOrderStatus = async (orderId, newStatus) => {
+    stopContinuousAlarm();
     setOrders((prev) =>
-      prev.map((ord) => (ord.id === orderId || ord._id === orderId ? { ...ord, status: newStatus } : ord))
+      prev.map((ord) => (ord.id === orderId || ord._id === orderId ? { ...ord, seen: true, status: newStatus } : ord))
     );
 
     if (token) {
@@ -1296,6 +1310,12 @@ export default function DashboardPage({ onShowToast }) {
         console.warn('API error updating status:', err);
       }
     }
+
+    try {
+      const bc = new BroadcastChannel('foodypay_live_orders_channel');
+      bc.postMessage({ type: 'ORDER_UPDATED', orderId, newStatus });
+      bc.close();
+    } catch (e) {}
 
     if (newStatus === 'preparing') {
       triggerSound(playFoodPreparing);

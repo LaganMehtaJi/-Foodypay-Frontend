@@ -17,7 +17,7 @@ import {
   ShoppingBag,
   Check
 } from 'lucide-react';
-import { playOrderPlaced } from '../utils/soundEffects';
+import { playOrderPlaced, startContinuousAlarm, stopContinuousAlarm } from '../utils/soundEffects';
 import { fetchOrdersApi, fetchPublicOrdersApi } from '../utils/api';
 
 export default function KitchenDisplayPage({ onShowToast }) {
@@ -70,29 +70,46 @@ export default function KitchenDisplayPage({ onShowToast }) {
       }
     } catch (e) {}
 
-    setOrders([]);
+    // Fallback: load from local storage
+    try {
+      const saved = localStorage.getItem('foodypay_crm_orders_v3');
+      if (saved) {
+        setOrders(JSON.parse(saved));
+      }
+    } catch (e) {}
   };
 
 
   useEffect(() => {
     loadOrders();
 
-    const pollInterval = setInterval(loadOrders, 5000);
+    const pollInterval = setInterval(loadOrders, 4000);
 
     // Listen to real-time order updates across tabs
     const handleStorage = (e) => {
-      if (e.key === 'foodypay_crm_orders_v3') {
+      if (!e || e.key === 'foodypay_crm_orders_v3') {
         loadOrders();
       }
     };
 
     const handleCustomOrderEvent = () => loadOrders();
 
+    let bc = null;
+    try {
+      bc = new BroadcastChannel('foodypay_live_orders_channel');
+      bc.onmessage = (msg) => {
+        if (msg && msg.data) {
+          loadOrders();
+        }
+      };
+    } catch (e) {}
+
     window.addEventListener('storage', handleStorage);
     window.addEventListener('foodypay_order_created', handleCustomOrderEvent);
 
     return () => {
       clearInterval(pollInterval);
+      if (bc) bc.close();
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('foodypay_order_created', handleCustomOrderEvent);
     };
@@ -114,18 +131,24 @@ export default function KitchenDisplayPage({ onShowToast }) {
 
   // Sound Bell Alert for Unseen / New Orders
   useEffect(() => {
-    const hasUnseenNew = orders.some(
-      (o) => o && (o.status === 'new' || o.status === 'pending' || !o.seen)
+    const hasUnseenNew = (orders || []).some(
+      (o) => o && !o.seen && o.status === 'new'
     );
     if (hasUnseenNew && soundEnabled) {
       try {
-        playOrderPlaced();
+        startContinuousAlarm();
       } catch (e) {}
+    } else {
+      stopContinuousAlarm();
     }
+    return () => {
+      stopContinuousAlarm();
+    };
   }, [orders, soundEnabled]);
 
   // Order Status Updates
   const updateOrderStatus = (orderId, newStatus) => {
+    stopContinuousAlarm();
     const updated = orders.map((o) => {
       const currentId = o._id || o.id;
       if (currentId === orderId) {
@@ -143,10 +166,14 @@ export default function KitchenDisplayPage({ onShowToast }) {
     try {
       localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updated));
       window.dispatchEvent(new Event('foodypay_order_created'));
+      const bc = new BroadcastChannel('foodypay_live_orders_channel');
+      bc.postMessage({ type: 'ORDER_UPDATED', orders: updated });
+      bc.close();
     } catch (e) {}
   };
 
   const handleMarkSeen = (orderId) => {
+    stopContinuousAlarm();
     updateOrderStatus(orderId, 'preparing');
   };
 

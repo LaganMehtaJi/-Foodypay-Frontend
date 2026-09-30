@@ -530,6 +530,10 @@ export default function CustomerMenuPage({ onShowToast }) {
 
       playOrderPlaced();
       window.dispatchEvent(new Event('foodypay_order_created'));
+
+      const bc = new BroadcastChannel('foodypay_live_orders_channel');
+      bc.postMessage({ type: 'ORDER_CREATED', order: orderObj });
+      bc.close();
     } catch (err) {
       console.error('Error saving order locally:', err);
     }
