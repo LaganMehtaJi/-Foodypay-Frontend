@@ -101,7 +101,7 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
         confetti({ particleCount: 100, spread: 70, origin: { y: 0.5 } });
 
         if (onShowToast) {
-          onShowToast(`👋 Welcome back, ${userData.name}!`);
+          onShowToast(`Welcome back, ${userData.name}!`);
         }
         setTimeout(() => {
           window.location.href = '/dashboard';
@@ -127,35 +127,23 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
         console.warn('Firebase Google modal auth fallback:', fbErr.message);
       }
 
-      if (firebaseRes && firebaseRes.user) {
-        const gEmail = (firebaseRes.user.email || email.trim()).toLowerCase();
-        let accountExists = false;
-        try {
-          const checkRes = await checkEmailExistsApi(gEmail);
-          if (checkRes && checkRes.exists) accountExists = true;
-        } catch (checkErr) {
-          accountExists = false;
-        }
-
-        if (!accountExists) {
-          setError(`No registered account found for ${gEmail}. Please click "Register" to create your account first.`);
-          if (onShowToast) onShowToast(`⚠️ No account found for ${gEmail}. Please Register first.`);
-          return;
-        }
-      }
+      const gEmail = firebaseRes?.user?.email ? firebaseRes.user.email.toLowerCase().trim() : email.trim().toLowerCase();
+      const gName = firebaseRes?.user?.displayName || 'Restaurant Owner';
+      const gUid = firebaseRes?.user?.uid || 'google_uid_' + Date.now();
+      const gPhoto = firebaseRes?.user?.photoURL || '';
 
       const googlePayload = {
         firebaseToken: firebaseRes?.token || 'google_token_' + Date.now(),
         credential: firebaseRes?.token || 'google_token_' + Date.now(),
-        uid: firebaseRes?.user?.uid || 'google_uid_' + Date.now(),
-        email: firebaseRes?.user?.email || email.trim(),
-        name: firebaseRes?.user?.displayName || 'Restaurant Owner',
-        picture: firebaseRes?.user?.photoURL || '',
+        uid: gUid,
+        email: gEmail,
+        name: gName,
+        picture: gPhoto,
         providerId: 'google.com',
       };
 
       const res = await firebaseAuthApi(googlePayload).catch(() => googleAuthApi(googlePayload));
-      if (res.success && res.data) {
+      if (res && res.success && res.data) {
         if (res.data.token) {
           localStorage.setItem('foodypay_token', res.data.token);
           localStorage.setItem('foodypay_user', JSON.stringify(res.data));
@@ -163,10 +151,13 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
         setSuccessUser(res.data);
         playMilestoneCelebration();
         confetti({ particleCount: 100, spread: 70, origin: { y: 0.5 } });
-        if (onShowToast) onShowToast(`👋 Logged in with Google via Firebase as ${res.data.name}!`);
+        if (onShowToast) onShowToast(`Logged in with Google via Firebase as ${res.data.name}!`);
         setTimeout(() => {
           window.location.href = '/dashboard';
         }, 600);
+      } else {
+        setError(`No registered account found for ${gEmail}. Please click "Register Free Account" below.`);
+        if (onShowToast) onShowToast(`No account found for ${gEmail}. Please Register first.`);
       }
     } catch (err) {
       setError(err.message || 'Google Auth failed.');
@@ -185,7 +176,7 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
     try {
       const res = await sendFirebasePasswordReset(email.trim());
       setResetMsg(res.message);
-      if (onShowToast) onShowToast(`📧 Password reset email sent to ${email.trim()}!`);
+      if (onShowToast) onShowToast(`Password reset email sent to ${email.trim()}!`);
     } catch (err) {
       setError(err.message || 'Failed to send password reset email.');
     } finally {
@@ -237,13 +228,13 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', margin: '28px 0' }}>
             <div style={{ fontSize: '0.82rem', color: '#E2E8F0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ color: '#FF5E14' }}>🔥</span> Firebase 256-Bit Auth Security
+              Firebase 256-Bit Auth Security
             </div>
             <div style={{ fontSize: '0.82rem', color: '#E2E8F0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ color: '#FF5E14' }}>⚡</span> Real-time Kitchen Order Streams
+              Real-time Kitchen Order Streams
             </div>
             <div style={{ fontSize: '0.82rem', color: '#E2E8F0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ color: '#FF5E14' }}>📊</span> Sales Analytics &amp; Ledger
+              Sales Analytics &amp; Ledger
             </div>
           </div>
 
@@ -267,7 +258,7 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
                     borderRadius: '20px'
                   }}
                 >
-                  🔐 RESTAURANT PORTAL
+                  RESTAURANT PORTAL
                 </span>
                 <h2 style={{ fontSize: '1.55rem', fontWeight: 800, color: '#0F172A', margin: '10px 0 4px', letterSpacing: '-0.02em' }}>
                   Sign In to FoodyPay
@@ -319,7 +310,7 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
 
               {resetMsg && (
                 <div style={{ backgroundColor: '#ECFDF5', border: '1px solid #6EE7B7', color: '#065F46', padding: '10px 14px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 700, marginBottom: '14px' }}>
-                  ✅ {resetMsg}
+                  {resetMsg}
                 </div>
               )}
 
@@ -393,7 +384,7 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
                       fontWeight: 600
                     }}
                   >
-                    ⚠️ {error}
+                    {error}
                   </div>
                 )}
 
@@ -420,7 +411,7 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
                       <span>Authenticating...</span>
                     </>
                   ) : (
-                    <span>🔐 Sign In to Dashboard</span>
+                    <span>Sign In to Dashboard</span>
                   )}
                 </button>
 
@@ -457,7 +448,7 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
                   boxShadow: '0 10px 25px rgba(34, 197, 94, 0.4)'
                 }}
               >
-                ✓
+                
               </div>
 
               <h2 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
@@ -483,7 +474,7 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
                   borderRadius: '12px'
                 }}
               >
-                🚀 Open Dashboard Now
+                Open Dashboard Now
               </a>
             </div>
           )}

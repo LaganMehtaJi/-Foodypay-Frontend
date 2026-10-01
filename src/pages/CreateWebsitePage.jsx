@@ -195,7 +195,7 @@ export default function CreateWebsitePage() {
               ← Exit
             </a>
             <div className="builder-logo-text">
-              <span className="logo-sparkle">🍔</span>
+              <span className="logo-sparkle"></span>
               <b>FoodyPay</b>
               <span className="builder-live-badge">STORE BUILDER</span>
             </div>
@@ -212,7 +212,7 @@ export default function CreateWebsitePage() {
       <div className="builder-stepper-container wrap">
         <div className="builder-steps-track">
           <div className={`step-node ${step >= 1 ? 'active' : ''} ${step > 1 ? 'done' : ''}`} onClick={() => setStep(1)}>
-            <div className="step-circle">{step > 1 ? '✓' : '1'}</div>
+            <div className="step-circle">{step > 1 ? '' : '1'}</div>
             <div className="step-text">
               <b>Restaurant Details</b>
               <span>Name, type &amp; city</span>
@@ -222,7 +222,7 @@ export default function CreateWebsitePage() {
           <div className="step-connector" />
 
           <div className={`step-node ${step >= 2 ? 'active' : ''} ${step > 2 ? 'done' : ''}`} onClick={() => setStep(2)}>
-            <div className="step-circle">{step > 2 ? '✓' : '2'}</div>
+            <div className="step-circle">{step > 2 ? '' : '2'}</div>
             <div className="step-text">
               <b>Menu &amp; Food Items</b>
               <span>Categories, dishes &amp; prices</span>
@@ -361,18 +361,18 @@ export default function CreateWebsitePage() {
                   <span className="preview-label-tag">LIVE BRANDING CARD PREVIEW</span>
                   <div className="restaurant-live-id-card">
                     <div className="id-card-banner" style={{ background: `linear-gradient(135deg, ${themeColor}, #FFA07A)` }}>
-                      <div className="id-card-avatar">🍽️</div>
+                      <div className="id-card-avatar">️</div>
                     </div>
                     <div className="id-card-body">
                       <h3>{restaurantName || 'Your Restaurant Name'}</h3>
                       <p className="id-tagline">{tagline || 'Delicious food made with love'}</p>
                       <div className="id-meta-pills">
-                        <span>📍 {city || 'City'}</span>
+                        <span> {city || 'City'}</span>
                         <span>⭐ 4.9 (Live Store)</span>
-                        <span>🛵 Home Delivery 30m</span>
+                        <span> Home Delivery 30m</span>
                       </div>
                       <div className="id-url-pill">
-                        🔗 {storeUrl}
+                         {storeUrl}
                       </div>
                     </div>
                   </div>
@@ -462,14 +462,14 @@ export default function CreateWebsitePage() {
                           className={`diet-btn ${newItemIsVeg ? 'veg active' : ''}`}
                           onClick={() => setNewItemIsVeg(true)}
                         >
-                          🟢 Pure Veg
+                           Pure Veg
                         </button>
                         <button
                           type="button"
                           className={`diet-btn ${!newItemIsVeg ? 'nonveg active' : ''}`}
                           onClick={() => setNewItemIsVeg(false)}
                         >
-                          🔴 Non-Veg
+                           Non-Veg
                         </button>
                       </div>
                     </label>
@@ -497,7 +497,7 @@ export default function CreateWebsitePage() {
                       onClick={handleLoadSampleDishes}
                       title="Instantly add popular signature dishes"
                     >
-                      ✨ Load Sample Dishes
+                       Load Sample Dishes
                     </button>
                   </div>
                 </form>
@@ -555,7 +555,7 @@ export default function CreateWebsitePage() {
                             onClick={() => handleDeleteItem(it.id)}
                             title="Remove dish"
                           >
-                            🗑️
+                            ️
                           </button>
                         </div>
                       ))
@@ -585,7 +585,7 @@ export default function CreateWebsitePage() {
                   <div className="builder-form-col">
                     <div className="live-launch-highlight-card">
                       <div className="launch-tag-row">
-                        <span className="launch-glow-badge">⚡ 1-WEEK FREE TRIAL READY</span>
+                        <span className="launch-glow-badge"> 1-WEEK FREE TRIAL READY</span>
                         <span className="no-card-badge">Zero Credit Card Needed</span>
                       </div>
 
@@ -597,15 +597,15 @@ export default function CreateWebsitePage() {
                       <div className="custom-domain-box">
                         <span className="domain-url-preview">{storeUrl}</span>
                         <button type="button" className="copy-link-btn" onClick={handleCopyLink}>
-                          {copiedLink ? '✓ Copied' : '📋 Copy Link'}
+                          {copiedLink ? ' Copied' : ' Copy Link'}
                         </button>
                       </div>
 
                       <div className="launch-features-list">
-                        <div>✓ Diners can browse menu &amp; order from home in any mobile browser</div>
-                        <div>✓ 0% commission on direct orders (Save 30% aggregator fees)</div>
-                        <div>✓ Orders instantly pop up on your Kitchen KDS &amp; WhatsApp</div>
-                        <div>✓ 100% Free for 7 full days with instant live URL</div>
+                        <div> Diners can browse menu &amp; order from home in any mobile browser</div>
+                        <div> 0% commission on direct orders (Save 30% aggregator fees)</div>
+                        <div> Orders instantly pop up on your Kitchen KDS &amp; WhatsApp</div>
+                        <div> 100% Free for 7 full days with instant live URL</div>
                       </div>
 
                       <button
@@ -613,11 +613,11 @@ export default function CreateWebsitePage() {
                         className="btn primary full-w launch-big-btn"
                         onClick={handleLaunchLive}
                       >
-                        🚀 Launch Website Live Now (1 Week Free)
+                         Launch Website Live Now (1 Week Free)
                       </button>
 
                       <div className="guarantee-foot-note">
-                        🔒 After 7 days, you can choose any plan or keep counter POS completely free forever.
+                         After 7 days, you can choose any plan or keep counter POS completely free forever.
                       </div>
                     </div>
 
@@ -647,7 +647,7 @@ export default function CreateWebsitePage() {
                             <span className="mockup-badge-live">LIVE STORE</span>
                           </div>
                           <div className="mockup-store-meta">
-                            <span>📍 {city}</span>
+                            <span> {city}</span>
                             <span>⭐ 4.9 (320+ reviews)</span>
                           </div>
                         </div>
@@ -702,7 +702,7 @@ export default function CreateWebsitePage() {
             ) : (
               /* ================= CONGRATULATIONS CELEBRATION CARD ================= */
               <div className="live-success-celebration-card">
-                <div className="celebration-trophy-icon">🎉</div>
+                <div className="celebration-trophy-icon"></div>
                 <span className="celebration-live-tag">OFFICIALLY LIVE ON THE WEB</span>
                 <h2>Congratulations! Your Website is Live!</h2>
                 <p className="celebration-desc">
@@ -716,7 +716,7 @@ export default function CreateWebsitePage() {
                       {storeUrl}
                     </a>
                     <button type="button" className="btn primary small" onClick={handleCopyLink}>
-                      {copiedLink ? '✓ Copied to Clipboard!' : '📋 Copy Link'}
+                      {copiedLink ? ' Copied to Clipboard!' : ' Copy Link'}
                     </button>
                   </div>
                 </div>
@@ -728,7 +728,7 @@ export default function CreateWebsitePage() {
                     rel="noopener noreferrer"
                     className="btn primary"
                   >
-                    🌐 Open Live Customer Storefront
+                     Open Live Customer Storefront
                   </a>
 
                   <a
@@ -737,7 +737,7 @@ export default function CreateWebsitePage() {
                     rel="noopener noreferrer"
                     className="btn green"
                   >
-                    📲 Share Menu on WhatsApp
+                     Share Menu on WhatsApp
                   </a>
 
                   <a href="/" className="btn">

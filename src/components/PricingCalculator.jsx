@@ -35,7 +35,7 @@ export default function PricingCalculator({ onOpenSignup, onShowToast }) {
     }
     setCopiedEmail(true);
     if (onShowToast) {
-      onShowToast('📋 Product@foodypay.in copied to clipboard!');
+      onShowToast(' Product@foodypay.in copied to clipboard!');
     }
     setTimeout(() => setCopiedEmail(false), 2500);
   };
@@ -52,7 +52,7 @@ export default function PricingCalculator({ onOpenSignup, onShowToast }) {
 
     // Auto-open WhatsApp with pre-filled message to +91 7496888449
     const targetPhone = '917496888449';
-    const waMsg = `Hello FoodyPay Team! 🍽️\n\nI want to *Request for create Account / Consultation* for the *Custom / White-Label Plan*.\n\n📋 *Inquiry Details:*\n• Restaurant / Brand: ${consultName.trim()}\n• Contact Phone: ${consultPhone.trim()}\n• Solution Type: ${consultType}\n• Requirements: ${consultNotes.trim() || 'Custom features / White-labeling'}\n\nPlease get in touch with available slots and custom pricing. Thank you!`;
+    const waMsg = `Hello FoodyPay Team! ️\n\nI want to *Request for create Account / Consultation* for the *Custom / White-Label Plan*.\n\n *Inquiry Details:*\n• Restaurant / Brand: ${consultName.trim()}\n• Contact Phone: ${consultPhone.trim()}\n• Solution Type: ${consultType}\n• Requirements: ${consultNotes.trim() || 'Custom features / White-labeling'}\n\nPlease get in touch with available slots and custom pricing. Thank you!`;
     const waUrl = `https://api.whatsapp.com/send?phone=${targetPhone}&text=${encodeURIComponent(waMsg)}`;
     try {
       window.open(waUrl, '_blank', 'noopener,noreferrer');
@@ -74,7 +74,7 @@ export default function PricingCalculator({ onOpenSignup, onShowToast }) {
     window.location.href = `mailto:Product@foodypay.in?subject=${subject}&body=${body}`;
 
     if (onShowToast) {
-      onShowToast('🚀 Consultation request initiated! Connecting with Product@foodypay.in');
+      onShowToast(' Consultation request initiated! Connecting with Product@foodypay.in');
     }
 
     setTimeout(() => {
@@ -97,7 +97,7 @@ export default function PricingCalculator({ onOpenSignup, onShowToast }) {
         <div className="plans">
           {/* FREE PLAN */}
           <article className="receipt">
-            <span className="docket-promo-pill">🌐 Website Live 1 Week Free</span>
+            <span className="docket-promo-pill"> Website Live 1 Week Free</span>
             <h3>Starter Free</h3>
             <div className="price">
               $0<small> / month</small>
@@ -175,7 +175,7 @@ export default function PricingCalculator({ onOpenSignup, onShowToast }) {
         {/* WHITE-LABEL & BESPOKE CUSTOM FEATURES CARD */}
         <div className="custom-solution-card">
           <div className="custom-solution-badge-row">
-            <span className="custom-badge-pill">🏢 BESPOKE &amp; ENTERPRISE</span>
+            <span className="custom-badge-pill"> BESPOKE &amp; ENTERPRISE</span>
             <span className="custom-badge-pill outline">WHITE-LABEL &amp; CUSTOM FEATURE PURCHASE</span>
           </div>
 
@@ -190,7 +190,7 @@ export default function PricingCalculator({ onOpenSignup, onShowToast }) {
 
               <div className="custom-perks-grid">
                 <div className="custom-perk-item">
-                  <span className="perk-icon">🏷️</span>
+                  <span className="perk-icon">️</span>
                   <div>
                     <b>100% White-Label Branding</b>
                     <span>Deploy under your restaurant's domain &amp; private branding with zero FoodyPay watermarks.</span>
@@ -198,7 +198,7 @@ export default function PricingCalculator({ onOpenSignup, onShowToast }) {
                 </div>
 
                 <div className="custom-perk-item">
-                  <span className="perk-icon">⚡</span>
+                  <span className="perk-icon"></span>
                   <div>
                     <b>Purchase &amp; Build Custom Features</b>
                     <span>Commission bespoke workflows, specialized hardware printer drivers, or custom ERP &amp; Tally integrations.</span>
@@ -206,7 +206,7 @@ export default function PricingCalculator({ onOpenSignup, onShowToast }) {
                 </div>
 
                 <div className="custom-perk-item">
-                  <span className="perk-icon">🤝</span>
+                  <span className="perk-icon"></span>
                   <div>
                     <b>Direct Product Team Access</b>
                     <span>Partner 1-on-1 with our founding software architects with custom SLAs and private repository sync.</span>
@@ -218,7 +218,7 @@ export default function PricingCalculator({ onOpenSignup, onShowToast }) {
             {/* ACTION & BOOK APPOINTMENT CARD */}
             <div className="custom-action-card">
               <div className="action-card-header">
-                <span className="calendar-icon">📅</span>
+                <span className="calendar-icon"></span>
                 <div>
                   <b>Book an Appointment / Consultation</b>
                   <span>Connect directly with our engineering team</span>
@@ -236,7 +236,7 @@ export default function PricingCalculator({ onOpenSignup, onShowToast }) {
                     onClick={handleCopyEmail}
                     title="Copy email to clipboard"
                   >
-                    {copiedEmail ? '✓ Copied!' : '📋 Copy'}
+                    {copiedEmail ? ' Copied!' : ' Copy'}
                   </button>
                 </div>
               </div>
@@ -249,14 +249,14 @@ export default function PricingCalculator({ onOpenSignup, onShowToast }) {
                   onClick={() => onOpenSignup('Custom')}
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                 >
-                  💬 Request Custom Plan on WhatsApp
+                   Request Custom Plan on WhatsApp
                 </button>
 
                 <a
                   href="mailto:Product@foodypay.in?subject=Custom%20Solution%20%26%20White%20Label%20Inquiry%20-%20FoodyPay&body=Hello%20FoodyPay%20Product%20Team%2C%0A%0AI%20am%20interested%20in%20discussing%20a%20custom%20solution%20%2F%20white-label%20%2F%20new%20feature%20purchase%20for%20our%20restaurant.%0A%0A-%20Restaurant%20%2F%20Brand%20Name%3A%20%0A-%20Number%20of%20Outlets%3A%20%0A-%20Contact%20Phone%20%2F%20WhatsApp%3A%20%0A-%20Requirements%20(White-Label%2C%20Custom%20Feature%2C%20Integration)%3A%20%0A%0APlease%20let%20me%20know%20your%20available%20slots%20for%20an%20appointment.%0A%0AThanks!"
                   className="btn custom-full-btn"
                 >
-                  ✉️ Email Product Team Directly
+                  ️ Email Product Team Directly
                 </a>
 
                 <button
@@ -264,12 +264,12 @@ export default function PricingCalculator({ onOpenSignup, onShowToast }) {
                   className="btn custom-full-btn book-consult-btn"
                   onClick={() => setIsAppointmentOpen(true)}
                 >
-                  📅 Book Appointment on Web
+                   Book Appointment on Web
                 </button>
               </div>
 
               <div className="response-guarantee">
-                <span>⚡</span> Guaranteed response from our product architects within 4 hours.
+                <span></span> Guaranteed response from our product architects within 4 hours.
               </div>
             </div>
           </div>
@@ -295,7 +295,7 @@ export default function PricingCalculator({ onOpenSignup, onShowToast }) {
 
               {!isSubmitted ? (
                 <div>
-                  <span className="chip">🏢 Enterprise &amp; Custom Engineering</span>
+                  <span className="chip"> Enterprise &amp; Custom Engineering</span>
                   <h3>Book an Appointment / Consultation</h3>
                   <p className="modal-sub">
                     Directly discuss white-label deployment, custom feature acquisition, or franchise rollout with our product team at <strong>Product@foodypay.in</strong>.
@@ -362,14 +362,14 @@ export default function PricingCalculator({ onOpenSignup, onShowToast }) {
                         className="btn primary"
                         style={{ width: '100%', marginTop: '10px' }}
                       >
-                        🚀 Confirm Appointment &amp; Email Team
+                         Confirm Appointment &amp; Email Team
                       </button>
                     </div>
                   </form>
                 </div>
               ) : (
                 <div className="appointment-success-box">
-                  <div style={{ fontSize: '3rem', marginBottom: '10px' }}>🎉</div>
+                  <div style={{ fontSize: '3rem', marginBottom: '10px' }}></div>
                   <h3>Appointment Request Sent!</h3>
                   <p style={{ color: 'var(--muted)', marginTop: '8px' }}>
                     Your consultation request has been prepared and routed to <strong>Product@foodypay.in</strong>. Our product architects will review your requirements and reach out within 4 hours.

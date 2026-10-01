@@ -116,7 +116,7 @@ export default function SignupPage({ onShowToast }) {
       playMilestoneCelebration();
       confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
       setSuccessMsg(`Account created for ${res.data.businessName || busName}! Launching Dashboard...`);
-      if (onShowToast) onShowToast(`🚀 Account Created! Welcome ${res.data.businessName || busName}!`);
+      if (onShowToast) onShowToast(` Account Created! Welcome ${res.data.businessName || busName}!`);
 
       setTimeout(() => {
         navigate('/dashboard');
@@ -192,8 +192,8 @@ export default function SignupPage({ onShowToast }) {
 
             playMilestoneCelebration();
             confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
-            setSuccessMsg(`🎉 Verified! Account found for ${gEmail}. Logging you in without password...`);
-            if (onShowToast) onShowToast(`🚀 Welcome back ${loginRes.data.name || gName || 'Merchant'}! Logged in via Gmail.`);
+            setSuccessMsg(` Verified! Account found for ${gEmail}. Logging you in without password...`);
+            if (onShowToast) onShowToast(` Welcome back ${loginRes.data.name || gName || 'Merchant'}! Logged in via Gmail.`);
 
             setTimeout(() => {
               navigate('/dashboard');
@@ -202,8 +202,8 @@ export default function SignupPage({ onShowToast }) {
           }
 
           setExistingUserEmail(gEmail);
-          setError(`⚠️ Account Already Exists for ${gEmail}. Redirecting to sign in...`);
-          if (onShowToast) onShowToast(`⚠️ Account already exists for ${gEmail}! Redirecting to login...`);
+          setError(`️ Account Already Exists for ${gEmail}. Redirecting to sign in...`);
+          if (onShowToast) onShowToast(`️ Account already exists for ${gEmail}! Redirecting to login...`);
           setGoogleUserSession(null);
           setTimeout(() => {
             navigate('/login');
@@ -219,8 +219,8 @@ export default function SignupPage({ onShowToast }) {
         if (businessName.trim() && contactNo.trim()) {
           await finalizeGoogleRegistration(firebaseRes, businessName.trim(), contactNo.trim(), gName, gEmail);
         } else {
-          setSuccessMsg(`🎉 Step 1 Complete! Gmail Verified: ${gEmail}. Enter your Restaurant details below to complete setup.`);
-          if (onShowToast) onShowToast('👉 Enter your Restaurant Name to launch your Cloud POS Dashboard!');
+          setSuccessMsg(` Step 1 Complete! Gmail Verified: ${gEmail}. Enter your Restaurant details below to complete setup.`);
+          if (onShowToast) onShowToast(' Enter your Restaurant Name to launch your Cloud POS Dashboard!');
         }
       }
     } catch (err) {
@@ -244,17 +244,17 @@ export default function SignupPage({ onShowToast }) {
       const checkRes = await checkEmailExistsApi(email.trim());
       if (checkRes && checkRes.exists) {
         setExistingUserEmail(email.trim());
-        setError(`⚠️ Account Already Created! An account with ${email.trim()} is already registered.`);
-        if (onShowToast) onShowToast(`⚠️ Account already exists for ${email.trim()}! Please sign in.`);
+        setError(`️ Account Already Created! An account with ${email.trim()} is already registered.`);
+        if (onShowToast) onShowToast(`️ Account already exists for ${email.trim()}! Please sign in.`);
         return;
       }
 
       setManualEmailVerified(true);
-      setSuccessMsg(`🎉 Gmail Verified: ${email.trim()}. Enter your Restaurant Name & WhatsApp details below.`);
-      if (onShowToast) onShowToast('✅ Email verified! Unlock remaining form fields below.');
+      setSuccessMsg(` Gmail Verified: ${email.trim()}. Enter your Restaurant Name & WhatsApp details below.`);
+      if (onShowToast) onShowToast(' Email verified! Unlock remaining form fields below.');
     } catch (err) {
       setManualEmailVerified(true);
-      setSuccessMsg(`🎉 Gmail Verified: ${email.trim()}. Enter your Restaurant Name & WhatsApp details below.`);
+      setSuccessMsg(` Gmail Verified: ${email.trim()}. Enter your Restaurant Name & WhatsApp details below.`);
     } finally {
       setLoading(false);
     }
@@ -353,8 +353,8 @@ export default function SignupPage({ onShowToast }) {
 
         playMilestoneCelebration();
         confetti({ particleCount: 150, spread: 90, origin: { y: 0.4 } });
-        setSuccessMsg(`🚀 Account Created for ${businessName.trim()}! Launching Dashboard...`);
-        if (onShowToast) onShowToast(`📧 Account Created! Welcome ${businessName.trim()} to FoodyPay!`);
+        setSuccessMsg(` Account Created for ${businessName.trim()}! Launching Dashboard...`);
+        if (onShowToast) onShowToast(` Account Created! Welcome ${businessName.trim()} to FoodyPay!`);
 
         setTimeout(() => {
           navigate('/dashboard');
@@ -373,28 +373,28 @@ export default function SignupPage({ onShowToast }) {
     <div style={{ height: '100vh', maxHeight: '100vh', backgroundColor: '#F8FAFC', color: '#0F172A', fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       
       {/* HEADER NAVBAR */}
-      <header style={{ height: '60px', padding: '0 32px', backgroundColor: '#FFFFFF', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-        <Link to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <img src="/Logo.png" alt="FoodyPay Logo" style={{ height: '38px', objectFit: 'contain' }} />
+      <header className="auth-header">
+        <Link to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <img src="/Logo.png" alt="FoodyPay Logo" style={{ height: '34px', objectFit: 'contain' }} />
           <div>
-            <span style={{ fontSize: '18px', fontWeight: 900, color: '#0F172A', letterSpacing: '-0.5px' }}>FoodyPay</span>
-            <span style={{ fontSize: '11px', color: '#FF5E14', fontWeight: 800, display: 'block', marginTop: '-3px' }}>Always With You ✨</span>
+            <span style={{ fontSize: '17px', fontWeight: 900, color: '#0F172A', letterSpacing: '-0.5px' }}>FoodyPay</span>
+            <span style={{ fontSize: '10.5px', color: '#FF5E14', fontWeight: 800, display: 'block', marginTop: '-3px' }}>Always With You</span>
           </div>
         </Link>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '13px', color: '#64748B', fontWeight: 600 }}>Already registered?</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span className="auth-header-subtext">Already registered?</span>
           <Link
             to="/login"
             style={{
-              padding: '7px 16px',
-              borderRadius: '9px',
+              padding: '6px 14px',
+              borderRadius: '8px',
               backgroundColor: '#F1F5F9',
               color: '#0F172A',
               fontWeight: 800,
-              fontSize: '13px',
+              fontSize: '12px',
               textDecoration: 'none',
-              transition: 'background 0.2s',
+              whiteSpace: 'nowrap',
             }}
           >
             Sign In
@@ -403,8 +403,8 @@ export default function SignupPage({ onShowToast }) {
       </header>
 
       {/* MAIN CONTAINER */}
-      <main style={{ flex: 1, padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'auto' }}>
-        <div style={{ width: '100%', maxWidth: '620px', maxHeight: 'calc(100vh - 85px)', backgroundColor: '#FFFFFF', borderRadius: '20px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(15, 23, 42, 0.05)', padding: '24px 32px' }}>
+      <main className="auth-main-container">
+        <div style={{ width: '100%', maxWidth: '620px', backgroundColor: '#FFFFFF', borderRadius: '20px', border: '1px solid #E2E8F0', boxShadow: '0 10px 30px rgba(15, 23, 42, 0.05)', padding: '24px' }}>
           
           {/* HEADER TITLE */}
           <div style={{ textAlign: 'center', marginBottom: '16px' }}>
@@ -419,10 +419,10 @@ export default function SignupPage({ onShowToast }) {
           {/* SUCCESS BANNER */}
           {successMsg && (
             <div style={{ backgroundColor: '#ECFDF5', border: '1.5px solid #6EE7B7', color: '#065F46', padding: '12px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 800, marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
-              <div>🎉 {successMsg}</div>
+              <div>{successMsg}</div>
               {googleUserSession && (
                 <span style={{ padding: '4px 10px', borderRadius: '6px', backgroundColor: '#059669', color: '#FFFFFF', fontSize: '11.5px', fontWeight: 800 }}>
-                  Verified ✅
+                  Verified
                 </span>
               )}
             </div>
@@ -433,7 +433,7 @@ export default function SignupPage({ onShowToast }) {
             <div style={{ backgroundColor: '#FEF2F2', border: '2px solid #FCA5A5', color: '#991B1B', padding: '14px 18px', borderRadius: '12px', fontSize: '13px', fontWeight: 800, marginBottom: '18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px' }}>
                 <AlertTriangle size={20} color="#DC2626" />
-                <span>⚠️ Account Already Created!</span>
+                <span>Account Already Created!</span>
               </div>
               <p style={{ margin: 0, fontSize: '12.5px', color: '#7F1D1D', fontWeight: 600 }}>
                 An account with <strong>{existingUserEmail}</strong> is already registered in our database. Please click below to sign in directly to your dashboard.
@@ -461,7 +461,7 @@ export default function SignupPage({ onShowToast }) {
           ) : (
             error && (
               <div style={{ backgroundColor: '#FEF2F2', border: '1.5px solid #FCA5A5', color: '#991B1B', padding: '10px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 700, marginBottom: '16px' }}>
-                ⚠️ {error}
+                ️ {error}
               </div>
             )
           )}
@@ -536,7 +536,7 @@ export default function SignupPage({ onShowToast }) {
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: '14px', gap: '10px' }}>
             <div style={{ flex: 1, height: '1px', backgroundColor: '#E2E8F0' }} />
             <span style={{ fontSize: '11px', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase' }}>
-              {isVerified ? 'Step 2: Enter Restaurant Details' : '🔒 Form Locked Until Gmail Verified'}
+              {isVerified ? 'Step 2: Enter Restaurant Details' : ' Form Locked Until Gmail Verified'}
             </span>
             <div style={{ flex: 1, height: '1px', backgroundColor: '#E2E8F0' }} />
           </div>
@@ -612,7 +612,7 @@ export default function SignupPage({ onShowToast }) {
               {/* LOCKED VERIFIED EMAIL */}
               <div>
                 <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
-                  Verified Gmail Address {isVerified && <span style={{ color: '#10B981', fontSize: '11px' }}>(Locked ✅)</span>}
+                  Verified Gmail Address {isVerified && <span style={{ color: '#10B981', fontSize: '11px' }}>(Locked )</span>}
                 </label>
                 <div style={{ position: 'relative' }}>
                   <Mail size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />

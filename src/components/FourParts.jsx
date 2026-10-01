@@ -19,10 +19,10 @@ export default function FourParts() {
                 className="part-img"
                 loading="lazy"
               />
-              <span className="part-img-tag">📸 QR on Table</span>
+              <span className="part-img-tag"> QR on Table</span>
             </div>
             <span className="part-num">01</span>
-            <div className="part-icon-wrap">📱</div>
+            <div className="part-icon-wrap"></div>
             <h3>Guest Table QR &amp; Web Store</h3>
             <p>Sleek FoodyPay QR tent card on every table. Diners scan and open your rich visual food catalog in their mobile browser with 0% app barrier.</p>
             <span className="who">Table QR &amp; Home Delivery</span>
@@ -37,10 +37,10 @@ export default function FourParts() {
                 className="part-img"
                 loading="lazy"
               />
-              <span className="part-img-tag">📱 Catalog in Hand</span>
+              <span className="part-img-tag"> Catalog in Hand</span>
             </div>
             <span className="part-num">02</span>
-            <div className="part-icon-wrap">🍔</div>
+            <div className="part-icon-wrap"></div>
             <h3>Interactive Mobile Catalog</h3>
             <p>Diners browse appetizing dish photos, select toppings, customize spice levels, and order directly from their phone with instant 1-tap cart.</p>
             <span className="who">Digital Catalog &amp; Cart</span>
@@ -55,10 +55,10 @@ export default function FourParts() {
                 className="part-img"
                 loading="lazy"
               />
-              <span className="part-img-tag">⚡ POS &amp; KDS</span>
+              <span className="part-img-tag"> POS &amp; KDS</span>
             </div>
             <span className="part-num">03</span>
-            <div className="part-icon-wrap">👨‍🍳</div>
+            <div className="part-icon-wrap">‍</div>
             <h3>Rapid POS &amp; Live KDS</h3>
             <p>Lightning walk-in billing, cash drawer reconciliation, and live digital kitchen tickets with preparation countdowns and auditory alerts.</p>
             <span className="who">Counter POS &amp; Kitchen</span>
@@ -73,10 +73,10 @@ export default function FourParts() {
                 className="part-img"
                 loading="lazy"
               />
-              <span className="part-img-tag">📈 Managed CRM</span>
+              <span className="part-img-tag"> Managed CRM</span>
             </div>
             <span className="part-num">04</span>
-            <div className="part-icon-wrap">📈</div>
+            <div className="part-icon-wrap"></div>
             <h3>Managed CRM &amp; Analytics</h3>
             <p>Track guest dining history, automated loyalty cashback, repeat customer retention campaigns, live gross margins &amp; hourly heatmaps.</p>
             <span className="who">Customer CRM &amp; Intelligence</span>

@@ -2,11 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 
 const STAGE_CONFIG = [
-  { id: 'food', icon: '🍔', label: 'Order Placed', hint: 'Plated Food & QR' },
-  { id: 'cook', icon: '👨‍🍳', label: 'Preparing', hint: 'Chef Cooking on Stove' },
-  { id: 'ready', icon: '🍽️', label: 'Food Ready', hint: 'Steaming Dish & Cloche' },
-  { id: 'waiter', icon: '🛎️', label: 'Call Waiter', hint: 'Steward & Service Bell' },
-  { id: 'cash', icon: '💵', label: 'Pay Bill', hint: 'Cash, Coins & POS' }
+  { id: 'food', icon: '', label: 'Order Placed', hint: 'Plated Food & QR' },
+  { id: 'cook', icon: '‍', label: 'Preparing', hint: 'Chef Cooking on Stove' },
+  { id: 'ready', icon: '️', label: 'Food Ready', hint: 'Steaming Dish & Cloche' },
+  { id: 'waiter', icon: '️', label: 'Call Waiter', hint: 'Steward & Service Bell' },
+  { id: 'cash', icon: '', label: 'Pay Bill', hint: 'Cash, Coins & POS' }
 ];
 
 export default function ThreeRestaurantScene({ activeStage = 'food', onStageChange }) {
@@ -1034,7 +1034,7 @@ export default function ThreeRestaurantScene({ activeStage = 'food', onStageChan
       {/* FOOTER BADGE & TELEMETRY */}
       <div className="three-scene-badge">
         <span className="live-3d-dot" />
-        <span>3D Stage: <b>{activeMeta.icon} {activeMeta.hint}</b> • 👆 Drag to rotate 360°</span>
+        <span>3D Stage: <b>{activeMeta.icon} {activeMeta.hint}</b> •  Drag to rotate 360°</span>
       </div>
     </div>
   );

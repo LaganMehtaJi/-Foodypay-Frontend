@@ -69,6 +69,30 @@ const userSchema = new mongoose.Schema(
       enum: ['local', 'google', 'firebase'],
       default: 'local',
     },
+    isLocked: {
+      type: Boolean,
+      default: false,
+    },
+    lockReason: {
+      type: String,
+      default: 'Subscription Payment Required',
+    },
+    subscriptionPrice: {
+      type: Number,
+      default: 499,
+    },
+    subscriptionStatus: {
+      type: String,
+      enum: ['Active', 'Expired', 'Locked', 'Trial'],
+      default: 'Active',
+    },
+    subscriptionPlan: {
+      type: String,
+      default: 'Pro Business Plan',
+    },
+    subscriptionExpiry: {
+      type: Date,
+    },
   },
   {
     timestamps: true,

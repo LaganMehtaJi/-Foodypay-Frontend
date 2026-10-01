@@ -85,6 +85,7 @@ import {
   fetchReviewsApi,
   createReviewApi,
   replyReviewApi,
+  sendNotificationApi,
 } from '../utils/api';
 import './Dashboard.css';
 
@@ -225,7 +226,7 @@ export default function DashboardPage({ onShowToast }) {
   const [selectedCustId, setSelectedCustId] = useState('');
   const [selectedGroupId, setSelectedGroupId] = useState('grp_1');
   const [randomNotifyCount, setRandomNotifyCount] = useState(3);
-  const [notifyTitle, setNotifyTitle] = useState('🎁 Special Gift Offer from FoodyPay');
+  const [notifyTitle, setNotifyTitle] = useState(' Special Gift Offer from FoodyPay');
   const [notifyMessage, setNotifyMessage] = useState('Hey {name}! We have a special discount for you at {storeName}. Use code FEST20 for 20% OFF on your next visit!');
   const [notifyChannel, setNotifyChannel] = useState('push_whatsapp'); // 'push_whatsapp' | 'whatsapp_only' | 'push_only'
 
@@ -391,7 +392,7 @@ export default function DashboardPage({ onShowToast }) {
       );
     }
 
-    addToast(`💬 Saved response for ${activeReplyReview.customerName}'s review!`, <Check size={18} />);
+    addToast(` Saved response for ${activeReplyReview.customerName}'s review!`, <Check size={18} />);
     setIsReplyModalOpen(false);
     setActiveReplyReview(null);
     setReplyTextInput('');
@@ -498,7 +499,7 @@ export default function DashboardPage({ onShowToast }) {
   const handleDeleteMeal = (mealId, mealName) => {
     if (!window.confirm(`Are you sure you want to delete ${mealName}?`)) return;
     setMealsCollection((prev) => prev.filter((m) => m.id !== mealId));
-    addToast(`🗑️ Deleted ${mealName} from Collections!`, <Trash2 size={16} />);
+    addToast(`️ Deleted ${mealName} from Collections!`, <Trash2 size={16} />);
   };
 
   const handleSaveMealSubmit = (e) => {
@@ -604,17 +605,68 @@ export default function DashboardPage({ onShowToast }) {
 
   // Listen & poll for real-time customer table orders created on customer menu website
   useEffect(() => {
+    // Helper functions for persistent seen & notified order tracking
+    const getSeenIds = () => {
+      try {
+        const raw = localStorage.getItem('foodypay_seen_order_ids');
+        return raw ? new Set(JSON.parse(raw)) : new Set();
+      } catch (e) {
+        return new Set();
+      }
+    };
+
+    const getNotifiedIds = () => {
+      try {
+        const raw = localStorage.getItem('foodypay_notified_order_ids');
+        return raw ? new Set(JSON.parse(raw)) : new Set();
+      } catch (e) {
+        return new Set();
+      }
+    };
+
+    const markIdNotifiedInStorage = (id) => {
+      if (!id) return;
+      try {
+        const notifiedSet = getNotifiedIds();
+        notifiedSet.add(String(id));
+        localStorage.setItem('foodypay_notified_order_ids', JSON.stringify(Array.from(notifiedSet)));
+      } catch (e) {}
+    };
+
+    const notifyIfNewOrder = (order) => {
+      if (!order) return;
+      const oId = String(order._id || order.id || order.orderId || '');
+      if (!oId) return;
+
+      const seenSet = getSeenIds();
+      const notifiedSet = getNotifiedIds();
+
+      const isSeen = Boolean(order.seen || seenSet.has(oId));
+      const isNotified = notifiedSet.has(oId);
+      const isNewStatus = !order.status || order.status === 'new';
+
+      if (!isSeen && !isNotified && isNewStatus) {
+        markIdNotifiedInStorage(oId);
+
+        const displayId = order.orderId || (order._id ? `#FP-${String(order._id).slice(-4)}` : order.id) || 'Order';
+        const rawTableStr = order.tableName || order.table || order.tableNo || (order.tableNumber ? `Table ${order.tableNumber}` : 'Table 1');
+        const displayTable = String(rawTableStr).replace(/tabel/gi, 'Table');
+        const displayCustomer = order.customerName || order.customer || order.name || 'Customer';
+
+        triggerSound(playOrderPlaced);
+        addToast(`Live Order Received! ${displayId} from ${displayTable} (${displayCustomer})`, <Bell size={18} />);
+        sendBrowserNotification('New FoodyPay Order!', `${displayId} - ${displayTable} (${displayCustomer})`);
+      }
+    };
+
     const handleNewOrderEvent = () => {
       try {
         const savedOrders = localStorage.getItem('foodypay_crm_orders_v3');
         if (savedOrders) {
           const parsed = JSON.parse(savedOrders);
           setOrders(parsed);
-          const newest = parsed[0];
-          if (newest) {
-            triggerSound(playOrderPlaced);
-            addToast(`🔔 Live Order Received! ${newest.id} from ${newest.table} (${newest.customer})`, <Bell size={18} />);
-            sendBrowserNotification('🔔 New FoodyPay Order!', `${newest.id} - ${newest.table} (${newest.customer})`);
+          if (Array.isArray(parsed)) {
+            parsed.forEach((order) => notifyIfNewOrder(order));
           }
         }
       } catch (e) {
@@ -622,7 +674,7 @@ export default function DashboardPage({ onShowToast }) {
       }
     };
 
-    // Polling backend database every 5 seconds for new customer orders placed from any mobile device
+    // Polling backend database every 5 seconds for new customer orders
     const pollBackendOrders = async () => {
       const token = localStorage.getItem('foodypay_token');
       if (!token) return;
@@ -631,17 +683,17 @@ export default function DashboardPage({ onShowToast }) {
         const fetchedOrders = res.orders || (Array.isArray(res) ? res : []);
         if (res.todayStats) setTodayStats(res.todayStats);
         if (Array.isArray(fetchedOrders) && fetchedOrders.length > 0) {
-          setOrders((prev) => {
-            if (fetchedOrders.length > prev.length) {
-              const newest = fetchedOrders[0];
-              if (!newest.seen) {
-                triggerSound(playOrderPlaced);
-                addToast(`🔔 Live Order Received! ${newest.orderId || newest.id} from ${newest.table || 'Table'} (${newest.customer || 'Customer'})`, <Bell size={18} />);
-                sendBrowserNotification('🔔 New FoodyPay Order!', `${newest.orderId || newest.id} - ${newest.table || 'Table'} (${newest.customer || 'Customer'})`);
-              }
-            }
-            return fetchedOrders;
+          const seenSet = getSeenIds();
+          const merged = fetchedOrders.map((o) => {
+            const oId = String(o._id || o.id || o.orderId);
+            return {
+              ...o,
+              seen: Boolean(o.seen || seenSet.has(oId)),
+            };
           });
+
+          setOrders(merged);
+          merged.forEach((order) => notifyIfNewOrder(order));
         }
       } catch (err) {
         // silent catch during polling
@@ -649,7 +701,6 @@ export default function DashboardPage({ onShowToast }) {
     };
 
     const pollInterval = setInterval(pollBackendOrders, 5000);
-
 
     let bc = null;
     try {
@@ -680,7 +731,20 @@ export default function DashboardPage({ onShowToast }) {
       return;
     }
 
-    const hasUnseen = (orders || []).some((o) => o && !o.seen && o.status === 'new');
+    const seenSet = (() => {
+      try {
+        const raw = localStorage.getItem('foodypay_seen_order_ids');
+        return raw ? new Set(JSON.parse(raw)) : new Set();
+      } catch (e) {
+        return new Set();
+      }
+    })();
+
+    const hasUnseen = (orders || []).some((o) => {
+      if (!o) return false;
+      const oId = String(o._id || o.id || o.orderId);
+      return !o.seen && !seenSet.has(oId) && o.status === 'new';
+    });
 
     if (hasUnseen) {
       startContinuousAlarm();
@@ -694,29 +758,57 @@ export default function DashboardPage({ onShowToast }) {
   }, [orders, soundEnabled]);
 
   const handleMarkOrderSeen = async (orderId) => {
+    stopContinuousAlarm();
+    if (!orderId) return;
+
+    try {
+      const raw = localStorage.getItem('foodypay_seen_order_ids');
+      const seenSet = raw ? new Set(JSON.parse(raw)) : new Set();
+      seenSet.add(String(orderId));
+      localStorage.setItem('foodypay_seen_order_ids', JSON.stringify(Array.from(seenSet)));
+    } catch (e) {}
+
     setOrders((prev) =>
       prev.map((o) => {
-        if (o._id === orderId || o.id === orderId) {
+        const oId = o._id || o.id || o.orderId;
+        if (oId === orderId || String(oId) === String(orderId)) {
           return { ...o, seen: true };
         }
         return o;
       })
     );
     if (token) {
-      const orderObj = orders.find((o) => o._id === orderId || o.id === orderId);
+      const orderObj = orders.find((o) => (o._id || o.id || o.orderId) === orderId);
       const targetId = (orderObj && orderObj._id) || orderId;
-      if (targetId && !targetId.startsWith('ord_')) {
+      if (targetId && !String(targetId).startsWith('ord_')) {
         try {
           const res = await markOrderSeenApi(token, targetId);
-          if (res.todayStats) setTodayStats(res.todayStats);
+          if (res && res.todayStats) setTodayStats(res.todayStats);
         } catch (err) {}
       }
     }
-    stopContinuousAlarm();
-    addToast('👁️ Order marked as SEEN! Alarm bell stopped.', <Check size={18} />);
+
+    try {
+      const bc = new BroadcastChannel('foodypay_live_orders_channel');
+      bc.postMessage({ type: 'ORDER_SEEN', orderId });
+      bc.close();
+    } catch (e) {}
+
+    addToast('️ Order marked as SEEN! Alarm bell stopped.', <Check size={18} />);
   };
 
   const handleMarkAllSeen = async () => {
+    stopContinuousAlarm();
+    try {
+      const raw = localStorage.getItem('foodypay_seen_order_ids');
+      const seenSet = raw ? new Set(JSON.parse(raw)) : new Set();
+      (orders || []).forEach((o) => {
+        const oId = o._id || o.id || o.orderId;
+        if (oId) seenSet.add(String(oId));
+      });
+      localStorage.setItem('foodypay_seen_order_ids', JSON.stringify(Array.from(seenSet)));
+    } catch (e) {}
+
     setOrders((prev) =>
       prev.map((o) => ({
         ...o,
@@ -725,29 +817,44 @@ export default function DashboardPage({ onShowToast }) {
     );
     if (token) {
       orders.forEach(async (o) => {
-        if (o._id && !o._id.startsWith('ord_')) {
+        if (o._id && !String(o._id).startsWith('ord_')) {
           try {
             await markOrderSeenApi(token, o._id);
           } catch (e) {}
         }
       });
     }
-    stopContinuousAlarm();
-    addToast('👁️ All orders marked SEEN! Alarm bell stopped.', <Check size={18} />);
+
+    try {
+      const bc = new BroadcastChannel('foodypay_live_orders_channel');
+      bc.postMessage({ type: 'ALL_ORDERS_SEEN' });
+      bc.close();
+    } catch (e) {}
+
+    addToast('️ All orders marked SEEN! Alarm bell stopped.', <Check size={18} />);
   };
 
   const handleStartPreparingOrder = (orderId) => {
     stopContinuousAlarm();
+    if (orderId) {
+      try {
+        const raw = localStorage.getItem('foodypay_seen_order_ids');
+        const seenSet = raw ? new Set(JSON.parse(raw)) : new Set();
+        seenSet.add(String(orderId));
+        localStorage.setItem('foodypay_seen_order_ids', JSON.stringify(Array.from(seenSet)));
+      } catch (e) {}
+    }
     setOrders((prev) =>
       prev.map((o) => {
-        if (o._id === orderId || o.id === orderId) {
+        const oId = o._id || o.id || o.orderId;
+        if (oId === orderId || String(oId) === String(orderId)) {
           return { ...o, seen: true, status: 'preparing' };
         }
         return o;
       })
     );
     triggerSound(playFoodPreparing);
-    addToast('🍳 Kitchen started preparing order!', <ChefHat size={18} />);
+    addToast(' Kitchen started preparing order!', <ChefHat size={18} />);
   };
 
   // Fetch all user datasets from Backend Node.js API
@@ -1089,7 +1196,7 @@ export default function DashboardPage({ onShowToast }) {
     setCustomers([]);
     setReviews([]);
     setMealsCollection([]);
-    addToast('🧹 All sample data wiped cleanly! Database is completely fresh.', <Check size={18} />);
+    addToast(' All sample data wiped cleanly! Database is completely fresh.', <Check size={18} />);
   };
 
   const manualSubtotal = Object.values(manualItems).reduce((sum, item) => sum + item.price * item.qty, 0);
@@ -1549,7 +1656,7 @@ export default function DashboardPage({ onShowToast }) {
 
   const handleOpenCreateCoupon = () => {
     if (storeControls.lockMarketingTab) {
-      addToast('🔒 Marketing & Coupon Builder is Locked in Store Settings!', <Lock size={18} />);
+      addToast(' Marketing & Coupon Builder is Locked in Store Settings!', <Lock size={18} />);
       return;
     }
     setEditingCouponObj(null);
@@ -1567,7 +1674,7 @@ export default function DashboardPage({ onShowToast }) {
 
   const handleEditCoupon = (coupon) => {
     if (storeControls.lockMarketingTab) {
-      addToast('🔒 Marketing & Coupon Builder is Locked in Store Settings!', <Lock size={18} />);
+      addToast(' Marketing & Coupon Builder is Locked in Store Settings!', <Lock size={18} />);
       return;
     }
     setEditingCouponObj(coupon);
@@ -1585,7 +1692,7 @@ export default function DashboardPage({ onShowToast }) {
 
   const handleDeleteCoupon = (coupon) => {
     if (storeControls.lockMarketingTab) {
-      addToast('🔒 Marketing & Coupon Builder is Locked in Store Settings!', <Lock size={18} />);
+      addToast(' Marketing & Coupon Builder is Locked in Store Settings!', <Lock size={18} />);
       return;
     }
     setCoupons((prev) => prev.filter((c) => (c._id || c.id || c.code) !== (coupon._id || coupon.id || coupon.code)));
@@ -1624,7 +1731,7 @@ export default function DashboardPage({ onShowToast }) {
   const [bdayConfig, setBdayConfig] = useState({
     couponCode: 'BDAYSPECIAL',
     offerDetail: 'Free Choco Lava Cake + 20% OFF',
-    message: '🎉 Happy Birthday {name}! Wish you a delicious day! Enjoy {offer} on your visit to {storeName}. Redeem Code: {code}',
+    message: ' Happy Birthday {name}! Wish you a delicious day! Enjoy {offer} on your visit to {storeName}. Redeem Code: {code}',
   });
 
   const birthdayCustomers = customers.filter((c) => c.isBirthdayToday);
@@ -1634,8 +1741,8 @@ export default function DashboardPage({ onShowToast }) {
       const nextVal = !prev;
       addToast(
         nextVal
-          ? '🟢 Automatic Birthday Offers Turned ON! Offers will be sent automatically on birthdays.'
-          : '🔴 Automatic Birthday Offers Turned OFF! Automatic sending paused.',
+          ? ' Automatic Birthday Offers Turned ON! Offers will be sent automatically on birthdays.'
+          : ' Automatic Birthday Offers Turned OFF! Automatic sending paused.',
         <Sparkles size={16} />
       );
       return nextVal;
@@ -1713,6 +1820,10 @@ export default function DashboardPage({ onShowToast }) {
         minOrder: Number(newCouponForm.minOrder) || 0,
         expiryDate: newCouponForm.expiryDate || get20DaysAheadDate(20),
         description: newCouponForm.description || '',
+        assignedToAll: newCouponForm.assignedToAll !== undefined ? newCouponForm.assignedToAll : true,
+        assignedCustomerPhone: newCouponForm.assignedCustomerPhone || '',
+        assignedCustomerEmail: newCouponForm.assignedCustomerEmail || '',
+        assignedCustomerName: newCouponForm.assignedCustomerName || '',
         uses: 0,
         status: 'Active',
       };
@@ -1792,12 +1903,12 @@ export default function DashboardPage({ onShowToast }) {
     confetti({ particleCount: 90, spread: 80, origin: { y: 0.3 } });
 
     addToast(
-      `🚀 Promocode "${campaignCouponCode}" dispatched to ${countToSend} customer(s) in group "${targetGrp ? targetGrp.name : 'Target Segment'}"!`,
+      ` Promocode "${campaignCouponCode}" dispatched to ${countToSend} customer(s) in group "${targetGrp ? targetGrp.name : 'Target Segment'}"!`,
       <Gift size={18} />
     );
   };
 
-  const handleSendCustomNotificationSubmit = (e) => {
+  const handleSendCustomNotificationSubmit = async (e) => {
     e.preventDefault();
     if (!notifyTitle.trim() || !notifyMessage.trim()) return;
 
@@ -1807,11 +1918,22 @@ export default function DashboardPage({ onShowToast }) {
     }
 
     let targetDesc = '';
+    let targetPhone = '';
+    let targetEmail = '';
+    let targetName = '';
+
     if (notifyAudienceMode === 'all_users') {
       targetDesc = `ALL ${(customers || []).length || 6} Customers`;
     } else if (notifyAudienceMode === 'specific_user') {
       const targetCust = (customers || []).find((c) => (c.id || c._id) === selectedCustId) || customers[0];
-      targetDesc = targetCust ? `${targetCust.name} (${targetCust.phone})` : 'Selected Customer';
+      if (targetCust) {
+        targetDesc = `${targetCust.name} (${targetCust.phone})`;
+        targetPhone = targetCust.phone || '';
+        targetEmail = targetCust.email || '';
+        targetName = targetCust.name || '';
+      } else {
+        targetDesc = 'Selected Customer';
+      }
     } else if (notifyAudienceMode === 'random_n') {
       targetDesc = `${randomNotifyCount} Random Customer(s)`;
     } else if (notifyAudienceMode === 'group') {
@@ -1819,14 +1941,41 @@ export default function DashboardPage({ onShowToast }) {
       targetDesc = `Group "${matchGrp ? matchGrp.name : 'Target Segment'}" (${matchGrp ? matchGrp.memberIds.length : 3} Members)`;
     }
 
+    const payload = {
+      title: notifyTitle.trim(),
+      message: notifyMessage.trim(),
+      audienceMode: notifyAudienceMode,
+      targetCustomerPhone: targetPhone,
+      targetCustomerEmail: targetEmail,
+      targetCustomerName: targetName,
+      channel: notifyChannel,
+      metadata: {
+        storeName: storeControls.restName,
+        foodypayId: storeControls.foodypayId,
+      },
+    };
+
+    try {
+      await sendNotificationApi(token, payload);
+    } catch (err) {
+      console.warn('Notification API fallback sync:', err);
+    }
+
+    // Broadcast channel for real-time Chrome Extension alerts
+    try {
+      const bc = new BroadcastChannel('foodypay_push_notifications_channel');
+      bc.postMessage({ type: 'NEW_PUSH_ALERT', notification: payload });
+      bc.close();
+    } catch (bcErr) {}
+
     setCreditsBalance((prev) => prev - 15);
     triggerSound(playMilestoneCelebration);
     confetti({ particleCount: 90, spread: 80, origin: { y: 0.3 } });
 
-    const channelText = notifyChannel === 'push_whatsapp' ? 'WhatsApp & Push' : notifyChannel === 'whatsapp_only' ? 'WhatsApp' : 'Push Notification';
+    const channelText = notifyChannel === 'push_whatsapp' ? 'WhatsApp & Chrome Extension Push' : notifyChannel === 'whatsapp_only' ? 'WhatsApp' : 'Chrome Extension Push';
 
     addToast(
-      `🔔 Notification "${notifyTitle}" sent to ${targetDesc} via ${channelText}!`,
+      ` Persistent Push Notification "${notifyTitle}" dispatched to ${targetDesc} via ${channelText}!`,
       <Bell size={18} />
     );
     setIsCustomNotifyModalOpen(false);
@@ -1896,7 +2045,7 @@ export default function DashboardPage({ onShowToast }) {
 
   const handleOpenAddTableModal = (tableToEdit = null) => {
     if (storeControls.lockTableCrud) {
-      addToast('🔒 Table QR Modifications (Add/Edit/Delete) are Locked in Store Settings!', <Lock size={18} />);
+      addToast(' Table QR Modifications (Add/Edit/Delete) are Locked in Store Settings!', <Lock size={18} />);
       return;
     }
     setTableLogoFile(null);
@@ -1993,7 +2142,7 @@ export default function DashboardPage({ onShowToast }) {
 
   const handleDeleteTable = async (tableObj) => {
     if (storeControls.lockTableCrud) {
-      addToast('🔒 Table QR Modifications (Add/Edit/Delete) are Locked in Store Settings!', <Lock size={18} />);
+      addToast(' Table QR Modifications (Add/Edit/Delete) are Locked in Store Settings!', <Lock size={18} />);
       return;
     }
     const tableId = tableObj._id || tableObj.id;
@@ -2195,7 +2344,7 @@ export default function DashboardPage({ onShowToast }) {
                   }}
                 >
                   <span>Customer Reviews</span>
-                  <span className="crm-badge-new" style={{ background: '#FEF3C7', color: '#D97706', padding: '1px 6px' }}>4.8 ★</span>
+                  <span className="crm-badge-new" style={{ background: '#FEF3C7', color: '#D97706', padding: '1px 6px' }}>4.8 </span>
                 </button>
                 <button
                   type="button"
@@ -2297,7 +2446,7 @@ export default function DashboardPage({ onShowToast }) {
               </span>
               <span>Customer Reviews</span>
             </div>
-            <span className="crm-badge-new" style={{ background: '#FEF3C7', color: '#D97706', fontSize: '11px', fontWeight: 800, padding: '2px 6px', borderRadius: '10px' }}>4.8 ★</span>
+            <span className="crm-badge-new" style={{ background: '#FEF3C7', color: '#D97706', fontSize: '11px', fontWeight: 800, padding: '2px 6px', borderRadius: '10px' }}>4.8 </span>
           </button>
 
           {/* 7. Settings */}
@@ -2439,7 +2588,7 @@ export default function DashboardPage({ onShowToast }) {
               title={soundEnabled ? 'Audio Alerts Enabled' : 'Audio Alerts Muted'}
               onClick={() => {
                 setSoundEnabled(!soundEnabled);
-                addToast(soundEnabled ? '🔇 Sound Alerts Muted' : '🔊 Sound Alerts Enabled');
+                addToast(soundEnabled ? ' Sound Alerts Muted' : ' Sound Alerts Enabled');
               }}
             >
               {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
@@ -2634,7 +2783,7 @@ export default function DashboardPage({ onShowToast }) {
                     <div className="crm-order-card-header">
                       <div className="crm-order-id-group">
                         <span className="crm-order-id">{orderDisplayId}</span>
-                        <span className="crm-table-tag highlight">{order.table}</span>
+                        <span className="crm-table-tag highlight">{String(order.table || 'Table 1').replace(/tabel/gi, 'Table')}</span>
                         <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 700 }}>({order.type})</span>
                       </div>
 
@@ -2669,7 +2818,7 @@ export default function DashboardPage({ onShowToast }) {
                             className={`crm-step-node ${order.status === 'cancelled' ? 'cancelled' : idx <= stepIndex ? 'done' : ''} ${idx === stepIndex && order.status !== 'cancelled' ? 'current' : ''}`}
                           >
                             <div className="crm-step-circle">
-                              {order.status === 'cancelled' ? '✕' : idx <= stepIndex ? '✓' : idx + 1}
+                              {order.status === 'cancelled' ? '' : idx <= stepIndex ? '' : idx + 1}
                             </div>
                             <span className="crm-step-label">{l}</span>
                           </div>
@@ -2726,7 +2875,7 @@ export default function DashboardPage({ onShowToast }) {
                                 title="Acknowledge Order & Stop Bell Alarm"
                               >
                                 <Eye size={16} />
-                                <span>👁️ SEEN (STOP BELL)</span>
+                                <span>️ SEEN (STOP BELL)</span>
                               </button>
                             )}
                             <button
@@ -2880,7 +3029,7 @@ export default function DashboardPage({ onShowToast }) {
                       color: '#FFF'
                     }}
                   >
-                    {filterKey === 'all' ? 'All Orders' : filterKey === 'new' ? '🔔 New / Unseen' : filterKey === 'preparing' ? '🔥 Preparing' : '✅ Ready'}
+                    {filterKey === 'all' ? 'All Orders' : filterKey === 'new' ? ' New / Unseen' : filterKey === 'preparing' ? ' Preparing' : ' Ready'}
                   </button>
                 ))}
               </div>
@@ -2910,7 +3059,7 @@ export default function DashboardPage({ onShowToast }) {
                     <div>
                       <span style={{ fontSize: '18px', fontWeight: 900, color: '#0F172A' }}>{order.id}</span>
                       <span style={{ marginLeft: '10px', backgroundColor: '#FFEDD5', color: '#C2410C', fontWeight: 800, padding: '3px 10px', borderRadius: '8px', fontSize: '13px' }}>
-                        📍 {order.table || 'Table 1'}
+                        {String(order.table || 'Table 1').replace(/tabel/gi, 'Table')}
                       </span>
                     </div>
                     <span style={{
@@ -2924,7 +3073,7 @@ export default function DashboardPage({ onShowToast }) {
                       alignItems: 'center',
                       gap: '4px'
                     }}>
-                      {!order.seen || order.status === 'new' ? '🚨 BELL RINGING' : order.status === 'preparing' ? '🔥 Cooking' : '🍽️ Food Ready'}
+                      {!order.seen || order.status === 'new' ? ' BELL RINGING' : order.status === 'preparing' ? ' Cooking' : '️ Food Ready'}
                     </span>
                   </div>
 
@@ -2959,13 +3108,13 @@ export default function DashboardPage({ onShowToast }) {
                           onClick={() => handleMarkOrderSeen(order._id || order.id)}
                           style={{ flex: 1, backgroundColor: '#3B82F6', color: '#FFF', border: 'none', padding: '10px', borderRadius: '12px', fontWeight: 800, cursor: 'pointer' }}
                         >
-                          👁️ SEEN (STOP BELL)
+                          ️ SEEN (STOP BELL)
                         </button>
                         <button
                           onClick={() => handleStartPreparingOrder(order._id || order.id)}
                           style={{ flex: 1, backgroundColor: '#FF5E14', color: '#FFF', border: 'none', padding: '10px', borderRadius: '12px', fontWeight: 800, cursor: 'pointer' }}
                         >
-                          🍳 START COOKING
+                           START COOKING
                         </button>
                       </>
                     )}
@@ -2975,7 +3124,7 @@ export default function DashboardPage({ onShowToast }) {
                         onClick={() => handleStartPreparingOrder(order._id || order.id)}
                         style={{ width: '100%', backgroundColor: '#FF5E14', color: '#FFF', border: 'none', padding: '12px', borderRadius: '12px', fontWeight: 800, cursor: 'pointer' }}
                       >
-                        🍳 START COOKING NOW →
+                         START COOKING NOW →
                       </button>
                     )}
 
@@ -2984,7 +3133,7 @@ export default function DashboardPage({ onShowToast }) {
                         onClick={() => handleUpdateOrderStatus(order._id || order.id, 'ready')}
                         style={{ width: '100%', backgroundColor: '#16A34A', color: '#FFF', border: 'none', padding: '12px', borderRadius: '12px', fontWeight: 800, cursor: 'pointer' }}
                       >
-                        🍽️ MARK IT'S READY! (RING READY BELL)
+                        ️ MARK IT'S READY! (RING READY BELL)
                       </button>
                     )}
 
@@ -2993,7 +3142,7 @@ export default function DashboardPage({ onShowToast }) {
                         onClick={() => handleUpdateOrderStatus(order._id || order.id, 'completed')}
                         style={{ width: '100%', backgroundColor: '#0F172A', color: '#FFF', border: 'none', padding: '12px', borderRadius: '12px', fontWeight: 800, cursor: 'pointer' }}
                       >
-                        🏁 MARK SERVED TO TABLE
+                         MARK SERVED TO TABLE
                       </button>
                     )}
                   </div>
@@ -3216,7 +3365,7 @@ export default function DashboardPage({ onShowToast }) {
                       <>
                         <div style={{ fontSize: '15px', fontWeight: 900, color: '#0F172A', marginTop: '4px' }}>{topDishName}</div>
                         <div style={{ fontSize: '12px', color: topQty > 0 ? '#059669' : '#64748B', fontWeight: 700, marginTop: '2px' }}>
-                          {topQty > 0 ? `🔥 ${topQty} Orders • ₹${topSales.toLocaleString()} Sales` : '₹0 Sales'}
+                          {topQty > 0 ? ` ${topQty} Orders • ₹${topSales.toLocaleString()} Sales` : '₹0 Sales'}
                         </div>
                       </>
                     );
@@ -3256,7 +3405,7 @@ export default function DashboardPage({ onShowToast }) {
                       <>
                         <div style={{ fontSize: '15px', fontWeight: 900, color: '#0F172A', marginTop: '4px' }}>{topComboName}</div>
                         <div style={{ fontSize: '12px', color: topQty > 0 ? '#2563EB' : '#64748B', fontWeight: 700, marginTop: '2px' }}>
-                          {topQty > 0 ? `🍕 ${topQty} Combos Sold • ₹${topSales.toLocaleString()}` : '₹0 Sales'}
+                          {topQty > 0 ? ` ${topQty} Combos Sold • ₹${topSales.toLocaleString()}` : '₹0 Sales'}
                         </div>
                       </>
                     );
@@ -3297,7 +3446,7 @@ export default function DashboardPage({ onShowToast }) {
                       <>
                         <div style={{ fontSize: '22px', fontWeight: 900, color: '#7C3AED', marginTop: '4px' }}>{repeatRate}%</div>
                         <div style={{ fontSize: '12px', color: Number(repeatRate) > 0 ? '#7C3AED' : '#64748B', fontWeight: 700, marginTop: '2px' }}>
-                          {Number(repeatRate) > 0 ? '🎯 High Loyalty Retention' : 'No repeat orders recorded'}
+                          {Number(repeatRate) > 0 ? ' High Loyalty Retention' : 'No repeat orders recorded'}
                         </div>
                       </>
                     );
@@ -3557,7 +3706,7 @@ export default function DashboardPage({ onShowToast }) {
                         style={{ color: '#FF5E14', textDecoration: 'underline', fontWeight: 800 }}
                         title="Click to open & test live customer menu"
                       >
-                        {targetUrl} 🔗
+                        {targetUrl} 
                       </a>
                     </div>
 
@@ -3641,7 +3790,7 @@ export default function DashboardPage({ onShowToast }) {
                       border: bdayAutoSend ? '1px solid #86EFAC' : '1px solid #CBD5E1',
                     }}
                   >
-                    {bdayAutoSend ? '🟢 AUTO-SEND ACTIVE' : '🔴 AUTO-SEND OFF (Manual Trigger Only)'}
+                    {bdayAutoSend ? ' AUTO-SEND ACTIVE' : ' AUTO-SEND OFF (Manual Trigger Only)'}
                   </span>
                 </div>
 
@@ -3695,7 +3844,7 @@ export default function DashboardPage({ onShowToast }) {
                     <span>Send Birthday Push Offer</span>
                   </button>
                   <span style={{ fontSize: '11.5px', color: '#C2410C', fontWeight: 700 }}>
-                    {bdayAutoSend ? '✓ Auto-sending is ACTIVE' : '⚠️ Auto-sending is OFF'}
+                    {bdayAutoSend ? ' Auto-sending is ACTIVE' : '️ Auto-sending is OFF'}
                   </span>
                 </div>
               </div>
@@ -3714,7 +3863,7 @@ export default function DashboardPage({ onShowToast }) {
                   </div>
                 </div>
                 <span style={{ fontSize: '12px', fontWeight: 800, color: '#15803D', background: '#DCFCE7', padding: '3px 10px', borderRadius: '12px' }}>
-                  ✓ Segment Campaign Active
+                   Segment Campaign Active
                 </span>
               </div>
 
@@ -4041,7 +4190,7 @@ export default function DashboardPage({ onShowToast }) {
                           onClick={() => {
                             setSelectedCustId(c.id || c._id);
                             setNotifyAudienceMode('specific_user');
-                            setNotifyTitle(`🎁 Special Personal Offer for ${c.name}`);
+                            setNotifyTitle(` Special Personal Offer for ${c.name}`);
                             setNotifyMessage(`Hi ${c.name}! We have an exclusive offer for you at ${storeControls.restName || 'our store'}. Use code FEST20 for 20% OFF!`);
                             setIsCustomNotifyModalOpen(true);
                           }}
@@ -4091,7 +4240,7 @@ export default function DashboardPage({ onShowToast }) {
                 <div className="crm-control-name-status">
                   <span className="crm-control-label">Store Outlet Status</span>
                   <span className={storeControls.storeStatus ? 'crm-status-badge-green' : 'crm-status-badge-gray'}>
-                    {storeControls.storeStatus ? '🟢 Open for Orders' : '🔴 Closed'}
+                    {storeControls.storeStatus ? ' Open for Orders' : ' Closed'}
                   </span>
                 </div>
                 <label className="crm-blue-switch">
@@ -4113,7 +4262,7 @@ export default function DashboardPage({ onShowToast }) {
                 <div className="crm-control-name-status">
                   <span className="crm-control-label">Direct Delivery Status</span>
                   <span className={storeControls.deliveryStatus ? 'crm-status-badge-green' : 'crm-status-badge-gray'}>
-                    {storeControls.deliveryStatus ? '🟢 Accepting Delivery' : '🔴 Delivery Off'}
+                    {storeControls.deliveryStatus ? ' Accepting Delivery' : ' Delivery Off'}
                   </span>
                 </div>
                 <label className="crm-blue-switch">
@@ -4135,7 +4284,7 @@ export default function DashboardPage({ onShowToast }) {
                 <div className="crm-control-name-status">
                   <span className="crm-control-label">Takeaway & Pickup Counter</span>
                   <span className={storeControls.pickupStatus ? 'crm-status-badge-green' : 'crm-status-badge-gray'}>
-                    {storeControls.pickupStatus ? '🟢 Accepting Pickup' : '🔴 Pickup Off'}
+                    {storeControls.pickupStatus ? ' Accepting Pickup' : ' Pickup Off'}
                   </span>
                 </div>
                 <label className="crm-blue-switch">
@@ -4245,7 +4394,7 @@ export default function DashboardPage({ onShowToast }) {
                 }}
               >
                 <Trash2 size={16} />
-                <span>🧹 Clear All Sample Data &amp; Reset Fresh</span>
+                <span> Clear All Sample Data &amp; Reset Fresh</span>
               </button>
             </div>
 
@@ -4268,7 +4417,7 @@ export default function DashboardPage({ onShowToast }) {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <span className={storeControls.lockMarketingTab ? 'crm-status-badge-gray' : 'crm-status-badge-green'} style={{ color: storeControls.lockMarketingTab ? '#DC2626' : '#16A34A', background: storeControls.lockMarketingTab ? '#FEE2E2' : '#DCFCE7', fontWeight: 700 }}>
-                    {storeControls.lockMarketingTab ? '🔒 Locked' : '🔓 Active'}
+                    {storeControls.lockMarketingTab ? ' Locked' : ' Active'}
                   </span>
                   <label className="crm-blue-switch">
                     <input
@@ -4277,7 +4426,7 @@ export default function DashboardPage({ onShowToast }) {
                       onChange={() => {
                         const next = !storeControls.lockMarketingTab;
                         setStoreControls((prev) => ({ ...prev, lockMarketingTab: next }));
-                        addToast(next ? '🔒 Marketing & Promocode Engine LOCKED!' : '🔓 Marketing Engine UNLOCKED!', <Lock size={18} />);
+                        addToast(next ? ' Marketing & Promocode Engine LOCKED!' : ' Marketing Engine UNLOCKED!', <Lock size={18} />);
                       }}
                     />
                     <span className="crm-blue-slider" />
@@ -4295,7 +4444,7 @@ export default function DashboardPage({ onShowToast }) {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <span className={storeControls.lockTableCrud ? 'crm-status-badge-gray' : 'crm-status-badge-green'} style={{ color: storeControls.lockTableCrud ? '#DC2626' : '#16A34A', background: storeControls.lockTableCrud ? '#FEE2E2' : '#DCFCE7', fontWeight: 700 }}>
-                    {storeControls.lockTableCrud ? '🔒 Locked' : '🔓 Active'}
+                    {storeControls.lockTableCrud ? ' Locked' : ' Active'}
                   </span>
                   <label className="crm-blue-switch">
                     <input
@@ -4304,7 +4453,7 @@ export default function DashboardPage({ onShowToast }) {
                       onChange={() => {
                         const next = !storeControls.lockTableCrud;
                         setStoreControls((prev) => ({ ...prev, lockTableCrud: next }));
-                        addToast(next ? '🔒 Table QR Modifications LOCKED!' : '🔓 Table QR Operations UNLOCKED!', <Lock size={18} />);
+                        addToast(next ? ' Table QR Modifications LOCKED!' : ' Table QR Operations UNLOCKED!', <Lock size={18} />);
                       }}
                     />
                     <span className="crm-blue-slider" />
@@ -4322,7 +4471,7 @@ export default function DashboardPage({ onShowToast }) {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <span className={storeControls.lockOrderDeletion ? 'crm-status-badge-gray' : 'crm-status-badge-green'} style={{ color: storeControls.lockOrderDeletion ? '#DC2626' : '#16A34A', background: storeControls.lockOrderDeletion ? '#FEE2E2' : '#DCFCE7', fontWeight: 700 }}>
-                    {storeControls.lockOrderDeletion ? '🔒 Locked' : '🔓 Active'}
+                    {storeControls.lockOrderDeletion ? ' Locked' : ' Active'}
                   </span>
                   <label className="crm-blue-switch">
                     <input
@@ -4331,7 +4480,7 @@ export default function DashboardPage({ onShowToast }) {
                       onChange={() => {
                         const next = !storeControls.lockOrderDeletion;
                         setStoreControls((prev) => ({ ...prev, lockOrderDeletion: next }));
-                        addToast(next ? '🔒 Order Deletion & Voiding LOCKED!' : '🔓 Order Deletion UNLOCKED!', <Lock size={18} />);
+                        addToast(next ? ' Order Deletion & Voiding LOCKED!' : ' Order Deletion UNLOCKED!', <Lock size={18} />);
                       }}
                     />
                     <span className="crm-blue-slider" />
@@ -4349,7 +4498,7 @@ export default function DashboardPage({ onShowToast }) {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <span className={storeControls.lockSettingsPanel ? 'crm-status-badge-gray' : 'crm-status-badge-green'} style={{ color: storeControls.lockSettingsPanel ? '#DC2626' : '#16A34A', background: storeControls.lockSettingsPanel ? '#FEE2E2' : '#DCFCE7', fontWeight: 700 }}>
-                    {storeControls.lockSettingsPanel ? '🔒 Locked' : '🔓 Active'}
+                    {storeControls.lockSettingsPanel ? ' Locked' : ' Active'}
                   </span>
                   <label className="crm-blue-switch">
                     <input
@@ -4358,7 +4507,7 @@ export default function DashboardPage({ onShowToast }) {
                       onChange={() => {
                         const next = !storeControls.lockSettingsPanel;
                         setStoreControls((prev) => ({ ...prev, lockSettingsPanel: next }));
-                        addToast(next ? '🔒 Store Settings Panel LOCKED!' : '🔓 Store Settings UNLOCKED!', <Lock size={18} />);
+                        addToast(next ? ' Store Settings Panel LOCKED!' : ' Store Settings UNLOCKED!', <Lock size={18} />);
                       }}
                     />
                     <span className="crm-blue-slider" />
@@ -4510,7 +4659,7 @@ export default function DashboardPage({ onShowToast }) {
                   }}
                 >
                   <div style={{ fontWeight: 800, fontSize: '14px', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span>🍊 FoodyPay Gateway (Default)</span>
+                    <span> FoodyPay Gateway (Default)</span>
                   </div>
                   <div style={{ fontSize: '12px', color: '#64748B', marginTop: '6px', lineHeight: 1.4 }}>
                     Zero-config instant Razorpay payment collection via FoodyPay default gateway.
@@ -4530,7 +4679,7 @@ export default function DashboardPage({ onShowToast }) {
                   }}
                 >
                   <div style={{ fontWeight: 800, fontSize: '14px', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span>💳 Merchant Own Razorpay</span>
+                    <span> Merchant Own Razorpay</span>
                   </div>
                   <div style={{ fontSize: '12px', color: '#64748B', marginTop: '6px', lineHeight: 1.4 }}>
                     Directly collect funds into your own Razorpay merchant account using API keys.
@@ -4550,7 +4699,7 @@ export default function DashboardPage({ onShowToast }) {
                   }}
                 >
                   <div style={{ fontWeight: 800, fontSize: '14px', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span>📱 Direct Merchant UPI QR</span>
+                    <span> Direct Merchant UPI QR</span>
                   </div>
                   <div style={{ fontSize: '12px', color: '#64748B', marginTop: '6px', lineHeight: 1.4 }}>
                     Diners scan your store's direct UPI QR code (`upiId`) to send payments.
@@ -4616,7 +4765,7 @@ export default function DashboardPage({ onShowToast }) {
                       });
                     } catch (e) {}
                   }
-                  addToast('💳 Payment Routing & Gateway settings saved successfully!', <Check size={18} />);
+                  addToast(' Payment Routing & Gateway settings saved successfully!', <Check size={18} />);
                 }}
                 style={{
                   padding: '10px 20px',
@@ -4732,7 +4881,7 @@ export default function DashboardPage({ onShowToast }) {
                     {Math.round((reviews.filter((r) => r.rating >= 4).length / (reviews.length || 1)) * 100)}%
                   </div>
                   <div style={{ fontSize: '12px', color: '#15803D', fontWeight: 700, marginTop: '2px' }}>
-                    4★ & 5★ Ratings
+                    4 & 5 Ratings
                   </div>
                 </div>
               </div>
@@ -4823,9 +4972,9 @@ export default function DashboardPage({ onShowToast }) {
                 }}
               >
                 <option value="all">All Sentiments</option>
-                <option value="positive">🟢 Positive Only</option>
-                <option value="neutral">🟡 Neutral Only</option>
-                <option value="negative">🔴 Critical / Negative</option>
+                <option value="positive"> Positive Only</option>
+                <option value="neutral"> Neutral Only</option>
+                <option value="negative"> Critical / Negative</option>
               </select>
             </div>
 
@@ -4908,9 +5057,9 @@ export default function DashboardPage({ onShowToast }) {
                                 </span>
                               </div>
                               <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                <span>📱 {r.customerPhone}</span>
+                                <span> {r.customerPhone}</span>
                                 <span>•</span>
-                                <span>🕒 {r.date}</span>
+                                <span> {r.date}</span>
                               </div>
                             </div>
                           </div>
@@ -4941,7 +5090,7 @@ export default function DashboardPage({ onShowToast }) {
                                 color: isPos ? '#15803D' : isNeu ? '#D97706' : '#DC2626',
                               }}
                             >
-                              {isPos ? '🟢 Positive Review' : isNeu ? '🟡 Neutral Feedback' : '🔴 Critical Review'}
+                              {isPos ? ' Positive Review' : isNeu ? ' Neutral Feedback' : ' Critical Review'}
                             </span>
                           </div>
                         </div>
@@ -5125,7 +5274,7 @@ export default function DashboardPage({ onShowToast }) {
 
                       {savings > 0 && (
                         <div style={{ position: 'absolute', top: '12px', right: '12px', background: '#DC2626', color: '#FFFFFF', fontSize: '12px', fontWeight: 900, padding: '4px 10px', borderRadius: '12px', boxShadow: '0 2px 6px rgba(220, 38, 38, 0.4)' }}>
-                          🔥 SAVE ₹{savings} ({savingsPct}% OFF)
+                           SAVE ₹{savings} ({savingsPct}% OFF)
                         </div>
                       )}
                     </div>
@@ -5265,9 +5414,9 @@ export default function DashboardPage({ onShowToast }) {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                 {[
                   { key: 'all', label: `All Kitchen Orders (${(orders || []).filter((o) => o && o.status !== 'completed').length})` },
-                  { key: 'new', label: `🔥 New Orders (${(orders || []).filter((o) => o && o.status === 'new').length})` },
-                  { key: 'preparing', label: `👨‍🍳 Cooking In Progress (${(orders || []).filter((o) => o && o.status === 'preparing').length})` },
-                  { key: 'ready', label: `✅ Ready for Service (${(orders || []).filter((o) => o && o.status === 'ready').length})` },
+                  { key: 'new', label: ` New Orders (${(orders || []).filter((o) => o && o.status === 'new').length})` },
+                  { key: 'preparing', label: `‍ Cooking In Progress (${(orders || []).filter((o) => o && o.status === 'preparing').length})` },
+                  { key: 'ready', label: ` Ready for Service (${(orders || []).filter((o) => o && o.status === 'ready').length})` },
                 ].map((tab) => (
                   <button
                     key={tab.key}
@@ -5360,7 +5509,7 @@ export default function DashboardPage({ onShowToast }) {
                               </span>
                             </div>
                             <div style={{ fontSize: '13px', fontWeight: 700, color: '#334155', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span>👤 {ord.customer || 'Guest Diner'}</span>
+                              <span> {ord.customer || 'Guest Diner'}</span>
                               {ord.phone && <span style={{ color: '#64748B', fontWeight: 500 }}>({ord.phone})</span>}
                             </div>
                           </div>
@@ -5381,7 +5530,7 @@ export default function DashboardPage({ onShowToast }) {
                                 color: isNew ? '#C2410C' : isCooking ? '#1E40AF' : '#15803D',
                               }}
                             >
-                              {isNew ? '🔥 NEW ORDER' : isCooking ? '👨‍🍳 COOKING' : '✅ READY'}
+                              {isNew ? ' NEW ORDER' : isCooking ? '‍ COOKING' : ' READY'}
                             </span>
                           </div>
                         </div>
@@ -5429,7 +5578,7 @@ export default function DashboardPage({ onShowToast }) {
                                   <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{ fontSize: '14px', fontWeight: 800, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                       <span style={{ color: item.isVeg !== false ? '#16A34A' : '#DC2626', fontSize: '10px' }}>
-                                        {item.isVeg !== false ? '🟢' : '🔴'}
+                                        {item.isVeg !== false ? '' : ''}
                                       </span>
                                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
                                     </div>
@@ -5481,7 +5630,7 @@ export default function DashboardPage({ onShowToast }) {
                                   prev.map((o) => ((o.id === ord.id || o._id === ord._id) ? { ...o, status: 'preparing' } : o))
                                 );
                                 triggerSound(playOrderPlaced);
-                                addToast(`👨‍🍳 Started Cooking ${ord.id} for ${ord.table || 'Table 1'}!`, <ChefHat size={18} />);
+                                addToast(`‍ Started Cooking ${ord.id} for ${ord.table || 'Table 1'}!`, <ChefHat size={18} />);
                               }}
                             >
                               <ChefHat size={18} /> Start Cooking
@@ -5513,7 +5662,7 @@ export default function DashboardPage({ onShowToast }) {
                                 );
                                 triggerSound(playMilestoneCelebration);
                                 confetti({ particleCount: 80, spread: 70, origin: { y: 0.4 } });
-                                addToast(`🎉 Order ${ord.id} is READY for ${ord.table || 'Table 1'}!`, <CheckCircle2 size={18} />);
+                                addToast(` Order ${ord.id} is READY for ${ord.table || 'Table 1'}!`, <CheckCircle2 size={18} />);
                               }}
                             >
                               <CheckCircle2 size={18} /> Mark Its Ready!
@@ -5542,7 +5691,7 @@ export default function DashboardPage({ onShowToast }) {
                                 setOrders((prev) =>
                                   prev.map((o) => ((o.id === ord.id || o._id === ord._id) ? { ...o, status: 'completed' } : o))
                                 );
-                                addToast(`🍽️ Order ${ord.id} Served / Completed!`, <Check size={18} />);
+                                addToast(`️ Order ${ord.id} Served / Completed!`, <Check size={18} />);
                               }}
                             >
                               <Utensils size={18} /> Mark Served & Complete
@@ -5926,7 +6075,7 @@ export default function DashboardPage({ onShowToast }) {
           <div className="crm-modal-backdrop" onClick={() => setActiveBillSettlementOrder(null)}>
             <div className="crm-modal-card" style={{ maxWidth: '560px' }} onClick={(e) => e.stopPropagation()}>
               <div className="crm-modal-header">
-                <h3>🧾 Bill Settlement — {activeBillSettlementOrder.orderId || activeBillSettlementOrder.id}</h3>
+                <h3> Bill Settlement — {activeBillSettlementOrder.orderId || activeBillSettlementOrder.id}</h3>
                 <button
                   type="button"
                   className="crm-modal-close-btn"
@@ -6039,7 +6188,7 @@ export default function DashboardPage({ onShowToast }) {
                       >
                         <CreditCard size={20} />
                         <div style={{ textAlign: 'left' }}>
-                          <div style={{ fontWeight: 800, fontSize: '15px' }}>💵 Cash Settlement</div>
+                          <div style={{ fontWeight: 800, fontSize: '15px' }}> Cash Settlement</div>
                           <div style={{ fontSize: '12px', opacity: 0.8 }}>Collect ₹{finalTotal} cash on counter</div>
                         </div>
                       </button>
@@ -6051,7 +6200,7 @@ export default function DashboardPage({ onShowToast }) {
                       >
                         <QrCode size={20} />
                         <div style={{ textAlign: 'left' }}>
-                          <div style={{ fontWeight: 800, fontSize: '15px' }}>📱 Online UPI QR Scanner</div>
+                          <div style={{ fontWeight: 800, fontSize: '15px' }}> Online UPI QR Scanner</div>
                           <div style={{ fontSize: '12px', opacity: 0.9 }}>Generate payment QR for Google Pay / PhonePe / Paytm</div>
                         </div>
                       </button>
@@ -6098,7 +6247,7 @@ export default function DashboardPage({ onShowToast }) {
                           textDecoration: 'none'
                         }}
                       >
-                        <span style={{ fontSize: '16px' }}>🔵</span> Google Pay
+                        <span style={{ fontSize: '16px' }}></span> Google Pay
                       </a>
 
                       <a
@@ -6118,7 +6267,7 @@ export default function DashboardPage({ onShowToast }) {
                           textDecoration: 'none'
                         }}
                       >
-                        <span style={{ fontSize: '16px' }}>🟣</span> PhonePe
+                        <span style={{ fontSize: '16px' }}></span> PhonePe
                       </a>
 
                       <a
@@ -6138,7 +6287,7 @@ export default function DashboardPage({ onShowToast }) {
                           textDecoration: 'none'
                         }}
                       >
-                        <span style={{ fontSize: '16px' }}>🟦</span> Paytm
+                        <span style={{ fontSize: '16px' }}></span> Paytm
                       </a>
 
                       <a
@@ -6158,7 +6307,7 @@ export default function DashboardPage({ onShowToast }) {
                           textDecoration: 'none'
                         }}
                       >
-                        <span style={{ fontSize: '16px' }}>⚡</span> Pay Any UPI
+                        <span style={{ fontSize: '16px' }}></span> Pay Any UPI
                       </a>
                     </div>
 
@@ -6196,7 +6345,7 @@ export default function DashboardPage({ onShowToast }) {
         <div className="crm-modal-backdrop" onClick={() => setViewingOrderDetails(null)}>
           <div className="crm-modal-card" style={{ maxWidth: '520px' }} onClick={(e) => e.stopPropagation()}>
             <div className="crm-modal-header">
-              <h3>🧾 Order Receipt — {viewingOrderDetails.orderId || viewingOrderDetails.id}</h3>
+              <h3> Order Receipt — {viewingOrderDetails.orderId || viewingOrderDetails.id}</h3>
               <button
                 type="button"
                 className="crm-modal-close-btn"
@@ -6400,7 +6549,7 @@ export default function DashboardPage({ onShowToast }) {
                           style={{ background: 'none', border: 'none', color: '#1D4ED8', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
                           onClick={() => setShowEditUrlInput(!showEditUrlInput)}
                         >
-                          {showEditUrlInput ? '✓ Hide URL Field' : '🔗 Edit Image URL'}
+                          {showEditUrlInput ? ' Hide URL Field' : ' Edit Image URL'}
                         </button>
                       </div>
 
@@ -6409,7 +6558,7 @@ export default function DashboardPage({ onShowToast }) {
                           <img src={editProductForm.images?.[0] || editProductForm.image} alt="Dish Preview" />
                         ) : (
                           <div style={{ textAlign: 'center', color: '#64748B', fontSize: '13px' }}>
-                            <span style={{ fontSize: '28px', display: 'block', marginBottom: '4px' }}>📷</span>
+                            <span style={{ fontSize: '28px', display: 'block', marginBottom: '4px' }}></span>
                             No Photo Selected
                           </div>
                         )}
@@ -6431,12 +6580,12 @@ export default function DashboardPage({ onShowToast }) {
                         <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>Select Quick Preset Photo:</span>
                         <div className="crm-photo-presets-grid">
                           {[
-                            { label: '🍕 Pizza', url: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400&auto=format&fit=crop&q=80' },
-                            { label: '🍔 Burger', url: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&auto=format&fit=crop&q=80' },
-                            { label: '🍲 Thali', url: 'https://images.unsplash.com/photo-1631452180519-c014fe946bc7?w=400&auto=format&fit=crop&q=80' },
-                            { label: '🍝 Pasta', url: 'https://images.unsplash.com/photo-1621996346565-e3d5d6281829?w=400&auto=format&fit=crop&q=80' },
-                            { label: '🍹 Drink', url: 'https://images.unsplash.com/photo-1551024709-8f23befc6f87?w=400&auto=format&fit=crop&q=80' },
-                            { label: '🍰 Dessert', url: 'https://images.unsplash.com/photo-1606313564200-e75d5e30476c?w=400&auto=format&fit=crop&q=80' },
+                            { label: ' Pizza', url: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400&auto=format&fit=crop&q=80' },
+                            { label: ' Burger', url: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&auto=format&fit=crop&q=80' },
+                            { label: ' Thali', url: 'https://images.unsplash.com/photo-1631452180519-c014fe946bc7?w=400&auto=format&fit=crop&q=80' },
+                            { label: ' Pasta', url: 'https://images.unsplash.com/photo-1621996346565-e3d5d6281829?w=400&auto=format&fit=crop&q=80' },
+                            { label: ' Drink', url: 'https://images.unsplash.com/photo-1551024709-8f23befc6f87?w=400&auto=format&fit=crop&q=80' },
+                            { label: ' Dessert', url: 'https://images.unsplash.com/photo-1606313564200-e75d5e30476c?w=400&auto=format&fit=crop&q=80' },
                           ].map((p) => (
                             <button
                               key={p.label}
@@ -6510,7 +6659,7 @@ export default function DashboardPage({ onShowToast }) {
                                   setEditProductForm({ ...editProductForm, sizes: updated });
                                 }}
                               >
-                                ✕
+                                
                               </button>
                             </div>
                           ))}
@@ -6580,7 +6729,7 @@ export default function DashboardPage({ onShowToast }) {
                           style={{ background: 'none', border: 'none', color: '#1D4ED8', fontSize: '12.5px', fontWeight: 800, cursor: 'pointer' }}
                           onClick={() => setIsAddingNewCat(!isAddingNewCat)}
                         >
-                          {isAddingNewCat ? '✕ Cancel' : '+ Create New Category'}
+                          {isAddingNewCat ? ' Cancel' : '+ Create New Category'}
                         </button>
                       </div>
 
@@ -6684,7 +6833,7 @@ export default function DashboardPage({ onShowToast }) {
                           style={{ background: 'none', border: 'none', color: '#1D4ED8', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
                           onClick={() => setShowAddUrlInput(!showAddUrlInput)}
                         >
-                          {showAddUrlInput ? '✓ Hide URL Field' : '🔗 Edit Image URL'}
+                          {showAddUrlInput ? ' Hide URL Field' : ' Edit Image URL'}
                         </button>
                       </div>
 
@@ -6699,7 +6848,7 @@ export default function DashboardPage({ onShowToast }) {
                           <img src={newProductForm.image} alt="Preview" />
                         ) : (
                           <div style={{ textAlign: 'center', color: '#64748B', fontSize: '13px' }}>
-                            <span style={{ fontSize: '32px', display: 'block', marginBottom: '4px' }}>📷</span>
+                            <span style={{ fontSize: '32px', display: 'block', marginBottom: '4px' }}></span>
                             Click to Upload Computer Photo
                           </div>
                         )}
@@ -6719,7 +6868,7 @@ export default function DashboardPage({ onShowToast }) {
                         style={{ fontSize: '12.5px', padding: '6px 12px', width: '100%', justifyContent: 'center' }}
                         onClick={() => document.getElementById('addDishFileInput').click()}
                       >
-                        {productLogoFile ? productLogoFile.name : '📁 Choose Photo File from PC'}
+                        {productLogoFile ? productLogoFile.name : ' Choose Photo File from PC'}
                       </button>
 
                       {showAddUrlInput && (
@@ -6737,12 +6886,12 @@ export default function DashboardPage({ onShowToast }) {
                         <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>Or Select Quick Preset Photo:</span>
                         <div className="crm-photo-presets-grid">
                           {[
-                            { label: '🍕 Pizza', url: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400&auto=format&fit=crop&q=80' },
-                            { label: '🍔 Burger', url: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&auto=format&fit=crop&q=80' },
-                            { label: '🍲 Thali', url: 'https://images.unsplash.com/photo-1631452180519-c014fe946bc7?w=400&auto=format&fit=crop&q=80' },
-                            { label: '🍝 Pasta', url: 'https://images.unsplash.com/photo-1621996346565-e3d5d6281829?w=400&auto=format&fit=crop&q=80' },
-                            { label: '🍹 Drink', url: 'https://images.unsplash.com/photo-1551024709-8f23befc6f87?w=400&auto=format&fit=crop&q=80' },
-                            { label: '🍰 Dessert', url: 'https://images.unsplash.com/photo-1606313564200-e75d5e30476c?w=400&auto=format&fit=crop&q=80' },
+                            { label: ' Pizza', url: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400&auto=format&fit=crop&q=80' },
+                            { label: ' Burger', url: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=400&auto=format&fit=crop&q=80' },
+                            { label: ' Thali', url: 'https://images.unsplash.com/photo-1631452180519-c014fe946bc7?w=400&auto=format&fit=crop&q=80' },
+                            { label: ' Pasta', url: 'https://images.unsplash.com/photo-1621996346565-e3d5d6281829?w=400&auto=format&fit=crop&q=80' },
+                            { label: ' Drink', url: 'https://images.unsplash.com/photo-1551024709-8f23befc6f87?w=400&auto=format&fit=crop&q=80' },
+                            { label: ' Dessert', url: 'https://images.unsplash.com/photo-1606313564200-e75d5e30476c?w=400&auto=format&fit=crop&q=80' },
                           ].map((p) => (
                             <button
                               key={p.label}
@@ -6818,9 +6967,9 @@ export default function DashboardPage({ onShowToast }) {
                     {[
                       { id: 'percentage', label: '% Percentage OFF' },
                       { id: 'flat', label: '₹ Flat Cash Minus' },
-                      { id: 'bogo', label: '🎁 Buy 1 Get 1 Free' },
-                      { id: 'referral', label: '👥 Refer & Earn' },
-                      { id: 'combo', label: '🍕 Combo Bundle' },
+                      { id: 'bogo', label: ' Buy 1 Get 1 Free' },
+                      { id: 'referral', label: ' Refer & Earn' },
+                      { id: 'combo', label: ' Combo Bundle' },
                     ].map((t) => (
                       <button
                         key={t.id}
@@ -6845,7 +6994,7 @@ export default function DashboardPage({ onShowToast }) {
                       style={{ background: 'none', border: 'none', color: '#1D4ED8', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
                       onClick={handleGenerateRandomCouponCode}
                     >
-                      ✨ Auto Code
+                       Auto Code
                     </button>
                   </div>
                   <input
@@ -6898,7 +7047,7 @@ export default function DashboardPage({ onShowToast }) {
                       required
                     />
                     <div style={{ fontSize: '12px', color: '#059669', marginTop: '4px', fontWeight: 700 }}>
-                      ✓ Diner gets flat ₹{newCouponForm.discountValue || 50} subtracted directly from their final checkout bill.
+                       Diner gets flat ₹{newCouponForm.discountValue || 50} subtracted directly from their final checkout bill.
                     </div>
                   </div>
                 )}
@@ -6998,7 +7147,7 @@ export default function DashboardPage({ onShowToast }) {
                 <div className="crm-coupon-preview-box">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: '15px', color: '#92400E' }}>
-                      🎟 {newCouponForm.code || 'CODE'}
+                       {newCouponForm.code || 'CODE'}
                     </span>
                     <span style={{ fontSize: '11px', fontWeight: 800, color: '#C2410C', background: '#FFFFFF', padding: '2px 8px', borderRadius: '12px' }}>
                       ● Active
@@ -7070,7 +7219,7 @@ export default function DashboardPage({ onShowToast }) {
           <div className="crm-modal-card" style={{ maxWidth: '560px' }} onClick={(e) => e.stopPropagation()}>
             <div className="crm-modal-header">
               <div>
-                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900 }}>🎂 Configure Birthday Offer &amp; Message</h3>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900 }}> Configure Birthday Offer &amp; Message</h3>
                 <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
                   Set custom happy birthday message template and offer coupon code.
                 </div>
@@ -7410,7 +7559,7 @@ export default function DashboardPage({ onShowToast }) {
           <div className="crm-modal-card" style={{ maxWidth: '620px' }} onClick={(e) => e.stopPropagation()}>
             <div className="crm-modal-header">
               <div>
-                <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 900 }}>🔔 Custom Push &amp; WhatsApp Notification Broadcast</h3>
+                <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 900 }}> Custom Push &amp; WhatsApp Notification Broadcast</h3>
                 <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
                   Send personal custom message to a specific customer, all users, random N customers, or group.
                 </div>
@@ -7431,10 +7580,10 @@ export default function DashboardPage({ onShowToast }) {
                   <label style={{ fontWeight: 800 }}>1. Select Target Audience / Recipients *</label>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '4px' }}>
                     {[
-                      { id: 'all_users', label: '📢 All Customers Broadcast' },
-                      { id: 'specific_user', label: '👤 Specific Personal Customer' },
-                      { id: 'random_n', label: '🎲 Random N Customers' },
-                      { id: 'group', label: '👥 Smart Customer Group' },
+                      { id: 'all_users', label: ' All Customers Broadcast' },
+                      { id: 'specific_user', label: ' Specific Personal Customer' },
+                      { id: 'random_n', label: ' Random N Customers' },
+                      { id: 'group', label: ' Smart Customer Group' },
                     ].map((mode) => (
                       <button
                         key={mode.id}
@@ -7459,7 +7608,7 @@ export default function DashboardPage({ onShowToast }) {
                         setSelectedCustId(e.target.value);
                         const match = (customers || []).find((c) => (c.id || c._id) === e.target.value);
                         if (match) {
-                          setNotifyTitle(`🎁 Special Personal Offer for ${match.name}`);
+                          setNotifyTitle(` Special Personal Offer for ${match.name}`);
                           setNotifyMessage(`Hi ${match.name}! Enjoy a special treat from us at ${storeControls.restName || 'FoodyPay Store'}. Use code FEST20!`);
                         }
                       }}
@@ -7512,9 +7661,9 @@ export default function DashboardPage({ onShowToast }) {
                     value={notifyChannel}
                     onChange={(e) => setNotifyChannel(e.target.value)}
                   >
-                    <option value="push_whatsapp">📲 WhatsApp &amp; Mobile Push Notification (Combined)</option>
-                    <option value="whatsapp_only">💬 WhatsApp Message Only</option>
-                    <option value="push_only">🔔 Mobile Push Notification Only</option>
+                    <option value="push_whatsapp"> WhatsApp &amp; Mobile Push Notification (Combined)</option>
+                    <option value="whatsapp_only"> WhatsApp Message Only</option>
+                    <option value="push_only"> Mobile Push Notification Only</option>
                   </select>
                 </div>
 
@@ -7524,7 +7673,7 @@ export default function DashboardPage({ onShowToast }) {
                   <input
                     type="text"
                     className="crm-input"
-                    placeholder="e.g. 🎁 Special Discount Just For You!"
+                    placeholder="e.g.  Special Discount Just For You!"
                     value={notifyTitle}
                     onChange={(e) => setNotifyTitle(e.target.value)}
                     required
@@ -7542,13 +7691,13 @@ export default function DashboardPage({ onShowToast }) {
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', margin: '6px 0' }}>
                     {[
                       {
-                        label: '🎁 We Miss You (15% OFF)',
-                        title: '🎁 We Miss Seeing You at FoodyPay!',
+                        label: ' We Miss You (15% OFF)',
+                        title: ' We Miss Seeing You at FoodyPay!',
                         msg: 'Hey {name}! We miss your visit at {storeName}. Enjoy 15% OFF on your order today! Code: MISSU15',
                       },
                       {
-                        label: '🍕 Weekend Party Deal',
-                        title: '🍕 Weekend Pizza & Starter Combo Offer',
+                        label: ' Weekend Party Deal',
+                        title: ' Weekend Pizza & Starter Combo Offer',
                         msg: 'Weekend alert! Enjoy free Garlic Bread on Large Pizza orders at {storeName}. Order on table QR now!',
                       },
                       {
@@ -8077,7 +8226,7 @@ export default function DashboardPage({ onShowToast }) {
                 </div>
 
                 <p style={{ fontSize: '12.5px', margin: 0, opacity: 0.95, lineHeight: 1.4 }}>
-                  <strong>📱 Scan with Camera to Order &amp; Pay</strong>
+                  <strong> Scan with Camera to Order &amp; Pay</strong>
                   <br />
                   <span style={{ fontSize: '11px', opacity: 0.85 }}>No app download needed • Fast &amp; Contactless</span>
                 </p>

@@ -205,7 +205,7 @@ export default function LiveOrderTicker({ onOpenSignup }) {
               <strong>{notification.name}</strong>
             </div>
             <div className="ticker-location-row">
-              <span className="ticker-city-label">📍 {notification.city}</span>
+              <span className="ticker-city-label"> {notification.city}</span>
               <span className="ticker-dot-sep">·</span>
               <span className="ticker-table-label">Table {notification.tableNo}</span>
             </div>
@@ -234,10 +234,10 @@ export default function LiveOrderTicker({ onOpenSignup }) {
           <div className="ticker-expanded-content">
             <div className="ticker-expanded-divider" />
             <div className="ticker-food-desc">
-              🍽️ Ordered: <span>{notification.item}</span>
+              ️ Ordered: <span>{notification.item}</span>
             </div>
             <div className="ticker-bill-badge">
-              ⚡ Bill Paid: <b>{notification.bill}</b> via FoodyPay QR
+               Bill Paid: <b>{notification.bill}</b> via FoodyPay QR
             </div>
 
             <div className="ticker-cta-banner">

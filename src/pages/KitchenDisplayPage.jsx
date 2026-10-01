@@ -15,16 +15,18 @@ import {
   X,
   AlertCircle,
   ShoppingBag,
-  Check
+  Check,
+  Play,
+  RotateCcw
 } from 'lucide-react';
-import { playOrderPlaced, startContinuousAlarm, stopContinuousAlarm } from '../utils/soundEffects';
+import { playFoodPreparing, playFoodReady } from '../utils/soundEffects';
 import { fetchOrdersApi, fetchPublicOrdersApi } from '../utils/api';
 
 export default function KitchenDisplayPage({ onShowToast }) {
   const { restaurantSlug, merchantId } = useParams();
 
   const formatSlug = (str) => {
-    if (!str) return 'Kitchen Display';
+    if (!str) return 'Kitchen Display System';
     return str
       .split('-')
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
@@ -36,10 +38,19 @@ export default function KitchenDisplayPage({ onShowToast }) {
 
   // State
   const [orders, setOrders] = useState([]);
-  const [filter, setFilter] = useState('all'); // 'all' | 'new' | 'preparing' | 'ready'
-  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [kitchenTabFilter, setKitchenTabFilter] = useState('active'); // 'active' | 'completed' | 'all'
   const [currentTime, setCurrentTime] = useState('');
   const [isCounterOrderModalOpen, setIsCounterOrderModalOpen] = useState(false);
+
+  // Per-item cooking status map: { `${orderId}_${itemIdx}`: 'idle' | 'cooking' | 'done' }
+  const [itemCookingState, setItemCookingState] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_kitchen_items_cooking');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
 
   // Counter POS Quick Order Form
   const [counterForm, setCounterForm] = useState({
@@ -49,14 +60,15 @@ export default function KitchenDisplayPage({ onShowToast }) {
     note: 'Serve HOT',
   });
 
-  // Load orders from Live Server API for THIS specific merchant
+  // Load orders from Live Server API for THIS specific merchant (NO SAMPLE FALLBACKS)
   const loadOrders = async () => {
     const token = localStorage.getItem('foodypay_token');
     if (token) {
       try {
         const fetched = await fetchOrdersApi(token);
-        if (Array.isArray(fetched)) {
-          setOrders(fetched);
+        const fetchedList = fetched.orders || (Array.isArray(fetched) ? fetched : []);
+        if (Array.isArray(fetchedList) && fetchedList.length > 0) {
+          setOrders(fetchedList);
           return;
         }
       } catch (e) {}
@@ -64,35 +76,34 @@ export default function KitchenDisplayPage({ onShowToast }) {
 
     try {
       const fetchedPublic = await fetchPublicOrdersApi(merchantId, effectiveMerchantId);
-      if (Array.isArray(fetchedPublic)) {
+      if (Array.isArray(fetchedPublic) && fetchedPublic.length > 0) {
         setOrders(fetchedPublic);
         return;
       }
     } catch (e) {}
 
-    // Fallback: load from local storage
+    // Fallback to local storage (only real customer created orders)
     try {
       const saved = localStorage.getItem('foodypay_crm_orders_v3');
       if (saved) {
         setOrders(JSON.parse(saved));
+      } else {
+        setOrders([]);
       }
-    } catch (e) {}
+    } catch (e) {
+      setOrders([]);
+    }
   };
-
 
   useEffect(() => {
     loadOrders();
-
     const pollInterval = setInterval(loadOrders, 4000);
 
-    // Listen to real-time order updates across tabs
     const handleStorage = (e) => {
       if (!e || e.key === 'foodypay_crm_orders_v3') {
         loadOrders();
       }
     };
-
-    const handleCustomOrderEvent = () => loadOrders();
 
     let bc = null;
     try {
@@ -105,16 +116,15 @@ export default function KitchenDisplayPage({ onShowToast }) {
     } catch (e) {}
 
     window.addEventListener('storage', handleStorage);
-    window.addEventListener('foodypay_order_created', handleCustomOrderEvent);
+    window.addEventListener('foodypay_order_created', loadOrders);
 
     return () => {
       clearInterval(pollInterval);
       if (bc) bc.close();
       window.removeEventListener('storage', handleStorage);
-      window.removeEventListener('foodypay_order_created', handleCustomOrderEvent);
+      window.removeEventListener('foodypay_order_created', loadOrders);
     };
   }, []);
-
 
   // Live Clock Update
   useEffect(() => {
@@ -129,29 +139,38 @@ export default function KitchenDisplayPage({ onShowToast }) {
     return () => clearInterval(interval);
   }, []);
 
-  // Sound Bell Alert for Unseen / New Orders
-  useEffect(() => {
-    const hasUnseenNew = (orders || []).some(
-      (o) => o && !o.seen && o.status === 'new'
-    );
-    if (hasUnseenNew && soundEnabled) {
+  // Save per-item cooking status map
+  const toggleItemCooking = (orderId, itemIdx) => {
+    const key = `${orderId}_${itemIdx}`;
+    setItemCookingState((prev) => {
+      const current = prev[key] || 'idle';
+      const next = current === 'idle' ? 'cooking' : current === 'cooking' ? 'done' : 'idle';
+      const updated = { ...prev, [key]: next };
       try {
-        startContinuousAlarm();
+        localStorage.setItem('foodypay_kitchen_items_cooking', JSON.stringify(updated));
       } catch (e) {}
-    } else {
-      stopContinuousAlarm();
-    }
-    return () => {
-      stopContinuousAlarm();
-    };
-  }, [orders, soundEnabled]);
+      return updated;
+    });
 
-  // Order Status Updates
+    try {
+      playFoodPreparing();
+    } catch (e) {}
+  };
+
+  // Order Status Updates (No bell alarm triggered on Kitchen Tab)
   const updateOrderStatus = (orderId, newStatus) => {
-    stopContinuousAlarm();
+    if (orderId) {
+      try {
+        const raw = localStorage.getItem('foodypay_seen_order_ids');
+        const seenSet = raw ? new Set(JSON.parse(raw)) : new Set();
+        seenSet.add(String(orderId));
+        localStorage.setItem('foodypay_seen_order_ids', JSON.stringify(Array.from(seenSet)));
+      } catch (e) {}
+    }
+
     const updated = orders.map((o) => {
-      const currentId = o._id || o.id;
-      if (currentId === orderId) {
+      const currentId = o._id || o.id || o.orderId;
+      if (currentId === orderId || String(currentId) === String(orderId)) {
         return {
           ...o,
           status: newStatus,
@@ -170,19 +189,20 @@ export default function KitchenDisplayPage({ onShowToast }) {
       bc.postMessage({ type: 'ORDER_UPDATED', orders: updated });
       bc.close();
     } catch (e) {}
-  };
 
-  const handleMarkSeen = (orderId) => {
-    stopContinuousAlarm();
-    updateOrderStatus(orderId, 'preparing');
+    if (newStatus === 'ready' || newStatus === 'completed') {
+      try {
+        playFoodReady();
+      } catch (e) {}
+      if (onShowToast) onShowToast(`️ Order ${orderId} marked Ready to Serve!`);
+    }
   };
 
   // Add Counter POS Order directly to kitchen
   const handleAddCounterOrder = (e) => {
     e.preventDefault();
-    const newId = `#FP-${Math.floor(100000 + Math.random() * 900000)}`;
+    const newId = `#FP-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    // Parse simple items text format
     const itemEntries = counterForm.items.split(',').map((str, idx) => {
       const parts = str.trim().split('x');
       const name = parts[0]?.trim() || `Item ${idx + 1}`;
@@ -196,12 +216,14 @@ export default function KitchenDisplayPage({ onShowToast }) {
       table: counterForm.table || 'Counter POS',
       customer: counterForm.customer || 'Walk-in Diner',
       items: itemEntries,
-      total: itemEntries.reduce((sum, item) => sum + item.price * item.qty, 0),
-      status: 'new',
-      seen: false,
-      createdAt: new Date().toISOString(),
+      note: counterForm.note.trim(),
+      status: 'preparing',
+      seen: true,
       time: 'Just now',
-      note: counterForm.note,
+      timestamp: Date.now(),
+      paymentStatus: 'cash',
+      paymentLabel: 'Cash on Counter',
+      total: itemEntries.reduce((s, i) => s + i.price * i.qty, 0),
     };
 
     const updated = [newOrderObj, ...orders];
@@ -212,552 +234,315 @@ export default function KitchenDisplayPage({ onShowToast }) {
     } catch (e) {}
 
     setIsCounterOrderModalOpen(false);
-    setCounterForm({ table: 'Table 1', customer: 'Walk-in Diner', items: 'Paneer Butter Masala x1, Garlic Naan x2', note: 'Serve HOT' });
+    if (onShowToast) onShowToast(`Created Counter Order ${newId}!`);
   };
 
-  // Filtered Orders Calculation
-  const filteredOrders = orders.filter((o) => {
-    if (!o || o.status === 'completed' || o.status === 'served' || o.status === 'cancelled') return false;
-    if (filter === 'all') return true;
-    if (filter === 'new') return o.status === 'new' || !o.seen;
-    if (filter === 'preparing') return o.status === 'preparing';
-    if (filter === 'ready') return o.status === 'ready';
-    return true;
-  });
+  // Active Kitchen Queue Filters:
+  // Active queue: status === 'new' or status === 'preparing'
+  // Completed history: status === 'ready' or status === 'completed'
+  const activeOrders = orders.filter((o) => o.status === 'new' || o.status === 'preparing');
+  const completedOrders = orders.filter((o) => o.status === 'ready' || o.status === 'completed');
 
-  const countNew = orders.filter((o) => o && (o.status === 'new' || !o.seen)).length;
-  const countPreparing = orders.filter((o) => o && o.status === 'preparing').length;
-  const countReady = orders.filter((o) => o && o.status === 'ready').length;
+  const displayedOrders =
+    kitchenTabFilter === 'active'
+      ? activeOrders
+      : kitchenTabFilter === 'completed'
+      ? completedOrders
+      : orders;
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#0B0F17', color: '#F8FAFC', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-      {/* KDS HEADER BAR */}
-      <header
-        style={{
-          backgroundColor: '#151C28',
-          borderBottom: '1.5px solid #2A364F',
-          padding: '16px 28px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '16px',
-          sticky: 'top',
-          top: 0,
-          zIndex: 100,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div
-            style={{
-              width: '46px',
-              height: '46px',
-              borderRadius: '14px',
-              background: 'linear-gradient(135deg, #FF5E14 0%, #D97706 100%)',
-              color: '#FFFFFF',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 4px 12px rgba(255, 94, 20, 0.4)',
-            }}
-          >
-            <ChefHat size={26} />
-          </div>
-          <div>
-            <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 900, color: '#FFFFFF', letterSpacing: '-0.3px' }}>
-              Kitchen Display System (KDS)
-            </h1>
-            <div style={{ fontSize: '12.5px', color: '#94A3B8', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span>{storeName}</span>
-              <span>•</span>
-              <span>Merchant ID: <strong style={{ color: '#FF5E14' }}>{effectiveMerchantId}</strong></span>
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {/* Live Clock Badge */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              backgroundColor: '#1E293B',
-              padding: '8px 16px',
-              borderRadius: '12px',
-              border: '1px solid #334155',
-              fontSize: '14px',
-              fontWeight: 800,
-              color: '#38BDF8',
-            }}
-          >
-            <Clock size={16} color="#38BDF8" />
-            <span>{currentTime}</span>
-          </div>
-
-          {/* Sound Mute/Unmute */}
-          <button
-            type="button"
-            onClick={() => setSoundEnabled(!soundEnabled)}
-            style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '12px',
-              backgroundColor: soundEnabled ? '#1E293B' : '#334155',
-              border: '1px solid #334155',
-              color: soundEnabled ? '#38BDF8' : '#64748B',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-            }}
-            title={soundEnabled ? 'Mute Kitchen Bell' : 'Enable Kitchen Bell'}
-          >
-            {soundEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
-          </button>
-
-          {/* Manual Refresh Button */}
-          <button
-            type="button"
-            onClick={loadOrders}
-            style={{
-              backgroundColor: '#1E293B',
-              border: '1px solid #334155',
-              color: '#F8FAFC',
-              borderRadius: '12px',
-              padding: '8px 14px',
-              fontWeight: 700,
-              fontSize: '13px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-            }}
-          >
-            <RefreshCw size={16} />
-            <span>Sync</span>
-          </button>
-
-          {/* Create Counter POS Order Button */}
-          <button
-            type="button"
-            onClick={() => setIsCounterOrderModalOpen(true)}
-            style={{
-              background: 'linear-gradient(135deg, #FF5E14 0%, #D97706 100%)',
-              color: '#FFFFFF',
-              border: 'none',
-              borderRadius: '12px',
-              padding: '10px 18px',
-              fontWeight: 800,
-              fontSize: '13.5px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              boxShadow: '0 4px 14px rgba(255, 94, 20, 0.3)',
-            }}
-          >
-            <Plus size={18} />
-            <span>+ Counter POS Order</span>
-          </button>
-
-          <Link
-            to="/dashboard"
-            style={{
-              backgroundColor: '#334155',
-              color: '#FFFFFF',
-              borderRadius: '12px',
-              padding: '8px 14px',
-              textDecoration: 'none',
-              fontWeight: 700,
-              fontSize: '13px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-            }}
-          >
-            <ArrowLeft size={16} />
-            <span>POS Dashboard</span>
-          </Link>
-        </div>
-      </header>
-
-      {/* SUB HEADER / FILTER TABS */}
-      <main style={{ padding: '24px 32px' }}>
-        <div
-          style={{
-            backgroundColor: '#151C28',
-            border: '1.5px solid #2A364F',
-            borderRadius: '20px',
-            padding: '20px 24px',
-            marginBottom: '24px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '16px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div
-              style={{
-                width: '42px',
-                height: '42px',
-                borderRadius: '12px',
-                backgroundColor: '#2A364F',
-                color: '#FF5E14',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Utensils size={22} />
-            </div>
-            <div>
-              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#FFFFFF' }}>
-                Kitchen Display System (KDS Live Orders)
-              </h2>
-              <div style={{ fontSize: '12.5px', color: '#94A3B8', marginTop: '2px' }}>
-                Real-time kitchen order cards with item photos, customer details, table numbers, and 1-click status actions.
+    <div style={{ minHeight: '100vh', backgroundColor: '#0F172A', color: '#F8FAFC', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      
+      {/* KDS Top Header */}
+      <header style={{ backgroundColor: '#1E293B', borderBottom: '1px solid #334155', padding: '12px 20px', position: 'sticky', top: 0, zIndex: 50 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <Link to="/dashboard" style={{ color: '#94A3B8', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 500 }}>
+              <ArrowLeft size={16} /> Exit KDS
+            </Link>
+            <div style={{ width: '1px', height: '20px', backgroundColor: '#334155' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ backgroundColor: '#FF5E14', color: '#FFF', padding: '6px', borderRadius: '8px', display: 'flex' }}>
+                <ChefHat size={20} />
+              </div>
+              <div>
+                <h1 style={{ margin: 0, fontSize: '17px', fontWeight: 600, color: '#F8FAFC' }}>
+                  Kitchen Display System (KDS)
+                </h1>
+                <div style={{ fontSize: '11.5px', color: '#94A3B8', fontWeight: 400 }}>
+                  {storeName} • Merchant: {effectiveMerchantId}
+                </div>
               </div>
             </div>
           </div>
 
-          {/* FILTER BUTTONS */}
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          {/* Center Tabs: Active Queue vs History */}
+          <div style={{ display: 'flex', backgroundColor: '#0F172A', padding: '3px', borderRadius: '10px', border: '1px solid #334155' }}>
             <button
-              type="button"
-              onClick={() => setFilter('all')}
+              onClick={() => setKitchenTabFilter('active')}
               style={{
-                backgroundColor: filter === 'all' ? '#FF5E14' : '#1E293B',
-                color: '#FFFFFF',
                 border: 'none',
-                padding: '9px 18px',
-                borderRadius: '12px',
-                fontWeight: 800,
-                fontSize: '13px',
-                cursor: 'pointer',
-              }}
-            >
-              All Kitchen Orders ({orders.filter((o) => o && o.status !== 'completed' && o.status !== 'served' && o.status !== 'cancelled').length})
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFilter('new')}
-              style={{
-                backgroundColor: filter === 'new' ? '#EF4444' : '#1E293B',
-                color: '#FFFFFF',
-                border: 'none',
-                padding: '9px 18px',
-                borderRadius: '12px',
-                fontWeight: 800,
-                fontSize: '13px',
+                backgroundColor: kitchenTabFilter === 'active' ? '#FF5E14' : 'transparent',
+                color: kitchenTabFilter === 'active' ? '#FFF' : '#94A3B8',
+                padding: '6px 14px',
+                borderRadius: '8px',
+                fontSize: '12.5px',
+                fontWeight: 500,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px',
+                gap: '6px'
               }}
             >
-              <Bell size={15} />
-              <span>New Orders ({countNew})</span>
+               Active Queue ({activeOrders.length})
             </button>
-
             <button
-              type="button"
-              onClick={() => setFilter('preparing')}
+              onClick={() => setKitchenTabFilter('completed')}
               style={{
-                backgroundColor: filter === 'preparing' ? '#F59E0B' : '#1E293B',
-                color: '#FFFFFF',
                 border: 'none',
-                padding: '9px 18px',
-                borderRadius: '12px',
-                fontWeight: 800,
-                fontSize: '13px',
+                backgroundColor: kitchenTabFilter === 'completed' ? '#10B981' : 'transparent',
+                color: kitchenTabFilter === 'completed' ? '#FFF' : '#94A3B8',
+                padding: '6px 14px',
+                borderRadius: '8px',
+                fontSize: '12.5px',
+                fontWeight: 500,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px',
+                gap: '6px'
               }}
             >
-              <Flame size={15} />
-              <span>Cooking In Progress ({countPreparing})</span>
+               Ready / Served ({completedOrders.length})
             </button>
-
             <button
-              type="button"
-              onClick={() => setFilter('ready')}
+              onClick={() => setKitchenTabFilter('all')}
               style={{
-                backgroundColor: filter === 'ready' ? '#10B981' : '#1E293B',
-                color: '#FFFFFF',
                 border: 'none',
-                padding: '9px 18px',
-                borderRadius: '12px',
-                fontWeight: 800,
-                fontSize: '13px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
+                backgroundColor: kitchenTabFilter === 'all' ? '#334155' : 'transparent',
+                color: kitchenTabFilter === 'all' ? '#FFF' : '#94A3B8',
+                padding: '6px 14px',
+                borderRadius: '8px',
+                fontSize: '12.5px',
+                fontWeight: 500,
+                cursor: 'pointer'
               }}
             >
-              <CheckCircle2 size={15} />
-              <span>Ready for Service ({countReady})</span>
+              All Orders ({orders.length})
             </button>
           </div>
-        </div>
 
-        {/* ORDERS KITCHEN CARDS GRID */}
-        {filteredOrders.length === 0 ? (
-          <div
-            style={{
-              backgroundColor: '#151C28',
-              border: '2px dashed #2A364F',
-              borderRadius: '24px',
-              padding: '60px 20px',
-              textAlign: 'center',
-              color: '#94A3B8',
-              marginTop: '40px',
-            }}
-          >
-            <div
+          {/* Right Clock & Add Ticket Action */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#CBD5E1', fontSize: '13px', fontWeight: 500 }}>
+              <Clock size={16} color="#FF5E14" />
+              <span>{currentTime}</span>
+            </div>
+
+            <button
+              onClick={() => setIsCounterOrderModalOpen(true)}
               style={{
-                width: '64px',
-                height: '64px',
-                borderRadius: '20px',
-                backgroundColor: '#1E293B',
-                color: '#64748B',
+                backgroundColor: '#334155',
+                color: '#F8FAFC',
+                border: '1px solid #475569',
+                padding: '7px 12px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 500,
+                cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto 16px auto',
+                gap: '6px'
               }}
             >
-              <ChefHat size={36} />
-            </div>
-            <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#F8FAFC', margin: '0 0 6px 0' }}>
-              No Active Kitchen Orders
+              <Plus size={14} /> Add Counter Ticket
+            </button>
+          </div>
+
+        </div>
+      </header>
+
+      {/* Main KDS Workspace */}
+      <main style={{ padding: '20px' }}>
+        
+        {displayedOrders.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '80px 20px', color: '#64748B' }}>
+            <ChefHat size={48} color="#475569" style={{ marginBottom: '12px' }} />
+            <h3 style={{ margin: '0 0 6px', fontSize: '18px', fontWeight: 500, color: '#94A3B8' }}>
+              {kitchenTabFilter === 'active' ? 'No Active Kitchen Orders' : 'No Completed Orders in History'}
             </h3>
-            <p style={{ margin: 0, fontSize: '14px', color: '#64748B' }}>
-              All kitchen orders have been prepared and served cleanly!
+            <p style={{ margin: 0, fontSize: '13px', fontWeight: 400 }}>
+              {kitchenTabFilter === 'active' ? 'Orders sent to kitchen will appear here automatically.' : 'Completed orders will be saved here.'}
             </p>
           </div>
         ) : (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
-              gap: '20px',
-            }}
-          >
-            {filteredOrders.map((order) => {
-              const orderId = order._id || order.id;
-              const isNew = order.status === 'new' || !order.seen;
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+            {displayedOrders.map((order) => {
+              const orderIdStr = order._id || order.id || order.orderId;
+              const isReady = order.status === 'ready' || order.status === 'completed';
               const isPreparing = order.status === 'preparing';
-              const isReady = order.status === 'ready';
 
               return (
                 <div
-                  key={orderId}
+                  key={orderIdStr}
                   style={{
-                    backgroundColor: '#151C28',
-                    border: isNew
-                      ? '3px solid #EF4444'
-                      : isPreparing
-                      ? '3px solid #F59E0B'
-                      : '2.5px solid #10B981',
-                    borderRadius: '20px',
-                    padding: '20px',
-                    boxShadow: isNew
-                      ? '0 0 20px rgba(239, 68, 68, 0.25)'
-                      : '0 4px 16px rgba(0,0,0,0.3)',
-                    position: 'relative',
+                    backgroundColor: '#1E293B',
+                    borderRadius: '16px',
+                    border: isReady ? '1px solid #10B981' : isPreparing ? '1.5px solid #FF5E14' : '1px solid #334155',
+                    boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'space-between',
+                    overflow: 'hidden'
                   }}
                 >
-                  <div>
-                    {/* CARD HEADER */}
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        marginBottom: '14px',
-                        borderBottom: '1.5px solid #2A364F',
-                        paddingBottom: '12px',
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontSize: '20px', fontWeight: 900, color: '#F8FAFC' }}>
-                          {order.id || orderId}
-                        </div>
-                        <div style={{ fontSize: '13px', color: '#94A3B8', marginTop: '3px' }}>
-                          Customer: <strong style={{ color: '#F8FAFC' }}>{order.customer || 'Walk-in'}</strong>
-                        </div>
+                  {/* Order Card Header */}
+                  <div style={{
+                    backgroundColor: isReady ? 'rgba(16,185,129,0.15)' : isPreparing ? 'rgba(255,94,20,0.15)' : '#0F172A',
+                    padding: '12px 14px',
+                    borderBottom: '1px solid #334155',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '17px', fontWeight: 600, color: '#F8FAFC' }}>
+                          {order.id || order.orderId}
+                        </span>
+                        <span style={{ fontSize: '11px', backgroundColor: '#FFEDD5', color: '#C2410C', fontWeight: 600, padding: '2px 8px', borderRadius: '6px' }}>
+                           {order.table || 'Table'}
+                        </span>
                       </div>
-
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
-                        <span
-                          style={{
-                            backgroundColor: '#FF5E14',
-                            color: '#FFFFFF',
-                            fontWeight: 900,
-                            padding: '4px 12px',
-                            borderRadius: '10px',
-                            fontSize: '13px',
-                          }}
-                        >
-                          📍 {order.table || 'Table 1'}
-                        </span>
-                        <span style={{ fontSize: '11.5px', color: '#64748B', fontWeight: 600 }}>
-                          ⏱️ {order.time || 'Just now'}
-                        </span>
+                      <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px', fontWeight: 400 }}>
+                        Customer: <strong style={{ color: '#E2E8F0', fontWeight: 500 }}>{order.customer || 'Diner'}</strong> • {order.time || 'Today'}
                       </div>
                     </div>
 
-                    {/* ITEMS LIST */}
-                    <div
-                      style={{
-                        backgroundColor: '#1E293B',
-                        borderRadius: '14px',
-                        padding: '14px',
-                        marginBottom: '16px',
-                      }}
-                    >
-                      {(order.items || []).map((it, idx) => (
-                        <div
-                          key={idx}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '6px 0',
-                            borderBottom:
-                              idx < (order.items || []).length - 1 ? '1px dashed #334155' : 'none',
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <span
-                              style={{
-                                backgroundColor: '#FF5E14',
-                                color: '#FFFFFF',
-                                fontWeight: 900,
-                                fontSize: '13px',
-                                width: '28px',
-                                height: '28px',
-                                borderRadius: '8px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                              }}
-                            >
-                              {it.qty}x
-                            </span>
-                            <span style={{ fontWeight: 800, fontSize: '15px', color: '#F8FAFC' }}>
-                              {it.name}
-                            </span>
-                          </div>
-                          <span style={{ fontSize: '13px', fontWeight: 700, color: '#94A3B8' }}>
-                            ₹{(it.price || 0) * (it.qty || 1)}
-                          </span>
-                        </div>
-                      ))}
-
-                      {order.note && (
-                        <div
-                          style={{
-                            marginTop: '10px',
-                            fontSize: '12.5px',
-                            color: '#FCA5A5',
-                            fontWeight: 800,
-                            backgroundColor: '#451A1A',
-                            padding: '8px 12px',
-                            borderRadius: '8px',
-                            border: '1px solid #7F1D1D',
-                          }}
-                        >
-                          🔥 Chef Note: {order.note}
-                        </div>
-                      )}
-                    </div>
+                    <span style={{
+                      fontSize: '10.5px',
+                      fontWeight: 600,
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      backgroundColor: isReady ? '#10B981' : isPreparing ? '#FF5E14' : '#334155',
+                      color: '#FFF'
+                    }}>
+                      {isReady ? ' READY' : isPreparing ? ' COOKING' : '⏳ NEW'}
+                    </span>
                   </div>
 
-                  {/* CARD ACTION BUTTONS */}
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    {isNew && (
-                      <button
-                        type="button"
-                        onClick={() => handleMarkSeen(orderId)}
-                        style={{
-                          flex: 1,
-                          backgroundColor: '#3B82F6',
-                          color: '#FFFFFF',
-                          border: 'none',
-                          padding: '12px',
-                          borderRadius: '12px',
-                          fontWeight: 800,
-                          fontSize: '13.5px',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                        }}
-                      >
-                        <Flame size={16} />
-                        <span>Start Cooking</span>
-                      </button>
-                    )}
+                  {/* Order Items List with Per-Item Start Cooking Status */}
+                  <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ fontSize: '11.5px', fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Items to Prepare:
+                    </div>
 
-                    {isPreparing && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {order.items?.map((item, itemIdx) => {
+                        const itemKey = `${orderIdStr}_${itemIdx}`;
+                        const cookingStatus = itemCookingState[itemKey] || 'idle';
+
+                        return (
+                          <div
+                            key={itemIdx}
+                            style={{
+                              backgroundColor: cookingStatus === 'done' ? 'rgba(16,185,129,0.1)' : cookingStatus === 'cooking' ? 'rgba(255,94,20,0.1)' : '#0F172A',
+                              border: cookingStatus === 'done' ? '1px solid #10B981' : cookingStatus === 'cooking' ? '1px solid #FF5E14' : '1px solid #334155',
+                              borderRadius: '10px',
+                              padding: '8px 10px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#FF5E14' }}>
+                                {item.qty}x
+                              </span>
+                              <span style={{ fontSize: '13px', fontWeight: 500, color: cookingStatus === 'done' ? '#94A3B8' : '#F8FAFC', textDecoration: cookingStatus === 'done' ? 'line-through' : 'none' }}>
+                                {item.name}
+                              </span>
+                            </div>
+
+                            <button
+                              onClick={() => toggleItemCooking(orderIdStr, itemIdx)}
+                              style={{
+                                border: 'none',
+                                backgroundColor: cookingStatus === 'done' ? '#10B981' : cookingStatus === 'cooking' ? '#FF5E14' : '#334155',
+                                color: '#FFF',
+                                padding: '4px 10px',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                fontWeight: 500,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                            >
+                              {cookingStatus === 'done' ? (
+                                <> Done</>
+                              ) : cookingStatus === 'cooking' ? (
+                                <> Cooking...</>
+                              ) : (
+                                <><Play size={10} /> Start Cooking</>
+                              )}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {order.note && (
+                      <div style={{ backgroundColor: '#334155', padding: '8px 10px', borderRadius: '8px', fontSize: '11.5px', color: '#FCD34D', fontWeight: 400, marginTop: '4px' }}>
+                         Note: {order.note}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Order Card Footer Action */}
+                  <div style={{ padding: '12px 14px', borderTop: '1px solid #334155', backgroundColor: '#0F172A', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '11.5px', color: '#94A3B8' }}>
+                      Payment: <strong style={{ color: '#CBD5E1', fontWeight: 500 }}>{order.paymentLabel || 'Cash'}</strong>
+                    </span>
+
+                    {!isReady ? (
                       <button
-                        type="button"
-                        onClick={() => updateOrderStatus(orderId, 'ready')}
+                        onClick={() => updateOrderStatus(orderIdStr, 'ready')}
                         style={{
-                          flex: 1,
                           backgroundColor: '#10B981',
-                          color: '#FFFFFF',
+                          color: '#FFF',
                           border: 'none',
-                          padding: '12px',
-                          borderRadius: '12px',
-                          fontWeight: 800,
-                          fontSize: '13.5px',
+                          padding: '8px 16px',
+                          borderRadius: '8px',
+                          fontWeight: 600,
+                          fontSize: '12.5px',
                           cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
+                          gap: '6px'
                         }}
                       >
-                        <CheckCircle2 size={16} />
-                        <span>Mark Ready</span>
+                        ️ Ready to Serve
                       </button>
-                    )}
-
-                    {isReady && (
+                    ) : (
                       <button
-                        type="button"
-                        onClick={() => updateOrderStatus(orderId, 'served')}
+                        onClick={() => updateOrderStatus(orderIdStr, 'preparing')}
                         style={{
-                          flex: 1,
-                          backgroundColor: '#6366F1',
-                          color: '#FFFFFF',
-                          border: 'none',
-                          padding: '12px',
-                          borderRadius: '12px',
-                          fontWeight: 800,
-                          fontSize: '13.5px',
+                          backgroundColor: '#334155',
+                          color: '#94A3B8',
+                          border: '1px solid #475569',
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          fontWeight: 500,
+                          fontSize: '11.5px',
                           cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
+                          gap: '4px'
                         }}
                       >
-                        <Check size={16} />
-                        <span>Mark Served</span>
+                        <RotateCcw size={12} /> Move Back to Active
                       </button>
                     )}
                   </div>
@@ -766,165 +551,90 @@ export default function KitchenDisplayPage({ onShowToast }) {
             })}
           </div>
         )}
+
       </main>
 
-      {/* MODAL: ADD COUNTER POS ORDER DIRECTLY TO KITCHEN */}
+      {/* Quick Add Counter POS Order Modal */}
       {isCounterOrderModalOpen && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0,0,0,0.75)',
-            backdropFilter: 'blur(6px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(15,23,42,0.8)',
+          zIndex: 100,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px'
+        }}>
+          <div style={{
+            backgroundColor: '#1E293B',
+            borderRadius: '20px',
+            maxWidth: '420px',
+            width: '100%',
             padding: '20px',
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: '#151C28',
-              border: '1.5px solid #2A364F',
-              borderRadius: '24px',
-              padding: '28px',
-              width: '100%',
-              maxWidth: '480px',
-              boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '20px',
-              }}
-            >
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#FFFFFF' }}>
-                + Add Counter POS Kitchen Order
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsCounterOrderModalOpen(false)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#94A3B8',
-                  cursor: 'pointer',
-                }}
-              >
-                <X size={20} />
+            border: '1px solid #334155',
+            color: '#F8FAFC'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+              <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 600 }}>Create Counter Kitchen Ticket</h3>
+              <button onClick={() => setIsCounterOrderModalOpen(false)} style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer' }}>
+                <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleAddCounterOrder} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <form onSubmit={handleAddCounterOrder} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#94A3B8', marginBottom: '6px' }}>
-                  Table / Counter Name
-                </label>
+                <label style={{ display: 'block', fontSize: '12px', color: '#94A3B8', marginBottom: '4px' }}>Table / Order Type</label>
                 <input
                   type="text"
                   value={counterForm.table}
                   onChange={(e) => setCounterForm({ ...counterForm, table: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    borderRadius: '10px',
-                    backgroundColor: '#1E293B',
-                    border: '1px solid #334155',
-                    color: '#F8FAFC',
-                    fontSize: '14px',
-                  }}
-                  required
+                  style={{ width: '100%', padding: '9px 11px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#0F172A', color: '#FFF', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#94A3B8', marginBottom: '6px' }}>
-                  Customer Name
-                </label>
+                <label style={{ display: 'block', fontSize: '12px', color: '#94A3B8', marginBottom: '4px' }}>Customer Name</label>
                 <input
                   type="text"
                   value={counterForm.customer}
                   onChange={(e) => setCounterForm({ ...counterForm, customer: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    borderRadius: '10px',
-                    backgroundColor: '#1E293B',
-                    border: '1px solid #334155',
-                    color: '#F8FAFC',
-                    fontSize: '14px',
-                  }}
-                  required
+                  style={{ width: '100%', padding: '9px 11px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#0F172A', color: '#FFF', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#94A3B8', marginBottom: '6px' }}>
-                  Ordered Items (e.g. Paneer Butter Masala x1, Garlic Naan x2)
-                </label>
-                <textarea
-                  rows={3}
+                <label style={{ display: 'block', fontSize: '12px', color: '#94A3B8', marginBottom: '4px' }}>Items (format: Dish xQty, Dish xQty)</label>
+                <input
+                  type="text"
+                  required
                   value={counterForm.items}
                   onChange={(e) => setCounterForm({ ...counterForm, items: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    borderRadius: '10px',
-                    backgroundColor: '#1E293B',
-                    border: '1px solid #334155',
-                    color: '#F8FAFC',
-                    fontSize: '14px',
-                  }}
-                  required
+                  style={{ width: '100%', padding: '9px 11px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#0F172A', color: '#FFF', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#94A3B8', marginBottom: '6px' }}>
-                  Special Cooking Note
-                </label>
+                <label style={{ display: 'block', fontSize: '12px', color: '#94A3B8', marginBottom: '4px' }}>Chef Instruction Note</label>
                 <input
                   type="text"
                   value={counterForm.note}
                   onChange={(e) => setCounterForm({ ...counterForm, note: e.target.value })}
-                  placeholder="e.g. Extra spicy, less oil"
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    borderRadius: '10px',
-                    backgroundColor: '#1E293B',
-                    border: '1px solid #334155',
-                    color: '#F8FAFC',
-                    fontSize: '14px',
-                  }}
+                  style={{ width: '100%', padding: '9px 11px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#0F172A', color: '#FFF', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
 
               <button
                 type="submit"
-                style={{
-                  marginTop: '10px',
-                  backgroundColor: '#FF5E14',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  padding: '14px',
-                  borderRadius: '12px',
-                  fontWeight: 900,
-                  fontSize: '15px',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 14px rgba(255, 94, 20, 0.4)',
-                }}
+                style={{ backgroundColor: '#FF5E14', color: '#FFF', border: 'none', padding: '11px', borderRadius: '10px', fontWeight: 600, fontSize: '14px', cursor: 'pointer', marginTop: '6px' }}
               >
-                🚀 Send Order to Kitchen
+                Send Ticket to Kitchen Display
               </button>
             </form>
           </div>
         </div>
       )}
+
     </div>
   );
 }

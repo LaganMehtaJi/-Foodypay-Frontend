@@ -17,6 +17,7 @@ import tableRoutes from './src/routes/tableRoutes.js';
 import settingRoutes from './src/routes/settingRoutes.js';
 import reviewRoutes from './src/routes/reviewRoutes.js';
 import paymentRoutes from './src/routes/paymentRoutes.js';
+import notificationRoutes from './src/routes/notificationRoutes.js';
 import { notFound, errorHandler } from './src/middlewares/errorMiddleware.js';
 
 // Load environment variables
@@ -117,6 +118,7 @@ app.use('/api/tables', tableRoutes);
 app.use('/api/settings', settingRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Error Handling Middlewares
 app.use(notFound);

@@ -40,7 +40,7 @@ class ErrorBoundary extends React.Component {
             fontSize: '3rem',
             marginBottom: '16px'
           }}>
-            ⚡
+            
           </div>
           <h1 style={{ fontSize: '1.8rem', fontWeight: 800, margin: '0 0 10px', color: '#FF5E14' }}>
             FoodyPay Session Refresh
@@ -81,7 +81,7 @@ class ErrorBoundary extends React.Component {
               boxShadow: '0 10px 25px rgba(255, 94, 20, 0.4)'
             }}
           >
-            🔄 Reset & Reload Dashboard
+             Reset & Reload Dashboard
           </button>
         </div>
       );

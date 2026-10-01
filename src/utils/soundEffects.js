@@ -285,19 +285,30 @@ export function playMilestoneCelebration() {
   });
 }
 
-// 8. Continuous Alarm Bell Loop (Rings repeatedly until order is SEEN or PREPARING)
+// 8. Continuous Alarm Bell Loop (Rings until order is SEEN or PREPARING - max 4 rings limit)
 let alarmTimer = null;
+let alarmRingCount = 0;
 
 export function startContinuousAlarm() {
-  if (alarmTimer) return; // already ringing
+  if (alarmTimer) return; // already active
+  alarmRingCount = 0;
   try {
     playCallWaiter();
+    alarmRingCount = 1;
   } catch (e) {}
+
   alarmTimer = setInterval(() => {
     try {
+      alarmRingCount++;
       playCallWaiter();
-    } catch (e) {}
-  }, 1200);
+      // Auto-stop after 4 rings to prevent infinite loop ringing
+      if (alarmRingCount >= 4) {
+        stopContinuousAlarm();
+      }
+    } catch (e) {
+      stopContinuousAlarm();
+    }
+  }, 1500);
 }
 
 export function stopContinuousAlarm() {
@@ -305,6 +316,7 @@ export function stopContinuousAlarm() {
     clearInterval(alarmTimer);
     alarmTimer = null;
   }
+  alarmRingCount = 0;
 }
 
 

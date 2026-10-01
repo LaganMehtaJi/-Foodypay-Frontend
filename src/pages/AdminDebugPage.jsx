@@ -1,215 +1,404 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
-  Store,
   ShieldCheck,
-  Search,
-  Plus,
-  Edit3,
-  Trash2,
-  ExternalLink,
-  ShoppingBag,
-  CreditCard,
-  Package,
-  Layers,
   Users,
+  DollarSign,
+  Package,
   Utensils,
-  CheckCircle2,
-  XCircle,
+  Store,
+  Mail,
+  Phone,
+  Lock,
+  Unlock,
+  Trash2,
+  Edit3,
+  Search,
   RefreshCw,
   SlidersHorizontal,
   ChevronRight,
-  TrendingUp,
-  Clock,
+  ChevronDown,
   Check,
-  Mail,
-  UserX,
+  X,
+  Eye,
+  EyeOff,
   Crown,
   LogIn,
   LogOut,
-  QrCode,
+  AlertTriangle,
+  TrendingUp,
   Sparkles,
-  Activity,
-  Database,
+  Briefcase,
+  CreditCard,
+  CheckCircle2,
+  XCircle,
+  Settings,
+  ShieldAlert,
   Building2,
-  Phone,
-  ShieldAlert
+  Activity,
+  Plus,
 } from 'lucide-react';
-import { fetchRegisteredUsersApi, deleteUserApi, deleteUserByEmailApi } from '../utils/api';
-
-const INITIAL_BUSINESSES = [
-  {
-    id: 'biz_1',
-    foodypayId: 'FP-985569',
-    name: 'Lagan Da Dhaba',
-    slug: 'lagan-da-dhaba',
-    phone: '+91 98123 45678',
-    address: 'Connaught Place, New Delhi',
-    status: 'open',
-    categoriesCount: 6,
-    productsCount: 15,
-    tablesCount: 6,
-    totalSales: 48500,
-    totalOrders: 142,
-    gstPercent: 5,
-    upiId: 'lagandhaba@icici',
-    logoUrl: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=200&auto=format&fit=crop&q=80',
-    createdAt: '12 Jan 2026',
-  },
-];
+import {
+  fetchRegisteredUsersApi,
+  deleteUserApi,
+  deleteUserByEmailApi,
+  toggleUserLockApi,
+  updateUserSubscriptionApi,
+  fetchPublicOrdersApi,
+} from '../utils/api';
 
 export default function AdminDebugPage({ onShowToast }) {
   const navigate = useNavigate();
 
-  // Active Admin View Tab: 'users' | 'businesses'
-  const [activeTab, setActiveTab] = useState('users');
-
-  // Registered Users State (Strictly Real Data, no fake mock users)
-  const [registeredUsers, setRegisteredUsers] = useState(() => {
-    try {
-      const saved = localStorage.getItem('foodypay_registered_users');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (e) {}
-
-    // Check if there is an active logged-in user in session
-    try {
-      const activeUserStr = localStorage.getItem('foodypay_user');
-      if (activeUserStr) {
-        const u = JSON.parse(activeUserStr);
-        if (u.email) {
-          return [
-            {
-              _id: u._id || 'user_' + Date.now(),
-              email: u.email,
-              name: u.name || 'Merchant Owner',
-              businessName: u.businessName || 'Food Business',
-              contactNo: u.contactNo || '',
-              foodypayId: u.foodypayId || 'FP-985569',
-              authProvider: 'local',
-              isLoggedIn: true,
-              hasPurchased: true,
-              planName: 'Pro Plan',
-              createdAt: new Date().toISOString(),
-            },
-          ];
-        }
-      }
-    } catch (err) {}
-
-    return [];
+  // Admin Security Password Gate (Master Password: 12345678)
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => {
+    return sessionStorage.getItem('foodypay_admin_authed') === 'true';
   });
+  const [adminPasswordInput, setAdminPasswordInput] = useState('');
+  const [showAdminPassword, setShowAdminPassword] = useState(false);
+  const [adminAuthError, setAdminAuthError] = useState('');
 
+  // Main Admin Navigation Tabs: 'merchants' | 'customers' | 'orders' | 'subscription_settings'
+  const [activeTab, setActiveTab] = useState('merchants');
 
-  // Business Outlets Registry
-  const [businesses, setBusinesses] = useState(() => {
-    try {
-      const saved = localStorage.getItem('foodypay_admin_businesses');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch (e) {}
-    return INITIAL_BUSINESSES;
-  });
+  // Real Registered Users & Merchants Data
+  const [registeredUsers, setRegisteredUsers] = useState([]);
+  const [globalOrders, setGlobalOrders] = useState([]);
+  const [loadingData, setLoadingData] = useState(true);
 
+  // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'logged_in' | 'purchased' | 'free'
-  const [bizStatusFilter, setBizStatusFilter] = useState('all'); // 'all' | 'open' | 'closed'
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'active' | 'locked' | 'paid'
 
-  // Modal State for Adding / Editing Business
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingBiz, setEditingBiz] = useState(null);
-  const [bizForm, setBizForm] = useState({
-    name: '',
-    foodypayId: '',
-    phone: '',
-    address: '',
-    categoriesCount: 6,
-    productsCount: 15,
-    tablesCount: 6,
-    gstPercent: 5,
-    upiId: '',
-    logoUrl: '',
-    status: 'open',
+  // Account Lock Modal State
+  const [lockModalUser, setLockModalUser] = useState(null);
+  const [lockReasonInput, setLockReasonInput] = useState('Subscription Payment Required');
+
+  // Subscription Pricing Modal State
+  const [subModalUser, setSubModalUser] = useState(null);
+  const [subForm, setSubForm] = useState({
+    price: 499,
+    plan: 'Pro Business Plan',
+    status: 'Active',
+    expiry: '',
   });
 
-  // Modal State for Adding New User Account
-  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
-  const [userForm, setUserForm] = useState({
-    name: '',
-    email: '',
-    businessName: '',
-    contactNo: '',
-    hasPurchased: false,
-  });
+  // Delete Confirmation Modal State
+  const [deleteModalUser, setDeleteModalUser] = useState(null);
+  const [confirmEmailInput, setConfirmEmailInput] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  // Fetch Users from Backend API on mount
-  useEffect(() => {
-    const loadBackendUsers = async () => {
-      try {
-        const response = await fetchRegisteredUsersApi();
-        if (response && response.success && Array.isArray(response.data)) {
-          const apiUsers = response.data.map((u) => ({
-            _id: u._id,
-            email: u.email,
-            name: u.name || 'Merchant',
-            businessName: u.businessName || 'Food Business',
-            contactNo: u.contactNo || '',
-            foodypayId: u.foodypayId || 'FP-' + Math.floor(100000 + Math.random() * 900000),
-            authProvider: u.authProvider || 'local',
-            isLoggedIn: true,
-            hasPurchased: true,
-            planName: 'Pro Plan',
-            createdAt: u.createdAt || new Date().toISOString(),
-          }));
-
-          setRegisteredUsers((prev) => {
-            const combinedMap = new Map();
-            prev.forEach((item) => combinedMap.set(item.email.toLowerCase(), item));
-            apiUsers.forEach((item) => combinedMap.set(item.email.toLowerCase(), item));
-            const merged = Array.from(combinedMap.values());
-            localStorage.setItem('foodypay_registered_users', JSON.stringify(merged));
-            return merged;
-          });
-        }
-      } catch (err) {
-        // Fallback to localStorage pool
-      }
+  // Global Platform Subscription Settings State
+  const [globalSubSettings, setGlobalSubSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_global_subscription_settings');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {
+      platformName: 'FoodyPay Enterprise System',
+      defaultMonthlyPrice: 499,
+      defaultAnnualPrice: 4999,
+      freeTrialDays: 14,
+      autoLockExpiredAccounts: true,
+      currency: 'INR (₹)',
+      supportEmail: 'billing@foodypay.in',
     };
-    loadBackendUsers();
-  }, []);
+  });
 
-  // Save registeredUsers to localStorage
-  useEffect(() => {
+  // Save Global Subscription Settings to localStorage
+  const handleSaveGlobalSettings = (e) => {
+    e.preventDefault();
     try {
-      localStorage.setItem('foodypay_registered_users', JSON.stringify(registeredUsers));
+      localStorage.setItem('foodypay_global_subscription_settings', JSON.stringify(globalSubSettings));
+      if (onShowToast) onShowToast('️ Global Platform Subscription Settings Saved!');
     } catch (e) {}
-  }, [registeredUsers]);
+  };
 
-  // Save businesses to localStorage
-  useEffect(() => {
+  // Fetch Live Real Data from Backend Database
+  const loadLiveAdminData = async () => {
+    setLoadingData(true);
     try {
-      localStorage.setItem('foodypay_admin_businesses', JSON.stringify(businesses));
-    } catch (e) {}
-  }, [businesses]);
+      const usersRes = await fetchRegisteredUsersApi();
+      if (usersRes && usersRes.success && Array.isArray(usersRes.data)) {
+        const normalized = usersRes.data.map((u) => ({
+          _id: u._id,
+          email: u.email || 'merchant@foodypay.in',
+          name: u.name || 'Merchant Owner',
+          businessName: u.businessName || u.name || 'Food Outlet',
+          contactNo: u.contactNo || '+91 98000 00000',
+          foodypayId: u.foodypayId || 'FP-' + Math.floor(100000 + Math.random() * 900000),
+          isLocked: Boolean(u.isLocked),
+          lockReason: u.lockReason || 'Subscription Payment Required',
+          subscriptionPrice: u.subscriptionPrice !== undefined ? Number(u.subscriptionPrice) : globalSubSettings.defaultMonthlyPrice,
+          subscriptionStatus: u.subscriptionStatus || (u.isLocked ? 'Locked' : 'Active'),
+          subscriptionPlan: u.subscriptionPlan || 'Pro Business Plan',
+          subscriptionExpiry: u.subscriptionExpiry || '',
+          totalSales: Number(u.totalSales) || 0,
+          totalOrders: Number(u.totalOrders) || 0,
+          dishCount: Number(u.dishCount) || (u.dishes ? u.dishes.length : 0),
+          dishes: u.dishes || [],
+          createdAt: u.createdAt || new Date().toISOString(),
+        }));
+        setRegisteredUsers(normalized);
+      }
 
-  // Aggregate Metrics & Counts
+      // Fetch sample/live public orders feed
+      try {
+        const ordersRes = await fetchPublicOrdersApi();
+        if (Array.isArray(ordersRes)) {
+          setGlobalOrders(ordersRes);
+        }
+      } catch (ordErr) {}
+
+      if (onShowToast) onShowToast(' Live Database Records Reloaded Cleanly!');
+    } catch (err) {
+      console.warn('Backend load error:', err.message);
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isAdminAuthenticated) {
+      loadLiveAdminData();
+    }
+  }, [isAdminAuthenticated]);
+
+  // Handle Admin Authentication Gate Login
+  const handleAdminLoginSubmit = (e) => {
+    e.preventDefault();
+    if (adminPasswordInput === '12345678') {
+      sessionStorage.setItem('foodypay_admin_authed', 'true');
+      setIsAdminAuthenticated(true);
+      setAdminAuthError('');
+      if (onShowToast) onShowToast(' Master Admin Access Granted!');
+    } else {
+      setAdminAuthError('Incorrect Password! Master Admin password is 12345678.');
+    }
+  };
+
+  const handleAdminLogout = () => {
+    sessionStorage.removeItem('foodypay_admin_authed');
+    setIsAdminAuthenticated(false);
+    setAdminPasswordInput('');
+    if (onShowToast) onShowToast(' Logged out of Master Admin Panel');
+  };
+
+  // 1. Account Lock / Unlock Handler
+  const handleExecuteAccountLockToggle = async () => {
+    if (!lockModalUser) return;
+    const targetUserId = lockModalUser._id;
+    const nextLockedState = !lockModalUser.isLocked;
+
+    try {
+      if (targetUserId && !targetUserId.startsWith('user_')) {
+        await toggleUserLockApi(targetUserId, nextLockedState, lockReasonInput);
+      }
+    } catch (err) {
+      console.warn('Lock API note:', err.message);
+    }
+
+    setRegisteredUsers((prev) =>
+      prev.map((u) => {
+        if (u._id === targetUserId) {
+          return {
+            ...u,
+            isLocked: nextLockedState,
+            lockReason: lockReasonInput,
+            subscriptionStatus: nextLockedState ? 'Locked' : 'Active',
+          };
+        }
+        return u;
+      })
+    );
+
+    if (onShowToast) {
+      onShowToast(
+        nextLockedState
+          ? ` Account ${lockModalUser.email} is now LOCKED (Subscription Required)`
+          : ` Account ${lockModalUser.email} has been UNLOCKED & Activated!`
+      );
+    }
+
+    setLockModalUser(null);
+  };
+
+  // 2. Subscription Pricing Update Handler
+  const handleSaveUserSubscription = async (e) => {
+    e.preventDefault();
+    if (!subModalUser) return;
+    const targetUserId = subModalUser._id;
+
+    try {
+      if (targetUserId && !targetUserId.startsWith('user_')) {
+        await updateUserSubscriptionApi(targetUserId, subForm);
+      }
+    } catch (err) {
+      console.warn('Subscription API note:', err.message);
+    }
+
+    setRegisteredUsers((prev) =>
+      prev.map((u) => {
+        if (u._id === targetUserId) {
+          return {
+            ...u,
+            subscriptionPrice: Number(subForm.price) || 0,
+            subscriptionPlan: subForm.plan,
+            subscriptionStatus: subForm.status,
+            subscriptionExpiry: subForm.expiry,
+            isLocked: subForm.status === 'Locked' || subForm.status === 'Expired',
+          };
+        }
+        return u;
+      })
+    );
+
+    if (onShowToast) {
+      onShowToast(` Subscription pricing for ${subModalUser.email} updated to ₹${subForm.price}/mo!`);
+    }
+
+    setSubModalUser(null);
+  };
+
+  // 3. Delete Account Handler with Confirmation
+  const handleExecuteDeleteAccount = async () => {
+    if (!deleteModalUser) return;
+
+    if (confirmEmailInput.trim().toLowerCase() !== deleteModalUser.email.trim().toLowerCase()) {
+      alert(`Email confirmation does not match! Please type "${deleteModalUser.email}" to confirm deletion.`);
+      return;
+    }
+
+    setIsDeleting(true);
+    const targetUserId = deleteModalUser._id;
+    const targetEmail = deleteModalUser.email;
+
+    try {
+      if (targetUserId && !targetUserId.startsWith('user_')) {
+        await deleteUserApi(targetUserId);
+      } else {
+        await deleteUserByEmailApi(targetEmail);
+      }
+    } catch (err) {
+      console.warn('Delete API note:', err.message);
+    }
+
+    setRegisteredUsers((prev) => prev.filter((u) => u._id !== targetUserId && u.email !== targetEmail));
+
+    if (onShowToast) {
+      onShowToast(`️ User account (${targetEmail}) deleted permanently from database!`);
+    }
+
+    setIsDeleting(false);
+    setDeleteModalUser(null);
+    setConfirmEmailInput('');
+  };
+
+  // Context Switch to Merchant POS Dashboard
+  const handleLaunchMerchantDashboard = (user) => {
+    try {
+      localStorage.setItem('foodypay_user', JSON.stringify(user));
+    } catch (e) {}
+    if (onShowToast) onShowToast(`Switched active context to ${user.businessName || user.name}`);
+    navigate('/dashboard');
+  };
+
+  // Password Gate Screen
+  if (!isAdminAuthenticated) {
+    return (
+      <div style={{ minHeight: '100vh', backgroundColor: '#0B0F19', color: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui, -apple-system, sans-serif', padding: '20px' }}>
+        <div style={{ width: '100%', maxWidth: '440px', backgroundColor: '#111827', border: '1px solid #1F2937', borderRadius: '24px', padding: '40px 32px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.7)', textAlign: 'center' }}>
+          
+          <div style={{ width: '68px', height: '68px', borderRadius: '22px', backgroundColor: '#FF5E14', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', boxShadow: '0 10px 25px rgba(255,94,20,0.45)' }}>
+            <ShieldCheck size={38} />
+          </div>
+
+          <h2 style={{ fontSize: '24px', fontWeight: 900, color: '#FFFFFF', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
+            Master Admin Security Access
+          </h2>
+          <p style={{ fontSize: '13.5px', color: '#9CA3AF', margin: '0 0 24px', lineHeight: 1.5 }}>
+            Enter Master Admin Password (<strong style={{ color: '#FF5E14' }}>12345678</strong>) to access merchant accounts, subscriptions, &amp; database controls.
+          </p>
+
+          {adminAuthError && (
+            <div style={{ backgroundColor: '#7F1D1D', border: '1px solid #991B1B', color: '#FECACA', padding: '12px 16px', borderRadius: '12px', fontSize: '13px', fontWeight: 700, marginBottom: '20px' }}>
+              ️ {adminAuthError}
+            </div>
+          )}
+
+          <form onSubmit={handleAdminLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ position: 'relative' }}>
+              <input
+                type={showAdminPassword ? 'text' : 'password'}
+                value={adminPasswordInput}
+                onChange={(e) => setAdminPasswordInput(e.target.value)}
+                placeholder="Enter Password (12345678)"
+                style={{
+                  width: '100%',
+                  padding: '14px 44px 14px 16px',
+                  borderRadius: '12px',
+                  border: '1.5px solid #374151',
+                  backgroundColor: '#030712',
+                  color: '#FFFFFF',
+                  fontSize: '16px',
+                  fontWeight: 700,
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                }}
+                autoFocus
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowAdminPassword(!showAdminPassword)}
+                style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer' }}
+              >
+                {showAdminPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+              </button>
+            </div>
+
+            <button
+              type="submit"
+              style={{
+                width: '100%',
+                padding: '14px',
+                borderRadius: '12px',
+                backgroundColor: '#FF5E14',
+                color: '#FFFFFF',
+                border: 'none',
+                fontWeight: 900,
+                fontSize: '15.5px',
+                cursor: 'pointer',
+                boxShadow: '0 6px 20px rgba(255,94,20,0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+              }}
+            >
+              <LogIn size={20} />
+              <span>Unlock Admin Console</span>
+            </button>
+          </form>
+
+          <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid #1F2937', fontSize: '12px', color: '#6B7280' }}>
+             Protected by FoodyPay Master Admin Security Engine
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Calculated Metrics
   const totalRegisteredCount = registeredUsers.length;
-  const storesCreatedCount = registeredUsers.filter((u) => u.businessName && u.businessName.trim() !== '').length;
-  const loggedInUsersCount = registeredUsers.filter((u) => u.isLoggedIn).length;
-  const purchasedUsersCount = registeredUsers.filter((u) => u.hasPurchased).length;
-  const freeUsersCount = registeredUsers.filter((u) => !u.hasPurchased).length;
+  const lockedCount = registeredUsers.filter((u) => u.isLocked || u.subscriptionStatus === 'Locked').length;
+  const activeCount = registeredUsers.filter((u) => !u.isLocked && u.subscriptionStatus === 'Active').length;
+  const totalPlatformSales = registeredUsers.reduce((s, u) => s + (Number(u.totalSales) || 0), 0);
+  const totalPlatformOrders = registeredUsers.reduce((s, u) => s + (Number(u.totalOrders) || 0), 0);
+  const totalPlatformDishes = registeredUsers.reduce((s, u) => s + (Number(u.dishCount) || 0), 0);
+  const totalMRR = registeredUsers.filter((u) => !u.isLocked).reduce((s, u) => s + (Number(u.subscriptionPrice) || globalSubSettings.defaultMonthlyPrice), 0);
 
-  const totalSalesAll = businesses.reduce((s, b) => s + (Number(b.totalSales) || 0), 0);
-  const totalOrdersAll = businesses.reduce((s, b) => s + (Number(b.totalOrders) || 0), 0);
-  const totalProductsAll = businesses.reduce((s, b) => s + (Number(b.productsCount) || 0), 0);
-  const totalTablesAll = businesses.reduce((s, b) => s + (Number(b.tablesCount) || 0), 0);
-  const activeBizCount = businesses.filter((b) => b.status === 'open').length;
-
-  // Filtered User List
+  // Filtered Users List
   const filteredUsers = registeredUsers.filter((u) => {
     const q = searchQuery.toLowerCase();
     const matchesSearch =
@@ -221,442 +410,227 @@ export default function AdminDebugPage({ onShowToast }) {
 
     if (!matchesSearch) return false;
 
-    if (statusFilter === 'stores_created') return u.businessName && u.businessName.trim() !== '';
-    if (statusFilter === 'logged_in') return u.isLoggedIn;
-    if (statusFilter === 'purchased') return u.hasPurchased;
-    if (statusFilter === 'free') return !u.hasPurchased;
+    if (statusFilter === 'active') return !u.isLocked;
+    if (statusFilter === 'locked') return u.isLocked;
     return true;
   });
 
-
-  // Filtered Businesses List
-  const filteredBusinesses = businesses.filter((b) => {
-    const q = searchQuery.toLowerCase();
-    const matchesSearch =
-      (b.name || '').toLowerCase().includes(q) ||
-      (b.foodypayId || '').toLowerCase().includes(q) ||
-      (b.address || '').toLowerCase().includes(q) ||
-      (b.phone || '').toLowerCase().includes(q);
-    const matchesStatus = bizStatusFilter === 'all' || b.status === bizStatusFilter;
-    return matchesSearch && matchesStatus;
+  // Extract real customers from users/orders
+  const aggregateCustomers = [];
+  registeredUsers.forEach((u) => {
+    if (u.dishes && u.dishes.length > 0) {
+      aggregateCustomers.push({
+        name: u.name || 'Diner',
+        phone: u.contactNo || '+91 98123 45678',
+        email: u.email,
+        merchant: u.businessName || u.name,
+        ordersCount: u.totalOrders || 1,
+        totalSpend: u.totalSales || 450,
+      });
+    }
   });
 
-  // DELETE USER ACCOUNT FROM DATABASE & SYSTEM REGISTRY
-  const handleDeleteUserAccount = async (userId, userEmail, userName) => {
-    const confirmMsg = `⚠️ ARE YOU SURE YOU WANT TO DELETE ACCOUNT (${userEmail}) FROM DATABASE?\n\n- User will be removed from MongoDB database.\n- User will be logged out and CANNOT log in.\n- Email address will be freed up for fresh registration.`;
-    
-    if (!window.confirm(confirmMsg)) return;
-
-    // Try deleting from backend server API
-    try {
-      if (userId && !userId.startsWith('user_')) {
-        await deleteUserApi(userId);
-      } else {
-        await deleteUserByEmailApi(userEmail);
-      }
-    } catch (e) {
-      console.warn('Backend API delete note:', e.message);
-    }
-
-    // Remove from frontend state & localStorage
-    const updatedUsers = registeredUsers.filter((u) => u.email.toLowerCase() !== userEmail.toLowerCase() && u._id !== userId);
-    setRegisteredUsers(updatedUsers);
-    localStorage.setItem('foodypay_registered_users', JSON.stringify(updatedUsers));
-
-    // Clear session if current active logged-in user was deleted
-    try {
-      const currentUserStr = localStorage.getItem('foodypay_user');
-      if (currentUserStr) {
-        const currentUser = JSON.parse(currentUserStr);
-        if (currentUser.email && currentUser.email.toLowerCase() === userEmail.toLowerCase()) {
-          localStorage.removeItem('foodypay_token');
-          localStorage.removeItem('foodypay_user');
-        }
-      }
-    } catch (err) {}
-
-    if (onShowToast) {
-      onShowToast(`🗑️ Account (${userEmail}) deleted from Database! Email is now free for re-registration.`);
-    }
-  };
-
-  // Toggle Purchase Status (Free vs Paid Plan)
-  const handleTogglePurchaseStatus = (userId, currentStatus) => {
-    const nextStatus = !currentStatus;
-    setRegisteredUsers((prev) =>
-      prev.map((u) => {
-        if (u._id === userId) {
-          return {
-            ...u,
-            hasPurchased: nextStatus,
-            planName: nextStatus ? 'Pro Plan (₹499/mo)' : 'Free Plan',
-          };
-        }
-        return u;
-      })
-    );
-
-    if (onShowToast) {
-      onShowToast(`Updated purchase status to ${nextStatus ? 'PRO PAID' : 'FREE PLAN'}`);
-    }
-  };
-
-  // Create New User Account Manually
-  const handleCreateUserSubmit = (e) => {
-    e.preventDefault();
-    if (!userForm.email.trim() || !userForm.email.includes('@')) {
-      alert('Please enter a valid email address.');
-      return;
-    }
-
-    const emailLower = userForm.email.trim().toLowerCase();
-    const existing = registeredUsers.find((u) => u.email.toLowerCase() === emailLower);
-    if (existing) {
-      alert(`An account with email ${emailLower} already exists! Delete it first if you want to re-register.`);
-      return;
-    }
-
-    const newUser = {
-      _id: `user_${Date.now()}`,
-      email: emailLower,
-      name: userForm.name.trim() || 'Merchant Owner',
-      businessName: userForm.businessName.trim() || 'Food Outlet',
-      contactNo: userForm.contactNo.trim() || '+91 98000 00000',
-      foodypayId: `FP-${Math.floor(100000 + Math.random() * 900000)}`,
-      authProvider: 'local',
-      isLoggedIn: true,
-      hasPurchased: userForm.hasPurchased,
-      planName: userForm.hasPurchased ? 'Pro Plan (₹499/mo)' : 'Free Plan',
-      createdAt: new Date().toISOString(),
-    };
-
-    setRegisteredUsers((prev) => [newUser, ...prev]);
-    setIsUserModalOpen(false);
-    setUserForm({ name: '', email: '', businessName: '', contactNo: '', hasPurchased: false });
-
-    if (onShowToast) {
-      onShowToast(`✅ Account registered for ${newUser.email}!`);
-    }
-  };
-
-  // Business Handlers
-  const handleToggleBizStatus = (bizId) => {
-    setBusinesses((prev) =>
-      prev.map((b) => {
-        if (b.id === bizId) {
-          const nextStatus = b.status === 'open' ? 'closed' : 'open';
-          if (onShowToast) onShowToast(`${b.name} status updated to ${nextStatus.toUpperCase()}`);
-          return { ...b, status: nextStatus };
-        }
-        return b;
-      })
-    );
-  };
-
-  const handleOpenAddModal = () => {
-    setEditingBiz(null);
-    const nextFpId = `FP-${Math.floor(100000 + Math.random() * 900000)}`;
-    setBizForm({
-      name: '',
-      foodypayId: nextFpId,
-      phone: '+91 98000 00000',
-      address: 'New Delhi, India',
-      categoriesCount: 6,
-      productsCount: 15,
-      tablesCount: 6,
-      gstPercent: 5,
-      upiId: 'merchant@icici',
-      logoUrl: '',
-      status: 'open',
-    });
-    setIsModalOpen(true);
-  };
-
-  const handleOpenEditModal = (biz) => {
-    setEditingBiz(biz);
-    setBizForm({
-      name: biz.name || '',
-      foodypayId: biz.foodypayId || '',
-      phone: biz.phone || '',
-      address: biz.address || '',
-      categoriesCount: biz.categoriesCount || 6,
-      productsCount: biz.productsCount || 15,
-      tablesCount: biz.tablesCount || 6,
-      gstPercent: biz.gstPercent || 5,
-      upiId: biz.upiId || '',
-      logoUrl: biz.logoUrl || '',
-      status: biz.status || 'open',
-    });
-    setIsModalOpen(true);
-  };
-
-  const handleDeleteBiz = (bizId, bizName) => {
-    if (!window.confirm(`Are you sure you want to delete ${bizName} from Admin Panel?`)) return;
-    setBusinesses((prev) => prev.filter((b) => b.id !== bizId));
-    if (onShowToast) onShowToast(`🗑️ Deleted ${bizName} from system registry.`);
-  };
-
-  const handleSaveBizSubmit = (e) => {
-    e.preventDefault();
-    if (!bizForm.name.trim() || !bizForm.foodypayId.trim()) return;
-
-    const slug = bizForm.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-
-    const bizData = {
-      name: bizForm.name.trim(),
-      foodypayId: bizForm.foodypayId.trim().toUpperCase(),
-      slug,
-      phone: bizForm.phone.trim(),
-      address: bizForm.address.trim(),
-      categoriesCount: Number(bizForm.categoriesCount) || 6,
-      productsCount: Number(bizForm.productsCount) || 15,
-      tablesCount: Number(bizForm.tablesCount) || 6,
-      gstPercent: Number(bizForm.gstPercent) || 5,
-      upiId: bizForm.upiId.trim() || 'merchant@icici',
-      logoUrl: bizForm.logoUrl.trim(),
-      status: bizForm.status || 'open',
-    };
-
-    if (editingBiz) {
-      setBusinesses((prev) =>
-        prev.map((b) => (b.id === editingBiz.id ? { ...b, ...bizData } : b))
-      );
-      if (onShowToast) onShowToast(`Updated ${bizData.name} details!`);
-    } else {
-      const newBiz = {
-        ...bizData,
-        id: `biz_${Date.now()}`,
-        totalSales: 0,
-        totalOrders: 0,
-        createdAt: 'Just now',
-      };
-      setBusinesses((prev) => [newBiz, ...prev]);
-      if (onShowToast) onShowToast(`Registered ${newBiz.name} (${newBiz.foodypayId})!`);
-    }
-
-    setIsModalOpen(false);
-  };
-
-  const handleLaunchDashboardForBiz = (biz) => {
-    try {
-      const u = {
-        name: biz.name,
-        businessName: biz.name,
-        foodypayId: biz.foodypayId,
-        contactNo: biz.phone,
-        address: biz.address,
-        gstPercent: biz.gstPercent,
-        upiId: biz.upiId,
-      };
-      localStorage.setItem('foodypay_user', JSON.stringify(u));
-    } catch (e) {}
-
-    if (onShowToast) onShowToast(`Switched active context to ${biz.name} (${biz.foodypayId})`);
-    navigate('/dashboard');
-  };
-
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#0F172A', color: '#F8FAFC', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#090D16', color: '#F1F5F9', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       
-      {/* Top Admin Header Bar */}
-      <header style={{ backgroundColor: '#1E293B', borderBottom: '1px solid #334155', padding: '16px 32px', position: 'sticky', top: 0, zIndex: 40 }}>
-        <div style={{ maxWidth: '1280px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+      {/* HEADER BAR */}
+      <header style={{ backgroundColor: '#0F172A', borderBottom: '1px solid #1E293B', padding: '16px 32px', position: 'sticky', top: 0, zIndex: 40 }}>
+        <div style={{ maxWidth: '1440px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+          
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <div style={{ width: '44px', height: '44px', borderRadius: '12px', backgroundColor: '#FF5E14', color: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(255,94,20,0.4)' }}>
-              <ShieldCheck size={26} />
+            <div style={{ width: '46px', height: '46px', borderRadius: '14px', backgroundColor: '#FF5E14', color: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 6px 18px rgba(255,94,20,0.45)' }}>
+              <ShieldCheck size={28} />
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 900, color: '#FFF', letterSpacing: '-0.02em' }}>
-                  FoodyPay Master Admin Control Panel
+                <h1 style={{ margin: 0, fontSize: '21px', fontWeight: 900, color: '#FFF', letterSpacing: '-0.02em' }}>
+                  FoodyPay Platform Admin Console
                 </h1>
-                <span style={{ fontSize: '11px', backgroundColor: '#FF5E14', color: '#FFF', fontWeight: 900, padding: '2px 8px', borderRadius: '12px' }}>
-                  /Admin
+                <span style={{ fontSize: '11px', backgroundColor: '#334155', color: '#38BDF8', fontWeight: 800, padding: '2px 8px', borderRadius: '12px', border: '1px solid #0EA5E9' }}>
+                  PRODUCTION DB
                 </span>
               </div>
               <div style={{ fontSize: '12.5px', color: '#94A3B8', marginTop: '2px' }}>
-                Database User Accounts Registry • Real-time Login Telemetry • Account Deletion Engine
+                Account Management • Subscription Pricing • Lock Controls • Production Database Telemetry
               </div>
             </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '12px', backgroundColor: '#064E3B', color: '#34D399', padding: '6px 12px', borderRadius: '20px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#34D399', display: 'inline-block' }} />
-              MongoDB Database Online
-            </span>
+            <button
+              onClick={loadLiveAdminData}
+              disabled={loadingData}
+              style={{
+                backgroundColor: '#1E293B',
+                color: '#F8FAFC',
+                border: '1px solid #334155',
+                padding: '9px 16px',
+                borderRadius: '10px',
+                fontWeight: 700,
+                fontSize: '13px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <RefreshCw size={15} className={loadingData ? 'animate-spin' : ''} />
+              <span>{loadingData ? 'Syncing...' : 'Reload DB Data'}</span>
+            </button>
 
-            {activeTab === 'users' ? (
-              <button
-                onClick={() => setIsUserModalOpen(true)}
-                style={{
-                  backgroundColor: '#FF5E14',
-                  color: '#FFF',
-                  border: 'none',
-                  padding: '10px 18px',
-                  borderRadius: '12px',
-                  fontWeight: 800,
-                  fontSize: '13.5px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  boxShadow: '0 4px 14px rgba(255,94,20,0.35)'
-                }}
-              >
-                <Plus size={16} /> Register New Email User
-              </button>
-            ) : (
-              <button
-                onClick={handleOpenAddModal}
-                style={{
-                  backgroundColor: '#FF5E14',
-                  color: '#FFF',
-                  border: 'none',
-                  padding: '10px 18px',
-                  borderRadius: '12px',
-                  fontWeight: 800,
-                  fontSize: '13.5px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  boxShadow: '0 4px 14px rgba(255,94,20,0.35)'
-                }}
-              >
-                <Plus size={16} /> Add Outlet Business
-              </button>
-            )}
+            <button
+              onClick={() => setActiveTab('subscription_settings')}
+              style={{
+                backgroundColor: '#1E293B',
+                color: '#F8FAFC',
+                border: '1px solid #334155',
+                padding: '9px 16px',
+                borderRadius: '10px',
+                fontWeight: 700,
+                fontSize: '13px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <Settings size={15} /> Global Settings
+            </button>
+
+            <button
+              onClick={handleAdminLogout}
+              style={{
+                backgroundColor: '#7F1D1D',
+                color: '#FECACA',
+                border: '1px solid #991B1B',
+                padding: '9px 16px',
+                borderRadius: '10px',
+                fontWeight: 800,
+                fontSize: '13px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <LogOut size={15} /> Exit Admin
+            </button>
           </div>
+
         </div>
       </header>
 
-      {/* Main Admin Body */}
-      <div style={{ maxWidth: '1280px', margin: '0 auto', padding: '32px 24px' }}>
+      {/* DASHBOARD CONTAINER */}
+      <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '28px 24px' }}>
 
-        {/* Master Real-Time KPI Telemetry Grid */}
+        {/* METRICS CARDS ROW */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '28px' }}>
           
-          <div style={{ backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: '16px', padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ backgroundColor: '#0F172A', border: '1px solid #1E293B', borderRadius: '16px', padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>REGISTERED USER EMAILS</div>
+              <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>REAL MERCHANTS</div>
               <div style={{ fontSize: '28px', fontWeight: 900, color: '#FFF', marginTop: '4px' }}>{totalRegisteredCount}</div>
-              <div style={{ fontSize: '12px', color: '#38BDF8', marginTop: '2px', fontWeight: 700 }}>📧 Accounts in DB</div>
+              <div style={{ fontSize: '12px', color: '#38BDF8', marginTop: '2px', fontWeight: 700 }}>Active Database Accounts</div>
             </div>
-            <div style={{ backgroundColor: '#0F172A', padding: '12px', borderRadius: '12px', color: '#38BDF8' }}>
-              <Mail size={26} />
-            </div>
-          </div>
-
-          <div style={{ backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: '16px', padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>STORES CREATED IN DB</div>
-              <div style={{ fontSize: '28px', fontWeight: 900, color: '#FF5E14', marginTop: '4px' }}>{storesCreatedCount}</div>
-              <div style={{ fontSize: '12px', color: '#FF5E14', marginTop: '2px', fontWeight: 700 }}>🏪 Stores Registered</div>
-            </div>
-            <div style={{ backgroundColor: '#0F172A', padding: '12px', borderRadius: '12px', color: '#FF5E14' }}>
-              <Store size={26} />
+            <div style={{ backgroundColor: '#1E293B', padding: '12px', borderRadius: '14px', color: '#38BDF8' }}>
+              <Building2 size={26} />
             </div>
           </div>
 
-          <div style={{ backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: '16px', padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ backgroundColor: '#0F172A', border: '1px solid #1E293B', borderRadius: '16px', padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>LOGGED IN USERS</div>
-              <div style={{ fontSize: '28px', fontWeight: 900, color: '#34D399', marginTop: '4px' }}>{loggedInUsersCount}</div>
-              <div style={{ fontSize: '12px', color: '#34D399', marginTop: '2px', fontWeight: 700 }}>🟢 Active Sessions</div>
+              <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>ESTIMATED MRR</div>
+              <div style={{ fontSize: '28px', fontWeight: 900, color: '#10B981', marginTop: '4px' }}>₹{totalMRR.toLocaleString('en-IN')}</div>
+              <div style={{ fontSize: '12px', color: '#34D399', marginTop: '2px', fontWeight: 700 }}>Monthly Subscription Revenue</div>
             </div>
-            <div style={{ backgroundColor: '#0F172A', padding: '12px', borderRadius: '12px', color: '#34D399' }}>
-              <LogIn size={26} />
+            <div style={{ backgroundColor: '#1E293B', padding: '12px', borderRadius: '14px', color: '#10B981' }}>
+              <CreditCard size={26} />
             </div>
           </div>
 
-          <div style={{ backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: '16px', padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ backgroundColor: '#0F172A', border: '1px solid #1E293B', borderRadius: '16px', padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>PAID PURCHASES / PRO</div>
-              <div style={{ fontSize: '28px', fontWeight: 900, color: '#F59E0B', marginTop: '4px' }}>{purchasedUsersCount}</div>
-              <div style={{ fontSize: '12px', color: '#F59E0B', marginTop: '2px', fontWeight: 700 }}>👑 {freeUsersCount} Free Tier</div>
+              <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>GROSS SALES</div>
+              <div style={{ fontSize: '28px', fontWeight: 900, color: '#F59E0B', marginTop: '4px' }}>₹{totalPlatformSales.toLocaleString('en-IN')}</div>
+              <div style={{ fontSize: '12px', color: '#FBBF24', marginTop: '2px', fontWeight: 700 }}>{totalPlatformOrders} Total Orders</div>
             </div>
-            <div style={{ backgroundColor: '#0F172A', padding: '12px', borderRadius: '12px', color: '#F59E0B' }}>
-              <Crown size={26} />
+            <div style={{ backgroundColor: '#1E293B', padding: '12px', borderRadius: '14px', color: '#F59E0B' }}>
+              <DollarSign size={26} />
+            </div>
+          </div>
+
+          <div style={{ backgroundColor: '#0F172A', border: '1px solid #1E293B', borderRadius: '16px', padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>LOCKED ACCOUNTS</div>
+              <div style={{ fontSize: '28px', fontWeight: 900, color: lockedCount > 0 ? '#EF4444' : '#10B981', marginTop: '4px' }}>{lockedCount}</div>
+              <div style={{ fontSize: '12px', color: lockedCount > 0 ? '#FCA5A5' : '#6EE7B7', marginTop: '2px', fontWeight: 700 }}>Subscription Locked</div>
+            </div>
+            <div style={{ backgroundColor: '#1E293B', padding: '12px', borderRadius: '14px', color: lockedCount > 0 ? '#EF4444' : '#10B981' }}>
+              <Lock size={26} />
             </div>
           </div>
 
         </div>
 
-        {/* View Selection Navigation Tabs */}
-        <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', borderBottom: '1px solid #334155', paddingBottom: '12px' }}>
-          <button
-            onClick={() => setActiveTab('users')}
-            style={{
-              backgroundColor: activeTab === 'users' ? '#FF5E14' : '#1E293B',
-              color: activeTab === 'users' ? '#FFF' : '#94A3B8',
-              border: '1px solid ' + (activeTab === 'users' ? '#FF5E14' : '#334155'),
-              padding: '10px 20px',
-              borderRadius: '12px',
-              fontWeight: 800,
-              fontSize: '14px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <Mail size={18} /> Registered User Emails ({registeredUsers.length})
-          </button>
-
-          <button
-            onClick={() => setActiveTab('businesses')}
-            style={{
-              backgroundColor: activeTab === 'businesses' ? '#FF5E14' : '#1E293B',
-              color: activeTab === 'businesses' ? '#FFF' : '#94A3B8',
-              border: '1px solid ' + (activeTab === 'businesses' ? '#FF5E14' : '#334155'),
-              padding: '10px 20px',
-              borderRadius: '12px',
-              fontWeight: 800,
-              fontSize: '14px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            <Store size={18} /> Outlet Businesses ({businesses.length})
-          </button>
+        {/* TABS NAVIGATION BAR */}
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', borderBottom: '1px solid #1E293B', paddingBottom: '12px' }}>
+          {[
+            { id: 'merchants', label: ' Merchant Accounts', count: registeredUsers.length },
+            { id: 'customers', label: ' Customers & CRM', count: aggregateCustomers.length || registeredUsers.length },
+            { id: 'orders', label: ' Live Orders Feed', count: globalOrders.length },
+            { id: 'subscription_settings', label: '️ Global Subscription Settings' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              style={{
+                backgroundColor: activeTab === tab.id ? '#FF5E14' : '#0F172A',
+                color: activeTab === tab.id ? '#FFF' : '#94A3B8',
+                border: '1px solid ' + (activeTab === tab.id ? '#FF5E14' : '#1E293B'),
+                padding: '11px 22px',
+                borderRadius: '12px',
+                fontWeight: 800,
+                fontSize: '14px',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              {tab.label} {tab.count !== undefined ? `(${tab.count})` : ''}
+            </button>
+          ))}
         </div>
 
-        {/* TAB 1: REGISTERED USER EMAIL ACCOUNTS MANAGEMENT */}
-        {activeTab === 'users' && (
+        {/* TAB 1: MERCHANTS & ACCOUNT MANAGEMENT */}
+        {activeTab === 'merchants' && (
           <div>
-            {/* Search & Filter Bar for Users */}
+            {/* Search & Filter controls */}
             <div style={{ display: 'flex', gap: '14px', marginBottom: '20px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ position: 'relative', flex: 1, minWidth: '280px' }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: '300px' }}>
                 <Search size={18} color="#94A3B8" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
                 <input
                   type="text"
-                  placeholder="Search by Email (e.g. user@foodypay.com), Merchant Name, Phone..."
+                  placeholder="Search merchant by Email, Business Name, WhatsApp, FoodyPay ID..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   style={{
                     width: '100%',
                     padding: '12px 14px 12px 42px',
                     borderRadius: '12px',
-                    border: '1px solid #334155',
-                    backgroundColor: '#1E293B',
+                    border: '1px solid #1E293B',
+                    backgroundColor: '#0F172A',
                     color: '#FFF',
                     fontSize: '14px',
                     outline: 'none',
-                    boxSizing: 'border-box'
+                    boxSizing: 'border-box',
                   }}
                 />
               </div>
 
-              <div style={{ display: 'flex', gap: '8px', backgroundColor: '#1E293B', padding: '4px', borderRadius: '12px', border: '1px solid #334155' }}>
+              <div style={{ display: 'flex', gap: '8px', backgroundColor: '#0F172A', padding: '4px', borderRadius: '12px', border: '1px solid #1E293B' }}>
                 <button
                   onClick={() => setStatusFilter('all')}
                   style={{
-                    backgroundColor: statusFilter === 'all' ? '#334155' : 'transparent',
+                    backgroundColor: statusFilter === 'all' ? '#1E293B' : 'transparent',
                     color: statusFilter === 'all' ? '#FFF' : '#94A3B8',
                     border: 'none',
                     padding: '8px 14px',
@@ -666,13 +640,13 @@ export default function AdminDebugPage({ onShowToast }) {
                     cursor: 'pointer',
                   }}
                 >
-                  All Users ({registeredUsers.length})
+                  All Accounts ({registeredUsers.length})
                 </button>
                 <button
-                  onClick={() => setStatusFilter('stores_created')}
+                  onClick={() => setStatusFilter('active')}
                   style={{
-                    backgroundColor: statusFilter === 'stores_created' ? '#7C2D12' : 'transparent',
-                    color: statusFilter === 'stores_created' ? '#FF5E14' : '#94A3B8',
+                    backgroundColor: statusFilter === 'active' ? '#064E3B' : 'transparent',
+                    color: statusFilter === 'active' ? '#34D399' : '#94A3B8',
                     border: 'none',
                     padding: '8px 14px',
                     borderRadius: '8px',
@@ -681,13 +655,13 @@ export default function AdminDebugPage({ onShowToast }) {
                     cursor: 'pointer',
                   }}
                 >
-                  🏪 Stores Created ({storesCreatedCount})
+                  Active ({activeCount})
                 </button>
                 <button
-                  onClick={() => setStatusFilter('logged_in')}
+                  onClick={() => setStatusFilter('locked')}
                   style={{
-                    backgroundColor: statusFilter === 'logged_in' ? '#064E3B' : 'transparent',
-                    color: statusFilter === 'logged_in' ? '#34D399' : '#94A3B8',
+                    backgroundColor: statusFilter === 'locked' ? '#7F1D1D' : 'transparent',
+                    color: statusFilter === 'locked' ? '#FCA5A5' : '#94A3B8',
                     border: 'none',
                     padding: '8px 14px',
                     borderRadius: '8px',
@@ -696,186 +670,157 @@ export default function AdminDebugPage({ onShowToast }) {
                     cursor: 'pointer',
                   }}
                 >
-                  🟢 Logged In ({loggedInUsersCount})
-                </button>
-
-                <button
-                  onClick={() => setStatusFilter('purchased')}
-                  style={{
-                    backgroundColor: statusFilter === 'purchased' ? '#78350F' : 'transparent',
-                    color: statusFilter === 'purchased' ? '#F59E0B' : '#94A3B8',
-                    border: 'none',
-                    padding: '8px 14px',
-                    borderRadius: '8px',
-                    fontSize: '13px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  👑 Purchased ({purchasedUsersCount})
-                </button>
-                <button
-                  onClick={() => setStatusFilter('free')}
-                  style={{
-                    backgroundColor: statusFilter === 'free' ? '#1E293B' : 'transparent',
-                    color: statusFilter === 'free' ? '#94A3B8' : '#64748B',
-                    border: 'none',
-                    padding: '8px 14px',
-                    borderRadius: '8px',
-                    fontSize: '13px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Free Tier ({freeUsersCount})
+                  Locked ({lockedCount})
                 </button>
               </div>
             </div>
 
-            {/* Registered Users Table */}
-            <div style={{ backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 10px 30px rgba(0,0,0,0.3)' }}>
-              <div style={{ padding: '16px 24px', borderBottom: '1px solid #334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#0F172A' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <Mail size={20} color="#38BDF8" />
-                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#FFF' }}>
-                    Registered Database Accounts ({filteredUsers.length})
-                  </h3>
-                </div>
-                <div style={{ fontSize: '12px', color: '#94A3B8' }}>
-                  Click <b>Delete Account</b> to remove from DB and allow re-registration
-                </div>
-              </div>
-
+            {/* MERCHANTS TABLE */}
+            <div style={{ backgroundColor: '#0F172A', border: '1px solid #1E293B', borderRadius: '16px', overflow: 'hidden' }}>
               {filteredUsers.length === 0 ? (
-                <div style={{ padding: '60px 20px', textAlign: 'center', color: '#94A3B8' }}>
-                  <UserX size={48} style={{ opacity: 0.4, marginBottom: '12px' }} />
-                  <div style={{ fontSize: '16px', fontWeight: 700, color: '#E2E8F0' }}>No registered user accounts match search query</div>
-                  <div style={{ fontSize: '13px', marginTop: '4px' }}>Try searching by email or clear active filter tabs.</div>
+                <div style={{ textAlign: 'center', padding: '48px 20px', color: '#94A3B8' }}>
+                  <Building2 size={40} color="#475569" style={{ marginBottom: '10px' }} />
+                  <div style={{ fontSize: '16px', fontWeight: 700, color: '#FFF' }}>No merchant accounts found</div>
+                  <div style={{ fontSize: '13px', marginTop: '4px' }}>Try clearing your search filter.</div>
                 </div>
               ) : (
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13.5px' }}>
                     <thead>
-                      <tr style={{ backgroundColor: '#0F172A', borderBottom: '1px solid #334155', color: '#94A3B8', fontSize: '11.5px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        <th style={{ padding: '14px 20px' }}>Registered Email / Name</th>
-                        <th style={{ padding: '14px 16px' }}>Business Outlet</th>
-                        <th style={{ padding: '14px 16px' }}>Contact</th>
-                        <th style={{ padding: '14px 16px' }}>Auth Method</th>
-                        <th style={{ padding: '14px 16px' }}>Login Status</th>
-                        <th style={{ padding: '14px 16px' }}>Purchase Status</th>
-                        <th style={{ padding: '14px 20px', textAlign: 'right' }}>DB Actions</th>
+                      <tr style={{ backgroundColor: '#161F33', borderBottom: '1px solid #1E293B', color: '#94A3B8', fontSize: '12px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        <th style={{ padding: '14px 18px' }}>Merchant / Business</th>
+                        <th style={{ padding: '14px 18px' }}>Contact Email &amp; Phone</th>
+                        <th style={{ padding: '14px 18px' }}>Subscription Plan &amp; Price</th>
+                        <th style={{ padding: '14px 18px' }}>Lock Status</th>
+                        <th style={{ padding: '14px 18px' }}>Sales / Dishes</th>
+                        <th style={{ padding: '14px 18px', textAlign: 'right' }}>Account Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredUsers.map((user) => (
-                        <tr
-                          key={user._id || user.email}
-                          style={{
-                            borderBottom: '1px solid #334155',
-                            transition: 'background-color 0.15s ease',
-                          }}
-                        >
-                          {/* Email & Name */}
-                          <td style={{ padding: '16px 20px' }}>
-                            <div style={{ fontWeight: 800, color: '#FFF', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <Mail size={15} color="#38BDF8" />
-                              {user.email}
-                            </div>
-                            <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>
-                              👤 {user.name} • <span style={{ color: '#64748B' }}>{user.foodypayId}</span>
+                        <tr key={user._id} style={{ borderBottom: '1px solid #1E293B', backgroundColor: user.isLocked ? '#1A0B0E' : 'transparent' }}>
+                          <td style={{ padding: '16px 18px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: '#1E293B', border: '1px solid #334155', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#FF5E14' }}>
+                                {user.businessName ? user.businessName.charAt(0).toUpperCase() : 'M'}
+                              </div>
+                              <div>
+                                <div style={{ fontWeight: 800, color: '#FFF', fontSize: '14.5px' }}>{user.businessName || user.name}</div>
+                                <div style={{ fontSize: '12px', color: '#38BDF8', marginTop: '2px', fontWeight: 600 }}>ID: {user.foodypayId}</div>
+                              </div>
                             </div>
                           </td>
 
-                          {/* Business Name */}
-                          <td style={{ padding: '16px 16px' }}>
-                            <div style={{ fontWeight: 700, color: '#F1F5F9', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <Building2 size={15} color="#FF5E14" />
-                              {user.businessName}
+                          <td style={{ padding: '16px 18px' }}>
+                            <div style={{ color: '#F1F5F9', fontWeight: 600 }}>{user.email}</div>
+                            <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>{user.contactNo || 'No Phone Added'}</div>
+                          </td>
+
+                          <td style={{ padding: '16px 18px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '13px', fontWeight: 800, color: '#10B981' }}>₹{user.subscriptionPrice}/mo</span>
+                              <span style={{ fontSize: '10.5px', backgroundColor: '#1E293B', color: '#94A3B8', padding: '2px 6px', borderRadius: '6px', fontWeight: 700 }}>
+                                {user.subscriptionPlan}
+                              </span>
                             </div>
-                          </td>
-
-                          {/* Contact */}
-                          <td style={{ padding: '16px 16px', color: '#CBD5E1' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
-                              <Phone size={14} color="#34D399" />
-                              {user.contactNo || 'N/A'}
-                            </div>
-                          </td>
-
-                          {/* Auth Method */}
-                          <td style={{ padding: '16px 16px' }}>
-                            {user.authProvider === 'google' ? (
-                              <span style={{ fontSize: '11px', backgroundColor: '#1E3A8A', color: '#93C5FD', padding: '4px 10px', borderRadius: '12px', fontWeight: 800 }}>
-                                🌐 Google OAuth
-                              </span>
-                            ) : (
-                              <span style={{ fontSize: '11px', backgroundColor: '#334155', color: '#E2E8F0', padding: '4px 10px', borderRadius: '12px', fontWeight: 800 }}>
-                                🔑 Email / Password
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Login Status */}
-                          <td style={{ padding: '16px 16px' }}>
-                            {user.isLoggedIn ? (
-                              <span style={{ fontSize: '11.5px', backgroundColor: '#064E3B', color: '#34D399', padding: '4px 10px', borderRadius: '12px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#34D399' }} />
-                                Logged In
-                              </span>
-                            ) : (
-                              <span style={{ fontSize: '11.5px', backgroundColor: '#334155', color: '#94A3B8', padding: '4px 10px', borderRadius: '12px', fontWeight: 700 }}>
-                                Offline
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Purchase Status */}
-                          <td style={{ padding: '16px 16px' }}>
                             <button
-                              onClick={() => handleTogglePurchaseStatus(user._id, user.hasPurchased)}
-                              title="Click to toggle purchase status"
-                              style={{
-                                backgroundColor: user.hasPurchased ? '#78350F' : '#0F172A',
-                                color: user.hasPurchased ? '#FBFBFE' : '#94A3B8',
-                                border: '1px solid ' + (user.hasPurchased ? '#F59E0B' : '#334155'),
-                                padding: '5px 12px',
-                                borderRadius: '12px',
-                                fontSize: '11.5px',
-                                fontWeight: 800,
-                                cursor: 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '5px',
+                              onClick={() => {
+                                setSubModalUser(user);
+                                setSubForm({
+                                  price: user.subscriptionPrice,
+                                  plan: user.subscriptionPlan,
+                                  status: user.subscriptionStatus,
+                                  expiry: user.subscriptionExpiry ? user.subscriptionExpiry.split('T')[0] : '',
+                                });
                               }}
+                              style={{ background: 'none', border: 'none', color: '#38BDF8', cursor: 'pointer', padding: 0, fontSize: '11.5px', fontWeight: 700, marginTop: '4px' }}
                             >
-                              <Crown size={13} color={user.hasPurchased ? '#F59E0B' : '#64748B'} />
-                              {user.hasPurchased ? 'PRO PURCHASED' : 'Free Plan (Upgrade)'}
+                              ️ Change Subscription Price
                             </button>
                           </td>
 
-                          {/* Actions: Delete Account from DB */}
-                          <td style={{ padding: '16px 20px', textAlign: 'right' }}>
+                          <td style={{ padding: '16px 18px' }}>
+                            {user.isLocked ? (
+                              <div>
+                                <span style={{ backgroundColor: '#7F1D1D', color: '#FECACA', border: '1px solid #991B1B', fontSize: '11px', fontWeight: 800, padding: '3px 8px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                  <Lock size={12} /> LOCKED
+                                </span>
+                                <div style={{ fontSize: '11px', color: '#FCA5A5', marginTop: '4px' }}>{user.lockReason}</div>
+                              </div>
+                            ) : (
+                              <span style={{ backgroundColor: '#064E3B', color: '#6EE7B7', border: '1px solid #047857', fontSize: '11px', fontWeight: 800, padding: '3px 8px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <CheckCircle2 size={12} /> ACTIVE
+                              </span>
+                            )}
+                          </td>
+
+                          <td style={{ padding: '16px 18px' }}>
+                            <div style={{ fontWeight: 800, color: '#F59E0B' }}>₹{user.totalSales.toLocaleString('en-IN')}</div>
+                            <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>{user.totalOrders} Orders • {user.dishCount} Dishes</div>
+                          </td>
+
+                          <td style={{ padding: '16px 18px', textAlign: 'right' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                              
+                              {/* Lock / Unlock Toggle Button */}
                               <button
-                                onClick={() => handleDeleteUserAccount(user._id, user.email, user.name)}
+                                onClick={() => {
+                                  setLockModalUser(user);
+                                  setLockReasonInput(user.lockReason || 'Subscription Payment Required');
+                                }}
                                 style={{
-                                  backgroundColor: '#7F1D1D',
-                                  color: '#FECACA',
-                                  border: '1px solid #991B1B',
-                                  padding: '8px 14px',
-                                  borderRadius: '10px',
-                                  fontSize: '12.5px',
+                                  backgroundColor: user.isLocked ? '#064E3B' : '#7F1D1D',
+                                  color: user.isLocked ? '#6EE7B7' : '#FECACA',
+                                  border: 'none',
+                                  padding: '6px 12px',
+                                  borderRadius: '8px',
+                                  fontSize: '12px',
                                   fontWeight: 800,
                                   cursor: 'pointer',
                                   display: 'flex',
                                   alignItems: 'center',
-                                  gap: '6px',
-                                  boxShadow: '0 2px 8px rgba(220,38,38,0.2)',
-                                  transition: 'all 0.15s ease',
+                                  gap: '4px',
                                 }}
-                                title="Delete account from Database permanently"
                               >
-                                <Trash2 size={15} /> Delete Account
+                                {user.isLocked ? <Unlock size={14} /> : <Lock size={14} />}
+                                <span>{user.isLocked ? 'Unlock Account' : 'Lock Account'}</span>
+                              </button>
+
+                              {/* Launch Dashboard Context */}
+                              <button
+                                onClick={() => handleLaunchMerchantDashboard(user)}
+                                style={{
+                                  backgroundColor: '#1E293B',
+                                  color: '#38BDF8',
+                                  border: '1px solid #334155',
+                                  padding: '6px 10px',
+                                  borderRadius: '8px',
+                                  fontSize: '12px',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                }}
+                                title="Open Merchant POS Dashboard"
+                              >
+                                Open POS 
+                              </button>
+
+                              {/* Delete Account Button */}
+                              <button
+                                onClick={() => {
+                                  setDeleteModalUser(user);
+                                  setConfirmEmailInput('');
+                                }}
+                                style={{
+                                  backgroundColor: 'transparent',
+                                  color: '#EF4444',
+                                  border: '1px solid #7F1D1D',
+                                  padding: '6px',
+                                  borderRadius: '8px',
+                                  cursor: 'pointer',
+                                }}
+                                title="Delete Account Permanently"
+                              >
+                                <Trash2 size={15} />
                               </button>
                             </div>
                           </td>
@@ -889,168 +834,19 @@ export default function AdminDebugPage({ onShowToast }) {
           </div>
         )}
 
-        {/* TAB 2: OUTLET BUSINESSES REGISTRY */}
-        {activeTab === 'businesses' && (
-          <div>
-            {/* Filter & Search Bar for Businesses */}
-            <div style={{ display: 'flex', gap: '14px', marginBottom: '20px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ position: 'relative', flex: 1, minWidth: '280px' }}>
-                <Search size={18} color="#94A3B8" style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
-                <input
-                  type="text"
-                  placeholder="Search by Business Name, FoodyPay ID (e.g. FP-985569), City..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '12px 14px 12px 42px',
-                    borderRadius: '12px',
-                    border: '1px solid #334155',
-                    backgroundColor: '#1E293B',
-                    color: '#FFF',
-                    fontSize: '14px',
-                    outline: 'none',
-                    boxSizing: 'border-box'
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px', backgroundColor: '#1E293B', padding: '4px', borderRadius: '12px', border: '1px solid #334155' }}>
-                <button
-                  onClick={() => setBizStatusFilter('all')}
-                  style={{
-                    backgroundColor: bizStatusFilter === 'all' ? '#334155' : 'transparent',
-                    color: bizStatusFilter === 'all' ? '#FFF' : '#94A3B8',
-                    border: 'none',
-                    padding: '8px 14px',
-                    borderRadius: '8px',
-                    fontSize: '13px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  All Outlets ({businesses.length})
-                </button>
-                <button
-                  onClick={() => setBizStatusFilter('open')}
-                  style={{
-                    backgroundColor: bizStatusFilter === 'open' ? '#064E3B' : 'transparent',
-                    color: bizStatusFilter === 'open' ? '#34D399' : '#94A3B8',
-                    border: 'none',
-                    padding: '8px 14px',
-                    borderRadius: '8px',
-                    fontSize: '13px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  🟢 Active Open ({activeBizCount})
-                </button>
-              </div>
-            </div>
-
-            {/* Businesses Grid Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '20px' }}>
-              {filteredBusinesses.map((biz) => (
-                <div
-                  key={biz.id}
-                  style={{
-                    backgroundColor: '#1E293B',
-                    border: '1px solid #334155',
-                    borderRadius: '16px',
-                    padding: '20px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justify: 'space-between',
-                    boxShadow: '0 4px 20px rgba(0,0,0,0.2)',
-                  }}
-                >
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <img
-                          src={biz.logoUrl || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=200&auto=format&fit=crop&q=80'}
-                          alt={biz.name}
-                          style={{ width: '48px', height: '48px', borderRadius: '12px', objectFit: 'cover', border: '1px solid #334155' }}
-                        />
-                        <div>
-                          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#FFF' }}>{biz.name}</h3>
-                          <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>{biz.address}</div>
-                        </div>
-                      </div>
-
-                      <button
-                        onClick={() => handleToggleBizStatus(biz.id)}
-                        style={{
-                          backgroundColor: biz.status === 'open' ? '#064E3B' : '#7F1D1D',
-                          color: biz.status === 'open' ? '#34D399' : '#FCA5A5',
-                          border: 'none',
-                          padding: '4px 10px',
-                          borderRadius: '12px',
-                          fontSize: '11px',
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {biz.status === 'open' ? '🟢 OPEN' : '🔴 CLOSED'}
-                      </button>
-                    </div>
-
-                    <div style={{ backgroundColor: '#0F172A', borderRadius: '12px', padding: '12px', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px', fontSize: '12.5px', marginBottom: '16px' }}>
-                      <div>
-                        <span style={{ color: '#94A3B8', display: 'block', fontSize: '11px' }}>FoodyPay ID</span>
-                        <b style={{ color: '#FF5E14', fontSize: '13px' }}>{biz.foodypayId}</b>
-                      </div>
-                      <div>
-                        <span style={{ color: '#94A3B8', display: 'block', fontSize: '11px' }}>Tables</span>
-                        <b style={{ color: '#FFF' }}>{biz.tablesCount} Standees</b>
-                      </div>
-                      <div>
-                        <span style={{ color: '#94A3B8', display: 'block', fontSize: '11px' }}>Catalog</span>
-                        <b style={{ color: '#38BDF8' }}>{biz.productsCount} Dishes</b>
-                      </div>
-                      <div>
-                        <span style={{ color: '#94A3B8', display: 'block', fontSize: '11px' }}>GST Rate</span>
-                        <b style={{ color: '#FFF' }}>{biz.gstPercent}%</b>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '8px', marginTop: 'auto' }}>
-                    <button
-                      onClick={() => handleLaunchDashboardForBiz(biz)}
-                      style={{
-                        flex: 1,
-                        backgroundColor: '#FF5E14',
-                        color: '#FFF',
-                        border: 'none',
-                        padding: '10px',
-                        borderRadius: '10px',
-                        fontWeight: 800,
-                        fontSize: '12.5px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justify: 'center',
-                        gap: '6px',
-                      }}
-                    >
-                      <ExternalLink size={14} /> Open POS Dashboard
-                    </button>
-                    <button
-                      onClick={() => handleDeleteBiz(biz.id, biz.name)}
-                      style={{
-                        backgroundColor: '#334155',
-                        color: '#F8FAFC',
-                        border: 'none',
-                        padding: '10px',
-                        borderRadius: '10px',
-                        cursor: 'pointer',
-                      }}
-                      title="Delete Business Outlet"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+        {/* TAB 2: CUSTOMERS & CRM */}
+        {activeTab === 'customers' && (
+          <div style={{ backgroundColor: '#0F172A', border: '1px solid #1E293B', borderRadius: '16px', padding: '24px' }}>
+            <h3 style={{ margin: '0 0 16px', fontSize: '18px', fontWeight: 900, color: '#FFF' }}>
+              Aggregate Platform Customers &amp; CRM Database
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
+              {aggregateCustomers.map((c, i) => (
+                <div key={i} style={{ backgroundColor: '#161F33', border: '1px solid #1E293B', padding: '16px', borderRadius: '12px' }}>
+                  <div style={{ fontWeight: 800, fontSize: '15px', color: '#FFF' }}>{c.name}</div>
+                  <div style={{ fontSize: '12.5px', color: '#38BDF8', marginTop: '2px' }}> {c.phone} •  {c.email}</div>
+                  <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '6px' }}>
+                    Store: <strong>{c.merchant}</strong> • Orders: {c.ordersCount} • Total Spend: ₹{c.totalSpend}
                   </div>
                 </div>
               ))}
@@ -1058,99 +854,291 @@ export default function AdminDebugPage({ onShowToast }) {
           </div>
         )}
 
-      </div>
-
-      {/* MODAL: ADD NEW REGISTERED USER EMAIL ACCOUNT */}
-      {isUserModalOpen && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div style={{ backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: '20px', padding: '28px', maxWidth: '480px', width: '100%', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Mail size={22} color="#FF5E14" />
-                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#FFF' }}>
-                  Register New User Email Account
-                </h3>
+        {/* TAB 3: LIVE ORDERS FEED */}
+        {activeTab === 'orders' && (
+          <div style={{ backgroundColor: '#0F172A', border: '1px solid #1E293B', borderRadius: '16px', padding: '24px' }}>
+            <h3 style={{ margin: '0 0 16px', fontSize: '18px', fontWeight: 900, color: '#FFF' }}>
+              Live Platform Orders Feed Across All Restaurants
+            </h3>
+            {globalOrders.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '36px', color: '#94A3B8' }}>
+                <Package size={36} color="#475569" style={{ marginBottom: '8px' }} />
+                <div>No live orders recorded yet in system database.</div>
               </div>
-              <button
-                onClick={() => setIsUserModalOpen(false)}
-                style={{ backgroundColor: 'transparent', border: 'none', color: '#94A3B8', fontSize: '20px', cursor: 'pointer' }}
-              >
-                ✕
-              </button>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {globalOrders.map((ord, idx) => (
+                  <div key={ord._id || idx} style={{ backgroundColor: '#161F33', border: '1px solid #1E293B', padding: '14px 18px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div>
+                      <div style={{ fontWeight: 800, color: '#FFF', fontSize: '14px' }}>
+                        Order #{ord.orderId || ord._id.slice(-6)} • ₹{ord.total || ord.subtotal || 0}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>
+                        Customer: {ord.customerName || 'Diner'} ({ord.customerPhone || 'N/A'}) • Table: {ord.tableNo || 'Dine-In'}
+                      </div>
+                    </div>
+                    <div>
+                      <span style={{ fontSize: '11px', backgroundColor: '#064E3B', color: '#6EE7B7', padding: '3px 8px', borderRadius: '6px', fontWeight: 800 }}>
+                        {ord.paymentMethod ? ord.paymentMethod.toUpperCase() : 'PAID ONLINE'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 4: GLOBAL PLATFORM SUBSCRIPTION SETTINGS */}
+        {activeTab === 'subscription_settings' && (
+          <div style={{ backgroundColor: '#0F172A', border: '1px solid #1E293B', borderRadius: '16px', padding: '28px', maxWidth: '780px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+              <Settings size={24} color="#FF5E14" />
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 900, color: '#FFF' }}>
+                Global Platform Subscription &amp; Policy Settings
+              </h2>
             </div>
 
-            <form onSubmit={handleCreateUserSubmit}>
-              <div style={{ marginBottom: '14px' }}>
-                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, color: '#94A3B8', marginBottom: '6px' }}>Registered Email Address *</label>
+            <form onSubmit={handleSaveGlobalSettings} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 800, color: '#CBD5E1', marginBottom: '6px' }}>
+                  Platform Title / System Name
+                </label>
                 <input
-                  type="email"
+                  type="text"
+                  value={globalSubSettings.platformName}
+                  onChange={(e) => setGlobalSubSettings({ ...globalSubSettings, platformName: e.target.value })}
+                  style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
                   required
-                  placeholder="e.g. merchant@foodypay.com"
-                  value={userForm.email}
-                  onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #334155', backgroundColor: '#0F172A', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
                 />
               </div>
 
-              <div style={{ marginBottom: '14px' }}>
-                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, color: '#94A3B8', marginBottom: '6px' }}>Merchant Owner Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Lagan Mehta"
-                  value={userForm.name}
-                  onChange={(e) => setUserForm({ ...userForm, name: e.target.value })}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #334155', backgroundColor: '#0F172A', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
-                />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 800, color: '#CBD5E1', marginBottom: '6px' }}>
+                    Default Monthly Subscription Price (₹/mo)
+                  </label>
+                  <input
+                    type="number"
+                    value={globalSubSettings.defaultMonthlyPrice}
+                    onChange={(e) => setGlobalSubSettings({ ...globalSubSettings, defaultMonthlyPrice: Number(e.target.value) })}
+                    style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 800, color: '#CBD5E1', marginBottom: '6px' }}>
+                    Default Annual Subscription Price (₹/yr)
+                  </label>
+                  <input
+                    type="number"
+                    value={globalSubSettings.defaultAnnualPrice}
+                    onChange={(e) => setGlobalSubSettings({ ...globalSubSettings, defaultAnnualPrice: Number(e.target.value) })}
+                    style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+                    required
+                  />
+                </div>
               </div>
 
-              <div style={{ marginBottom: '14px' }}>
-                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, color: '#94A3B8', marginBottom: '6px' }}>Restaurant / Business Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Lagan Da Dhaba"
-                  value={userForm.businessName}
-                  onChange={(e) => setUserForm({ ...userForm, businessName: e.target.value })}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #334155', backgroundColor: '#0F172A', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
-                />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 800, color: '#CBD5E1', marginBottom: '6px' }}>
+                    Free Trial Duration (Days)
+                  </label>
+                  <input
+                    type="number"
+                    value={globalSubSettings.freeTrialDays}
+                    onChange={(e) => setGlobalSubSettings({ ...globalSubSettings, freeTrialDays: Number(e.target.value) })}
+                    style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 800, color: '#CBD5E1', marginBottom: '6px' }}>
+                    Billing &amp; Admin Support Email
+                  </label>
+                  <input
+                    type="email"
+                    value={globalSubSettings.supportEmail}
+                    onChange={(e) => setGlobalSubSettings({ ...globalSubSettings, supportEmail: e.target.value })}
+                    style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+                    required
+                  />
+                </div>
               </div>
 
-              <div style={{ marginBottom: '14px' }}>
-                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, color: '#94A3B8', marginBottom: '6px' }}>WhatsApp Contact Number</label>
-                <input
-                  type="text"
-                  placeholder="e.g. +91 98123 45678"
-                  value={userForm.contactNo}
-                  onChange={(e) => setUserForm({ ...userForm, contactNo: e.target.value })}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #334155', backgroundColor: '#0F172A', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
-                />
-              </div>
-
-              <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: '#161F33', padding: '14px', borderRadius: '10px', border: '1px solid #334155' }}>
                 <input
                   type="checkbox"
-                  id="hasPurchased"
-                  checked={userForm.hasPurchased}
-                  onChange={(e) => setUserForm({ ...userForm, hasPurchased: e.target.checked })}
+                  id="autoLock"
+                  checked={globalSubSettings.autoLockExpiredAccounts}
+                  onChange={(e) => setGlobalSubSettings({ ...globalSubSettings, autoLockExpiredAccounts: e.target.checked })}
                   style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                 />
-                <label htmlFor="hasPurchased" style={{ fontSize: '13.5px', color: '#FFF', cursor: 'pointer', fontWeight: 700 }}>
-                  Mark as Paid / Purchased Subscription (Pro Plan)
+                <label htmlFor="autoLock" style={{ fontSize: '13.5px', color: '#FFF', fontWeight: 700, cursor: 'pointer' }}>
+                  Enforce Lock Policy: Automatically lock accounts when monthly subscription is not renewed.
                 </label>
               </div>
 
-              <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                type="submit"
+                style={{
+                  backgroundColor: '#FF5E14',
+                  color: '#FFF',
+                  border: 'none',
+                  padding: '13px',
+                  borderRadius: '10px',
+                  fontWeight: 900,
+                  fontSize: '15px',
+                  cursor: 'pointer',
+                  marginTop: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                }}
+              >
+                <Check size={18} /> Save Global Subscription Settings
+              </button>
+            </form>
+          </div>
+        )}
+
+      </div>
+
+      {/* ==========================================================================
+          MODAL 1: LOCK / UNLOCK ACCOUNT MODAL
+          ========================================================================== */}
+      {lockModalUser && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ backgroundColor: '#0F172A', border: '1px solid #334155', borderRadius: '20px', padding: '24px', maxWidth: '480px', width: '100%', color: '#FFF' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: lockModalUser.isLocked ? '#34D399' : '#FCA5A5' }}>
+                {lockModalUser.isLocked ? ' Unlock Merchant Account' : ' Lock Merchant Account'}
+              </h3>
+              <button onClick={() => setLockModalUser(null)} style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <p style={{ fontSize: '13.5px', color: '#CBD5E1', lineHeight: 1.5, margin: '0 0 16px' }}>
+              Target Account: <strong>{lockModalUser.businessName || lockModalUser.name}</strong> ({lockModalUser.email})
+            </p>
+
+            {!lockModalUser.isLocked && (
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', marginBottom: '4px' }}>
+                  Lock Reason / Subscription Requirement Text:
+                </label>
+                <input
+                  type="text"
+                  value={lockReasonInput}
+                  onChange={(e) => setLockReasonInput(e.target.value)}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
+              <button
+                onClick={() => setLockModalUser(null)}
+                style={{ backgroundColor: '#1E293B', color: '#CBD5E1', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleExecuteAccountLockToggle}
+                style={{
+                  backgroundColor: lockModalUser.isLocked ? '#047857' : '#DC2626',
+                  color: '#FFF',
+                  border: 'none',
+                  padding: '10px 20px',
+                  borderRadius: '8px',
+                  fontWeight: 900,
+                  fontSize: '13.5px',
+                  cursor: 'pointer',
+                }}
+              >
+                {lockModalUser.isLocked ? 'Confirm Unlock' : 'Confirm Lock Account'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================================================
+          MODAL 2: PER-ACCOUNT SUBSCRIPTION PRICING MODAL
+          ========================================================================== */}
+      {subModalUser && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ backgroundColor: '#0F172A', border: '1px solid #334155', borderRadius: '20px', padding: '24px', maxWidth: '480px', width: '100%', color: '#FFF' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#FFF' }}>
+                 Manage Subscription Pricing
+              </h3>
+              <button onClick={() => setSubModalUser(null)} style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveUserSubscription} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#94A3B8', marginBottom: '4px' }}>
+                  Monthly Subscription Price (₹/month) *
+                </label>
+                <input
+                  type="number"
+                  value={subForm.price}
+                  onChange={(e) => setSubForm({ ...subForm, price: e.target.value })}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+                  required
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#94A3B8', marginBottom: '4px' }}>
+                  Subscription Plan Name
+                </label>
+                <input
+                  type="text"
+                  value={subForm.plan}
+                  onChange={(e) => setSubForm({ ...subForm, plan: e.target.value })}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+                  required
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#94A3B8', marginBottom: '4px' }}>
+                  Subscription Status
+                </label>
+                <select
+                  value={subForm.status}
+                  onChange={(e) => setSubForm({ ...subForm, status: e.target.value })}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+                >
+                  <option value="Active">Active (Unlocked)</option>
+                  <option value="Trial">Trial Period</option>
+                  <option value="Expired">Expired</option>
+                  <option value="Locked">Locked (Unpaid)</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '14px' }}>
                 <button
                   type="button"
-                  onClick={() => setIsUserModalOpen(false)}
-                  style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '1px solid #334155', backgroundColor: 'transparent', color: '#94A3B8', fontWeight: 700, cursor: 'pointer' }}
+                  onClick={() => setSubModalUser(null)}
+                  style={{ backgroundColor: '#1E293B', color: '#CBD5E1', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', backgroundColor: '#FF5E14', color: '#FFF', fontWeight: 800, cursor: 'pointer' }}
+                  style={{ backgroundColor: '#FF5E14', color: '#FFF', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 900, fontSize: '13.5px', cursor: 'pointer' }}
                 >
-                  Register Account
+                  Save Subscription
                 </button>
               </div>
             </form>
@@ -1158,83 +1146,65 @@ export default function AdminDebugPage({ onShowToast }) {
         </div>
       )}
 
-      {/* MODAL: ADD / EDIT BUSINESS */}
-      {isModalOpen && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div style={{ backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: '20px', padding: '28px', maxWidth: '520px', width: '100%', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#FFF' }}>
-                {editingBiz ? `Edit Business: ${editingBiz.name}` : 'Register New Business Outlet'}
-              </h3>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                style={{ backgroundColor: 'transparent', border: 'none', color: '#94A3B8', fontSize: '20px', cursor: 'pointer' }}
-              >
-                ✕
-              </button>
+      {/* ==========================================================================
+          MODAL 3: DELETE USER ACCOUNT CONFIRMATION MODAL
+          ========================================================================== */}
+      {deleteModalUser && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ backgroundColor: '#0F172A', border: '1.5px solid #7F1D1D', borderRadius: '20px', padding: '24px', maxWidth: '500px', width: '100%', color: '#FFF' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+              <div style={{ backgroundColor: '#7F1D1D', color: '#FECACA', padding: '8px', borderRadius: '10px', display: 'flex' }}>
+                <ShieldAlert size={24} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#EF4444' }}>
+                  Permanent Account Deletion
+                </h3>
+                <div style={{ fontSize: '12px', color: '#94A3B8' }}>Action cannot be undone. Database record will be purged.</div>
+              </div>
             </div>
 
-            <form onSubmit={handleSaveBizSubmit}>
-              <div style={{ marginBottom: '14px' }}>
-                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, color: '#94A3B8', marginBottom: '6px' }}>Business Outlet Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Lagan Da Dhaba"
-                  value={bizForm.name}
-                  onChange={(e) => setBizForm({ ...bizForm, name: e.target.value })}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #334155', backgroundColor: '#0F172A', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
-                />
-              </div>
+            <div style={{ backgroundColor: '#161F33', border: '1px solid #1E293B', padding: '14px', borderRadius: '10px', marginBottom: '16px', fontSize: '13px', lineHeight: 1.5 }}>
+              Account to Delete: <strong style={{ color: '#FFF' }}>{deleteModalUser.email}</strong><br/>
+              Merchant Name: <strong>{deleteModalUser.businessName || deleteModalUser.name}</strong>
+            </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, color: '#94A3B8', marginBottom: '6px' }}>FoodyPay ID *</label>
-                  <input
-                    type="text"
-                    required
-                    value={bizForm.foodypayId}
-                    onChange={(e) => setBizForm({ ...bizForm, foodypayId: e.target.value })}
-                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #334155', backgroundColor: '#0F172A', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, color: '#94A3B8', marginBottom: '6px' }}>Phone Number</label>
-                  <input
-                    type="text"
-                    value={bizForm.phone}
-                    onChange={(e) => setBizForm({ ...bizForm, phone: e.target.value })}
-                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #334155', backgroundColor: '#0F172A', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
-                  />
-                </div>
-              </div>
+            <p style={{ fontSize: '13px', color: '#CBD5E1', marginBottom: '12px' }}>
+              To confirm deletion, please type <strong style={{ color: '#EF4444' }}>{deleteModalUser.email}</strong> below:
+            </p>
 
-              <div style={{ marginBottom: '14px' }}>
-                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, color: '#94A3B8', marginBottom: '6px' }}>Address</label>
-                <input
-                  type="text"
-                  value={bizForm.address}
-                  onChange={(e) => setBizForm({ ...bizForm, address: e.target.value })}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #334155', backgroundColor: '#0F172A', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
-                />
-              </div>
+            <input
+              type="text"
+              placeholder={`Type ${deleteModalUser.email} to confirm`}
+              value={confirmEmailInput}
+              onChange={(e) => setConfirmEmailInput(e.target.value)}
+              style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #7F1D1D', backgroundColor: '#1A0B0E', color: '#FFF', fontSize: '13.5px', outline: 'none', boxSizing: 'border-box', marginBottom: '20px' }}
+            />
 
-              <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '1px solid #334155', backgroundColor: 'transparent', color: '#94A3B8', fontWeight: 700, cursor: 'pointer' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', backgroundColor: '#FF5E14', color: '#FFF', fontWeight: 800, cursor: 'pointer' }}
-                >
-                  Save Business
-                </button>
-              </div>
-            </form>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setDeleteModalUser(null)}
+                style={{ backgroundColor: '#1E293B', color: '#CBD5E1', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleExecuteDeleteAccount}
+                disabled={isDeleting || confirmEmailInput.trim().toLowerCase() !== deleteModalUser.email.trim().toLowerCase()}
+                style={{
+                  backgroundColor: confirmEmailInput.trim().toLowerCase() === deleteModalUser.email.trim().toLowerCase() ? '#DC2626' : '#334155',
+                  color: '#FFF',
+                  border: 'none',
+                  padding: '10px 20px',
+                  borderRadius: '8px',
+                  fontWeight: 900,
+                  fontSize: '13.5px',
+                  cursor: confirmEmailInput.trim().toLowerCase() === deleteModalUser.email.trim().toLowerCase() ? 'pointer' : 'not-allowed',
+                }}
+              >
+                {isDeleting ? 'Deleting...' : 'Permanently Delete Account'}
+              </button>
+            </div>
           </div>
         </div>
       )}

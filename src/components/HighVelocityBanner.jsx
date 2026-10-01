@@ -123,9 +123,9 @@ export default function HighVelocityBanner({ onOpenSignup }) {
             </button>
 
             <div className="celebration-badge-top">
-              <span className="celebration-sparkle">🎉</span>
+              <span className="celebration-sparkle"></span>
               <span>CONGRATULATIONS!</span>
-              <span className="celebration-sparkle">🎉</span>
+              <span className="celebration-sparkle"></span>
             </div>
 
             <h3 className="celebration-heading">
@@ -139,7 +139,7 @@ export default function HighVelocityBanner({ onOpenSignup }) {
             <div className="celebration-stat-box">
               <div className="stat-label">TOTAL ORDERS MANAGED RIGHT NOW</div>
               <div className="stat-value">{celebrationModal.total.toLocaleString('en-IN')}</div>
-              <div className="stat-tag">⚡ Scaling at high velocity across 1,200+ outlets</div>
+              <div className="stat-tag"> Scaling at high velocity across 1,200+ outlets</div>
             </div>
 
             <div className="celebration-actions-row">
@@ -148,7 +148,7 @@ export default function HighVelocityBanner({ onOpenSignup }) {
                 className="btn primary celebration-cta-btn"
                 onClick={handleClaimFreePlan}
               >
-                🚀 Get Started Free Plan →
+                 Get Started Free Plan →
               </button>
               <button
                 type="button"

@@ -69,31 +69,18 @@ export default function LoginPage({ onShowToast }) {
         console.warn('Firebase Google Auth fallback:', fbErr.message);
       }
 
-      if (firebaseRes && firebaseRes.user) {
-        const gEmail = (firebaseRes.user.email || email.trim()).toLowerCase();
-        let accountExists = false;
-        try {
-          const checkRes = await checkEmailExistsApi(gEmail);
-          if (checkRes && checkRes.exists) accountExists = true;
-        } catch (checkErr) {
-          accountExists = false;
-        }
-
-        if (!accountExists) {
-          setNoAccountEmail(gEmail);
-          setError(`⚠️ No registered account found for ${gEmail}. Please register your merchant account first.`);
-          if (onShowToast) onShowToast(`⚠️ No account found for ${gEmail}. Please Register first.`);
-          return;
-        }
-      }
+      const gEmail = firebaseRes?.user?.email ? firebaseRes.user.email.toLowerCase().trim() : email.trim().toLowerCase();
+      const gName = firebaseRes?.user?.displayName || 'Merchant Owner';
+      const gUid = firebaseRes?.user?.uid || 'google_uid_' + Date.now();
+      const gPhoto = firebaseRes?.user?.photoURL || '';
 
       const googlePayload = {
         firebaseToken: firebaseRes?.token || 'google_token_' + Date.now(),
         credential: firebaseRes?.token || 'google_token_' + Date.now(),
-        uid: firebaseRes?.user?.uid || 'google_uid_' + Date.now(),
-        email: firebaseRes?.user?.email || email.trim(),
-        name: firebaseRes?.user?.displayName || 'Merchant Owner',
-        picture: firebaseRes?.user?.photoURL || '',
+        uid: gUid,
+        email: gEmail,
+        name: gName,
+        picture: gPhoto,
         providerId: 'google.com',
       };
 
@@ -104,12 +91,9 @@ export default function LoginPage({ onShowToast }) {
         try {
           res = await googleAuthApi(googlePayload);
         } catch (e2) {
-          if (firebaseRes?.user?.uid) {
+          if (gUid) {
             try {
-              res = await loginApi(
-                (firebaseRes.user.email || email).toLowerCase(),
-                'GoogleAuthPass_' + firebaseRes.user.uid.slice(-8)
-              );
+              res = await loginApi(gEmail, 'GoogleAuthPass_' + gUid.slice(-8));
             } catch (e3) {}
           }
         }
@@ -123,13 +107,18 @@ export default function LoginPage({ onShowToast }) {
 
         playMilestoneCelebration();
         confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
-        if (onShowToast) onShowToast(`👋 Gmail Verified! Logged in as ${res.data.name || 'Merchant'} without password!`);
+        if (onShowToast) onShowToast(`Gmail Verified! Logged in as ${res.data.name || 'Merchant'}!`);
         
         setTimeout(() => {
           navigate('/dashboard');
         }, 500);
       } else {
-        throw new Error('Google authentication succeeded, but could not log into POS session.');
+        setNoAccountEmail(gEmail);
+        setError(`No account found for ${gEmail}. Redirecting to Registration page...`);
+        if (onShowToast) onShowToast(`No account found for ${gEmail}. Redirecting to Register...`);
+        setTimeout(() => {
+          navigate('/register');
+        }, 1200);
       }
     } catch (err) {
       setError(err.message || 'Google verification failed.');
@@ -202,7 +191,7 @@ export default function LoginPage({ onShowToast }) {
 
         playMilestoneCelebration();
         confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
-        if (onShowToast) onShowToast(`🎉 Welcome back, ${userData.name || 'Merchant'}!`);
+        if (onShowToast) onShowToast(`Welcome back, ${userData.name || 'Merchant'}!`);
 
         setTimeout(() => {
           navigate('/dashboard');
@@ -232,7 +221,7 @@ export default function LoginPage({ onShowToast }) {
     try {
       const result = await sendFirebasePasswordReset(resetEmail.trim());
       setResetMsg(result.message);
-      if (onShowToast) onShowToast(`📧 Reset link sent to ${resetEmail.trim()} via Firebase!`);
+      if (onShowToast) onShowToast(`Reset link sent to ${resetEmail.trim()} via Firebase!`);
     } catch (err) {
       setResetError(err.message || 'Failed to send password reset email.');
     } finally {
@@ -244,29 +233,29 @@ export default function LoginPage({ onShowToast }) {
     <div style={{ height: '100vh', maxHeight: '100vh', backgroundColor: '#F8FAFC', display: 'flex', flexDirection: 'column', fontFamily: 'system-ui, -apple-system, sans-serif', overflow: 'hidden' }}>
       
       {/* TOP HEADER */}
-      <header style={{ height: '60px', padding: '0 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #E2E8F0', backgroundColor: '#FFFFFF', flexShrink: 0 }}>
-        <Link to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <img src="/Logo.png" alt="FoodyPay Logo" style={{ height: '38px', objectFit: 'contain' }} />
+      <header className="auth-header">
+        <Link to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <img src="/Logo.png" alt="FoodyPay Logo" style={{ height: '34px', objectFit: 'contain' }} />
           <div>
-            <span style={{ fontSize: '18px', fontWeight: 900, color: '#0F172A', letterSpacing: '-0.5px' }}>FoodyPay</span>
-            <span style={{ fontSize: '11px', color: '#FF5E14', fontWeight: 800, display: 'block', marginTop: '-3px' }}>Always With You ✨</span>
+            <span style={{ fontSize: '17px', fontWeight: 900, color: '#0F172A', letterSpacing: '-0.5px' }}>FoodyPay</span>
+            <span style={{ fontSize: '10.5px', color: '#FF5E14', fontWeight: 800, display: 'block', marginTop: '-3px' }}>Always With You</span>
           </div>
         </Link>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '13px', color: '#64748B', fontWeight: 600 }}>New to FoodyPay?</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span className="auth-header-subtext">New to FoodyPay?</span>
           <Link
             to="/register"
             style={{
-              padding: '7px 16px',
-              borderRadius: '9px',
+              padding: '6px 14px',
+              borderRadius: '8px',
               backgroundColor: '#FFF0EB',
               color: '#FF5E14',
               border: '1.5px solid #FFDCD0',
               fontWeight: 800,
-              fontSize: '13px',
+              fontSize: '12px',
               textDecoration: 'none',
-              transition: 'all 0.2s',
+              whiteSpace: 'nowrap',
             }}
           >
             Create Account
@@ -275,32 +264,10 @@ export default function LoginPage({ onShowToast }) {
       </header>
 
       {/* MAIN CONTENT SPLIT LAYOUT */}
-      <main style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px 20px', overflow: 'auto' }}>
-        <div
-          style={{
-            width: '100%',
-            maxWidth: '960px',
-            maxHeight: 'calc(100vh - 90px)',
-            backgroundColor: '#FFFFFF',
-            borderRadius: '20px',
-            border: '1px solid #E2E8F0',
-            boxShadow: '0 12px 35px rgba(15, 23, 42, 0.06)',
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
-            overflow: 'hidden',
-          }}
-        >
+      <main className="auth-main-container">
+        <div className="auth-card-grid">
           {/* LEFT BRANDING PANEL */}
-          <div
-            style={{
-              background: 'linear-gradient(160deg, #1E293B 0%, #0F172A 100%)',
-              padding: '28px 32px',
-              color: '#FFFFFF',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-            }}
-          >
+          <div className="auth-left-panel">
             <div>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(255, 94, 20, 0.15)', color: '#FF5E14', padding: '4px 12px', borderRadius: '20px', fontSize: '11.5px', fontWeight: 800, border: '1px solid rgba(255, 94, 20, 0.3)', marginBottom: '16px' }}>
                 <Sparkles size={14} />
@@ -317,11 +284,11 @@ export default function LoginPage({ onShowToast }) {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {[
-                  '🔥 Firebase Authenticated & Secured Login',
-                  '⚡ Instant Self-Service Table QR Ordering',
-                  '🍳 Dedicated Kitchen Display System (KDS)',
-                  '💰 0% Commission Direct Customer Payments',
-                  '📊 Real-Time Sales Telemetry & Reports',
+                  'Firebase Authenticated & Secured Login',
+                  'Instant Self-Service Table QR Ordering',
+                  'Dedicated Kitchen Display System (KDS)',
+                  '0% Commission Direct Customer Payments',
+                  'Real-Time Sales Telemetry & Reports',
                 ].map((feature, idx) => (
                   <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', fontWeight: 700, color: '#E2E8F0' }}>
                     <CheckCircle2 size={16} color="#FF5E14" />
@@ -353,7 +320,7 @@ export default function LoginPage({ onShowToast }) {
 
             {error && (
               <div style={{ backgroundColor: '#FEF2F2', border: '1.5px solid #FCA5A5', color: '#991B1B', padding: '12px 16px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 700, marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
-                <div>⚠️ {error}</div>
+                <div>{error}</div>
                 {(noAccountEmail || error.toLowerCase().includes('register') || error.toLowerCase().includes('not found')) && (
                   <Link
                     to="/register"
@@ -559,13 +526,13 @@ export default function LoginPage({ onShowToast }) {
 
             {resetMsg && (
               <div style={{ backgroundColor: '#ECFDF5', border: '1px solid #6EE7B7', color: '#065F46', padding: '10px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 700, marginBottom: '14px' }}>
-                ✅ {resetMsg}
+                 {resetMsg}
               </div>
             )}
 
             {resetError && (
               <div style={{ backgroundColor: '#FEF2F2', border: '1px solid #FCA5A5', color: '#991B1B', padding: '10px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 700, marginBottom: '14px' }}>
-                ⚠️ {resetError}
+                {resetError}
               </div>
             )}
 

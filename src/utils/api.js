@@ -218,6 +218,38 @@ export async function deleteUserByEmailApi(email) {
   return data;
 }
 
+/**
+ * Admin: Toggle user account lock (requiring subscription)
+ */
+export async function toggleUserLockApi(userId, isLocked, lockReason) {
+  const response = await fetch(`${API_BASE_URL}/auth/users/${userId}/lock`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ isLocked, lockReason }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || 'Failed to update user lock status');
+  }
+  return data;
+}
+
+/**
+ * Admin: Update per-account subscription pricing & plan
+ */
+export async function updateUserSubscriptionApi(userId, subscriptionData) {
+  const response = await fetch(`${API_BASE_URL}/auth/users/${userId}/subscription`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(subscriptionData),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || 'Failed to update user subscription pricing');
+  }
+  return data;
+}
+
 
 /**
  * Fetch protected Dashboard summary data using JWT token
@@ -483,6 +515,33 @@ export async function fetchCouponsApi(token) {
   return data.data;
 }
 
+export async function fetchPublicCouponsApi(phone, email, merchantId) {
+  try {
+    const queryParams = new URLSearchParams();
+    if (phone) queryParams.append('phone', phone);
+    if (email) queryParams.append('email', email);
+    if (merchantId) queryParams.append('merchantId', merchantId);
+
+    const token = localStorage.getItem('foodypay_token');
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const response = await fetch(`${API_BASE_URL}/coupons/public?${queryParams.toString()}`, { headers });
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 404) {
+        return [];
+      }
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.message || 'Failed to fetch public coupons');
+    }
+    const data = await response.json();
+    return data.data || [];
+  } catch (err) {
+    console.warn('Public coupons fetch fallback:', err.message);
+    return [];
+  }
+}
+
 export async function createCouponApi(token, couponData) {
   const response = await fetch(`${API_BASE_URL}/coupons`, {
     method: 'POST',
@@ -494,6 +553,29 @@ export async function createCouponApi(token, couponData) {
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || 'Failed to create coupon');
+  return data.data;
+}
+
+export async function sendNotificationApi(token, notificationData) {
+  const response = await fetch(`${API_BASE_URL}/notifications/send`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(notificationData),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to send notification');
+  return data.data;
+}
+
+export async function fetchNotificationsApi(token) {
+  const response = await fetch(`${API_BASE_URL}/notifications`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to fetch notifications');
   return data.data;
 }
 

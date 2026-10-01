@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 export default function Navbar({ onOpenSignup, onOpenLogin }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -10,7 +11,7 @@ export default function Navbar({ onOpenSignup, onOpenLogin }) {
   return (
     <nav className="nav">
       <div className="wrap">
-        <a className="logo" href="/" aria-label="FoodyPay home">
+        <Link className="logo" to="/" aria-label="FoodyPay home">
           <video
             src="/Logo_Vidio.mp4"
             autoPlay
@@ -20,7 +21,7 @@ export default function Navbar({ onOpenSignup, onOpenLogin }) {
             className="logo-video"
             title="FoodyPay"
           />
-        </a>
+        </Link>
 
         <div className={`links ${mobileOpen ? 'open' : ''}`} id="links">
           <a href="/#how" onClick={handleLinkClick}>How it works</a>
@@ -28,30 +29,26 @@ export default function Navbar({ onOpenSignup, onOpenLogin }) {
           <a href="/#control" onClick={handleLinkClick}>Control</a>
           <a href="/#pricing" onClick={handleLinkClick}>Pricing</a>
 
-          {/* Dedicated 3-Step Website Creator (Opens in a New Tab) */}
-          <a
-            href="/create-website"
-            target="_blank"
-            rel="noopener noreferrer"
+          {/* Dedicated 3-Step Website Creator */}
+          <Link
+            to="/create-website"
             className="nav-builder-link"
             onClick={handleLinkClick}
             title="Live your restaurant website in just 3 steps (1 Week Free Trial)"
           >
             <span className="live-sparkle-dot"></span>
-            🚀 Live Website in 3 Steps
-          </a>
+             Live Website in 3 Steps
+          </Link>
 
-          {/* Restaurant Portal Login (Opens in New Tab) */}
-          <a
-            href="/login"
-            target="_blank"
-            rel="noopener noreferrer"
+          {/* Restaurant Portal Login (SPA Client Routing avoids Hostinger 403) */}
+          <Link
+            to="/login"
             className="nav-login-btn"
             onClick={handleLinkClick}
-            title="Restaurant Login Portal (New Tab)"
+            title="Restaurant Login Portal"
           >
             Login
-          </a>
+          </Link>
 
           {/* Start Free Plan */}
           <button 
@@ -73,7 +70,7 @@ export default function Navbar({ onOpenSignup, onOpenLogin }) {
           aria-expanded={mobileOpen}
           onClick={() => setMobileOpen(!mobileOpen)}
         >
-          {mobileOpen ? '✕' : '☰'}
+          {mobileOpen ? '' : ''}
         </button>
       </div>
     </nav>

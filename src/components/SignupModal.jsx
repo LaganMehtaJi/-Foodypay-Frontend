@@ -211,15 +211,15 @@ export default function SignupModal({ isOpen, onClose, onSwitchToLogin }) {
           {/* STEP WIZARD NAV */}
           <div className="step-wizard-nav" style={{ margin: '28px 0' }}>
             <div className={`step-wizard-item ${currentStep === 1 ? 'active' : currentStep > 1 ? 'completed' : ''}`}>
-              <div className="step-badge-num">{currentStep > 1 ? '✓' : '1'}</div>
+              <div className="step-badge-num">{currentStep > 1 ? '' : '1'}</div>
               <span>1. Owner Name</span>
             </div>
             <div className={`step-wizard-item ${currentStep === 2 ? 'active' : currentStep > 2 ? 'completed' : ''}`}>
-              <div className="step-badge-num">{currentStep > 2 ? '✓' : '2'}</div>
+              <div className="step-badge-num">{currentStep > 2 ? '' : '2'}</div>
               <span>2. Business Details</span>
             </div>
             <div className={`step-wizard-item ${currentStep === 3 ? 'active' : currentStep > 3 ? 'completed' : ''}`}>
-              <div className="step-badge-num">{currentStep > 3 ? '✓' : '3'}</div>
+              <div className="step-badge-num">{currentStep > 3 ? '' : '3'}</div>
               <span>3. Account Security</span>
             </div>
             <div className={`step-wizard-item ${currentStep === 4 ? 'active' : ''}`}>
@@ -231,13 +231,13 @@ export default function SignupModal({ isOpen, onClose, onSwitchToLogin }) {
           {/* BRAND FEATURE BULLETS */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '16px' }}>
             <div style={{ fontSize: '0.78rem', color: '#CBD5E1', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ color: '#22C55E' }}>✓</span> 100% Free Forever Plan ($0/mo)
+              <span style={{ color: '#22C55E' }}></span> 100% Free Forever Plan ($0/mo)
             </div>
             <div style={{ fontSize: '0.78rem', color: '#CBD5E1', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ color: '#22C55E' }}>✓</span> Instant QR Code Standees
+              <span style={{ color: '#22C55E' }}></span> Instant QR Code Standees
             </div>
             <div style={{ fontSize: '0.78rem', color: '#CBD5E1', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ color: '#22C55E' }}>✓</span> Cloud POS &amp; KDS Printing
+              <span style={{ color: '#22C55E' }}></span> Cloud POS &amp; KDS Printing
             </div>
           </div>
         </div>
@@ -260,7 +260,7 @@ export default function SignupModal({ isOpen, onClose, onSwitchToLogin }) {
                         borderRadius: '20px'
                       }}
                     >
-                      🟢 FREE REGISTRATION — STEP 1 OF 4
+                       FREE REGISTRATION — STEP 1 OF 4
                     </span>
                     <h2 style={{ fontSize: '1.55rem', fontWeight: 800, color: '#0F172A', margin: '10px 0 4px', letterSpacing: '-0.02em' }}>
                       What is your Name?
@@ -310,7 +310,7 @@ export default function SignupModal({ isOpen, onClose, onSwitchToLogin }) {
                     </div>
                   </div>
 
-                  {error && <div style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#EF4444', padding: '10px 14px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 600, marginTop: '14px' }}>⚠️ {error}</div>}
+                  {error && <div style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#EF4444', padding: '10px 14px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 600, marginTop: '14px' }}>️ {error}</div>}
 
                   <button
                     type="submit"
@@ -336,7 +336,7 @@ export default function SignupModal({ isOpen, onClose, onSwitchToLogin }) {
                         borderRadius: '20px'
                       }}
                     >
-                      🟢 FREE REGISTRATION — STEP 2 OF 4
+                       FREE REGISTRATION — STEP 2 OF 4
                     </span>
                     <h2 style={{ fontSize: '1.55rem', fontWeight: 800, color: '#0F172A', margin: '10px 0 4px', letterSpacing: '-0.02em' }}>
                       Business &amp; Contact Info
@@ -386,7 +386,7 @@ export default function SignupModal({ isOpen, onClose, onSwitchToLogin }) {
                     </div>
                   </div>
 
-                  {error && <div style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#EF4444', padding: '10px 14px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 600, marginTop: '14px' }}>⚠️ {error}</div>}
+                  {error && <div style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#EF4444', padding: '10px 14px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 600, marginTop: '14px' }}>️ {error}</div>}
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px', marginTop: '24px' }}>
                     <button type="button" className="btn ghost" onClick={() => setCurrentStep(1)} style={{ borderRadius: '12px' }}>← Back</button>
@@ -409,7 +409,7 @@ export default function SignupModal({ isOpen, onClose, onSwitchToLogin }) {
                         borderRadius: '20px'
                       }}
                     >
-                      🟢 FREE REGISTRATION — STEP 3 OF 4
+                       FREE REGISTRATION — STEP 3 OF 4
                     </span>
                     <h2 style={{ fontSize: '1.55rem', fontWeight: 800, color: '#0F172A', margin: '10px 0 4px', letterSpacing: '-0.02em' }}>
                       Security Credentials
@@ -477,7 +477,7 @@ export default function SignupModal({ isOpen, onClose, onSwitchToLogin }) {
                     </label>
                   </div>
 
-                  {error && <div style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#EF4444', padding: '10px 14px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 600, marginTop: '14px' }}>⚠️ {error}</div>}
+                  {error && <div style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#EF4444', padding: '10px 14px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 600, marginTop: '14px' }}>️ {error}</div>}
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px', marginTop: '24px' }}>
                     <button type="button" className="btn ghost" onClick={() => setCurrentStep(2)} style={{ borderRadius: '12px' }}>← Back</button>
@@ -543,7 +543,7 @@ export default function SignupModal({ isOpen, onClose, onSwitchToLogin }) {
                       />
                     ) : (
                       <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: '#FFF2EB', color: '#FF5E14', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem' }}>
-                        🖼️
+                        ️
                       </div>
                     )}
 
@@ -557,7 +557,7 @@ export default function SignupModal({ isOpen, onClose, onSwitchToLogin }) {
                     </div>
                   </div>
 
-                  {error && <div style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#EF4444', padding: '10px 14px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 600, marginBottom: '14px' }}>⚠️ {error}</div>}
+                  {error && <div style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', color: '#EF4444', padding: '10px 14px', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 600, marginBottom: '14px' }}>️ {error}</div>}
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '12px' }}>
                     <button type="button" className="btn ghost" onClick={() => setCurrentStep(3)} disabled={loading} style={{ borderRadius: '12px' }}>← Back</button>
@@ -583,7 +583,7 @@ export default function SignupModal({ isOpen, onClose, onSwitchToLogin }) {
                           <span>Uploading Logo &amp; Registering...</span>
                         </>
                       ) : (
-                        <span>🟢 Register &amp; Launch Free Account</span>
+                        <span> Register &amp; Launch Free Account</span>
                       )}
                     </button>
                   </div>
@@ -655,7 +655,7 @@ export default function SignupModal({ isOpen, onClose, onSwitchToLogin }) {
                   boxShadow: '0 10px 25px rgba(34, 197, 94, 0.4)'
                 }}
               >
-                ✓
+                
               </div>
 
               <h2 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#0F172A', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
@@ -694,7 +694,7 @@ export default function SignupModal({ isOpen, onClose, onSwitchToLogin }) {
                   borderRadius: '12px'
                 }}
               >
-                🚀 Open Dashboard Now
+                 Open Dashboard Now
               </a>
             </div>
           )}

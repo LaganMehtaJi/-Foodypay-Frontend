@@ -217,7 +217,7 @@ export default function LiveDemo({ onShowToast }) {
               onClick={() => setSoundEnabled(!soundEnabled)}
               title={soundEnabled ? 'Mute sound effects' : 'Enable sound effects'}
             >
-              <span>{soundEnabled ? '🔊 Sound: ON' : '🔇 Sound: MUTED'}</span>
+              <span>{soundEnabled ? ' Sound: ON' : ' Sound: MUTED'}</span>
             </button>
 
             <button
@@ -226,7 +226,7 @@ export default function LiveDemo({ onShowToast }) {
               onClick={() => setShow3DScene(!show3DScene)}
               title="Toggle 3D View"
             >
-              <span>{show3DScene ? '🧊 3D Station: ON' : '🧊 3D Station: OFF'}</span>
+              <span>{show3DScene ? ' 3D Station: ON' : ' 3D Station: OFF'}</span>
             </button>
           </div>
         </div>
@@ -373,7 +373,7 @@ export default function LiveDemo({ onShowToast }) {
                   <div className="bill-tear-card">
                     <div className="bill-tear-header">
                       <span>FOOD BILL RECEIPT</span>
-                      <span className="tear-tag">🧾 TEAR &amp; PAY</span>
+                      <span className="tear-tag"> TEAR &amp; PAY</span>
                     </div>
                     <div className="bill-amount-row">
                       <span>Total Payable:</span>
@@ -386,11 +386,11 @@ export default function LiveDemo({ onShowToast }) {
                         style={{ width: '100%', marginTop: '8px' }}
                         onClick={() => handlePayBill(currentTicket.id)}
                       >
-                        💳 Pay {inr(currentTicket.total)} (FastRail)
+                         Pay {inr(currentTicket.total)} (FastRail)
                       </button>
                     ) : (
                       <div className="paid-stamp">
-                        ✓ PAID &amp; SETTLED
+                         PAID &amp; SETTLED
                       </div>
                     )}
                   </div>
@@ -402,7 +402,7 @@ export default function LiveDemo({ onShowToast }) {
                     className="btn small"
                     onClick={handleCallWaiter}
                   >
-                    🛎️ Call waiter
+                    ️ Call waiter
                   </button>
                   <button
                     type="button"
@@ -450,11 +450,11 @@ export default function LiveDemo({ onShowToast }) {
                         className="btn-pay-now"
                         onClick={() => handlePayBill(t.id)}
                       >
-                        💵 Customer Pays {inr(t.total)}
+                         Customer Pays {inr(t.total)}
                       </button>
                     ) : (
                       <div className="tk-paid-badge">
-                        ✓ Settled
+                         Settled
                       </div>
                     )}
                   </div>

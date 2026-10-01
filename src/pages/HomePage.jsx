@@ -37,7 +37,7 @@ export default function HomePage({ onOpenSignup, onShowToast }) {
                 className="hero-showcase-logo"
               />
               <div className="hero-logo-caption">
-                <span className="logo-sparkle-star">✨</span>
+                <span className="logo-sparkle-star"></span>
                 <b>FoodyPay OS</b>
                 <span className="logo-sub-badge">Table QR • POS • KDS</span>
               </div>
@@ -72,7 +72,7 @@ export default function HomePage({ onOpenSignup, onShowToast }) {
               rel="noopener noreferrer"
               className="btn hero-builder-btn"
             >
-              🚀 Live Your Website in Just 3 Steps →
+               Live Your Website in Just 3 Steps →
             </a>
             <a className="btn" href="#demo">
               Try the live demo
@@ -106,7 +106,7 @@ export default function HomePage({ onOpenSignup, onShowToast }) {
                 className="gallery-photo"
                 loading="lazy"
               />
-              <span className="gallery-badge">📱 Open Catalog in Hand</span>
+              <span className="gallery-badge"> Open Catalog in Hand</span>
             </div>
             <div className="gallery-info">
               <b>Digital Catalog in Diner's Hand</b>
@@ -122,7 +122,7 @@ export default function HomePage({ onOpenSignup, onShowToast }) {
                 className="gallery-photo"
                 loading="lazy"
               />
-              <span className="gallery-badge">📈 Managed CRM &amp; Sales</span>
+              <span className="gallery-badge"> Managed CRM &amp; Sales</span>
             </div>
             <div className="gallery-info">
               <b>Managed CRM &amp; Analytics</b>
@@ -142,7 +142,7 @@ export default function HomePage({ onOpenSignup, onShowToast }) {
             />
           </div>
           <div className="feature-card-content">
-            <div className="feature-badge">⚡ 1 Week Free Website Trial</div>
+            <div className="feature-badge"> 1 Week Free Website Trial</div>
             <h3>Ghar baithe orders lein: Apni branded food website shuru karein</h3>
             <p>
               Ab customers ghar baithe direct aapke official menu se order kar sakte hain. Zero setup fee, zero coding. Menu setup karein aur turant live share karein!
@@ -154,7 +154,7 @@ export default function HomePage({ onOpenSignup, onShowToast }) {
             rel="noopener noreferrer"
             className="btn primary hero-feature-action"
           >
-            Live Your Website in Just 3 Steps 🚀
+            Live Your Website in Just 3 Steps 
           </a>
         </div>
       </header>
@@ -195,7 +195,7 @@ export default function HomePage({ onOpenSignup, onShowToast }) {
               rel="noopener noreferrer"
               className="btn hero-builder-btn"
             >
-              🚀 Live Your Website in Just 3 Steps →
+               Live Your Website in Just 3 Steps →
             </a>
             <a className="btn" href="#demo">
               Watch the demo

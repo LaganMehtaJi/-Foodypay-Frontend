@@ -25,16 +25,16 @@ export default function GuestExperience() {
               />
               <div className="spotlight-overlay-badge">
                 <span className="live-sparkle-dot" />
-                <span>📱 Food Catalog in Customer's Hand</span>
+                <span> Food Catalog in Customer's Hand</span>
               </div>
             </div>
             <div className="spotlight-body">
               <h4>Interactive Mobile Digital Catalog</h4>
               <p>Guests view appetizing high-definition dish photos, customize toppings, check spice levels &amp; order with zero friction right from their table.</p>
               <div className="spotlight-meta-tags">
-                <span>📸 Real Food Photos</span>
-                <span>⚡ 1-Tap Cart</span>
-                <span>🟢 Veg / Non-Veg Badges</span>
+                <span> Real Food Photos</span>
+                <span> 1-Tap Cart</span>
+                <span> Veg / Non-Veg Badges</span>
               </div>
             </div>
           </div>
@@ -56,9 +56,9 @@ export default function GuestExperience() {
               <h4>Instant Table QR Stand</h4>
               <p>Place sleek acrylic QR stands on every table. Diners simply point their phone camera to instantly unlock your restaurant's digital storefront.</p>
               <div className="spotlight-meta-tags">
-                <span>🚫 Zero App Download</span>
+                <span> Zero App Download</span>
                 <span>⏱️ Cuts Wait Time by 40%</span>
-                <span>💳 Instant UPI Payment</span>
+                <span> Instant UPI Payment</span>
               </div>
             </div>
           </div>
@@ -81,7 +81,7 @@ export default function GuestExperience() {
             <li>
               <div>
                 <b>Live Kitchen Tracker</b>
-                <span>Real-time status transparency: Placed ➔ Preparing ➔ Ready ➔ Served.</span>
+                <span>Real-time status transparency: Placed  Preparing  Ready  Served.</span>
               </div>
             </li>
             <li>
@@ -117,7 +117,7 @@ export default function GuestExperience() {
                   aria-label={`${star} star${star > 1 ? 's' : ''}`}
                   onClick={() => handleStarClick(star)}
                 >
-                  ★
+                  
                 </button>
               ))}
             </div>
@@ -131,13 +131,13 @@ export default function GuestExperience() {
               )}
               {rating > 0 && rating <= 3 && (
                 <>
-                  <b>Guest sees: We're on it right away. 🙏</b>
+                  <b>Guest sees: We're on it right away. </b>
                   Feedback is routed privately to the owner's dashboard with table and order details — protecting you from public 1-star reviews.
                 </>
               )}
               {rating >= 4 && (
                 <>
-                  <b>Guest sees: Thank you so much! 🎉</b>
+                  <b>Guest sees: Thank you so much! </b>
                   They are invited to share their experience on Google Maps / Zomato with bonus loyalty points.
                 </>
               )}
