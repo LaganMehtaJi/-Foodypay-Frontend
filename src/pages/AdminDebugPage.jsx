@@ -1355,9 +1355,10 @@ export default function AdminDebugPage({ onShowToast }) {
                   gap: '8px',
                 }}
               >
-                <Check size={18} /> Save Global Subscription Settings
-              </button>
             </form>
+          </div>
+        )}
+
         {/* TAB: SUPER ADMIN DELIVERY ZONES & STORES MANAGEMENT */}
         {activeTab === 'delivery_zones' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
