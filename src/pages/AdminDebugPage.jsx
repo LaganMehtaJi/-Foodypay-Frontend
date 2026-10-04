@@ -1355,6 +1355,8 @@ export default function AdminDebugPage({ onShowToast }) {
                   gap: '8px',
                 }}
               >
+                <Check size={18} /> Save Global Subscription Settings
+              </button>
             </form>
           </div>
         )}
