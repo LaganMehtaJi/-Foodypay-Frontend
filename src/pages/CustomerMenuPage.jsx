@@ -429,6 +429,7 @@ export default function CustomerMenuPage({ onShowToast }) {
         const lng = position.coords.longitude;
         try {
           const res = await checkDeliveryAvailabilityApi(lat, lng);
+          const isAvail = res.available !== false;
           let resolvedLabel = '';
           if (Array.isArray(res.matchingZones) && res.matchingZones.length > 0) {
             const mz = res.matchingZones[0];
@@ -745,10 +746,20 @@ export default function CustomerMenuPage({ onShowToast }) {
           const locationRes = await fetchAvailableProductsApi(locationState.lat, locationState.lng, selectedCategory);
           if (locationRes && locationRes.available === false) {
             setDishes([]);
-          } else if (locationRes && Array.isArray(locationRes.dishes)) {
+          } else if (locationRes && Array.isArray(locationRes.dishes) && locationRes.dishes.length > 0) {
             setDishes(normalizeDishes(locationRes.dishes));
+          } else {
+            const apiDishes = await fetchPublicDishesApi(merchantId, effectiveMerchantId);
+            if (Array.isArray(apiDishes)) {
+              setDishes(normalizeDishes(apiDishes));
+            }
           }
-        } catch (locErr) {}
+        } catch (locErr) {
+          try {
+            const apiDishes = await fetchPublicDishesApi(merchantId, effectiveMerchantId);
+            if (Array.isArray(apiDishes)) setDishes(normalizeDishes(apiDishes));
+          } catch (e) {}
+        }
       } else {
         try {
           const apiDishes = await fetchPublicDishesApi(merchantId, effectiveMerchantId);
