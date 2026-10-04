@@ -2910,6 +2910,71 @@ input:checked + .crm-blue-slider:before {
   }
 }
 
+/* NATIVE MOBILE BOTTOM APP NAV BAR */
+.crm-mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .crm-mobile-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: #FFFFFF;
+    border-top: 1.5px solid #E2E8F0;
+    box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.08);
+    z-index: 9999;
+    align-items: center;
+    justify-content: space-around;
+    padding: 4px 6px;
+  }
+
+  .crm-mobile-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: transparent;
+    border: none;
+    color: #64748B;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    flex: 1;
+    padding: 6px 0;
+    transition: all 0.15s ease;
+  }
+
+  .crm-mobile-nav-item.active {
+    color: #1D4ED8;
+    font-weight: 800;
+  }
+
+  .crm-mobile-nav-item.pos-action {
+    position: relative;
+    top: -12px;
+  }
+
+  .crm-mobile-pos-badge {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #1D4ED8 0%, #2563EB 100%);
+    box-shadow: 0 4px 12px rgba(29, 78, 216, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .crm-main {
+    padding-bottom: 74px !important;
+  }
+}
+
 
 
 

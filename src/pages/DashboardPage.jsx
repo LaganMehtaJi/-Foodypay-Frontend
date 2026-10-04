@@ -3618,7 +3618,7 @@ export default function DashboardPage({ onShowToast }) {
           ========================================================================== */}
       <main className="crm-main">
         {/* TOPBAR */}
-        <header className="crm-header-bar" style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '24px', background: '#FFFFFF', padding: '16px 24px', borderRadius: '16px', border: '1px solid #E2E8F0', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
+        <header className="crm-header-bar">
           <div className="crm-header-left" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <button
               type="button"
@@ -3983,6 +3983,7 @@ export default function DashboardPage({ onShowToast }) {
 
                 {/* GLOBAL ORDER SEARCH BOX (SEARCH BY NAME, PHONE, ORDER #, TABLE, DISH) */}
                 <div
+                  className="crm-search-box-wrap"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -4129,12 +4130,12 @@ export default function DashboardPage({ onShowToast }) {
               </div>
             )}
 
-            {/* ORDERS GRID - DYNAMIC COLUMNS (1 TO 6 LIMITS) */}
+            {/* ORDERS GRID - DYNAMIC COLUMNS (1 TO 6 LIMITS ON DESKTOP, 1 COLUMN ON MOBILE) */}
             <div
               className="crm-orders-grid"
               style={{
                 display: 'grid',
-                gridTemplateColumns: cardsPerRow === 1 ? '1fr' : `repeat(${cardsPerRow}, minmax(min(100%, 220px), 1fr))`,
+                gridTemplateColumns: window.innerWidth <= 768 || cardsPerRow === 1 ? '1fr' : `repeat(${cardsPerRow}, minmax(0, 1fr))`,
                 gap: '14px',
               }}
             >
@@ -12807,6 +12808,56 @@ export default function DashboardPage({ onShowToast }) {
             <span>{t.msg}</span>
           </div>
         ))}
+      </div>
+
+      {/* NATIVE MOBILE APP BOTTOM NAVIGATION BAR */}
+      <div className="crm-mobile-bottom-nav">
+        <button
+          type="button"
+          className={`crm-mobile-nav-item ${activeTab === 'home_orders' ? 'active' : ''}`}
+          onClick={() => setActiveTab('home_orders')}
+        >
+          <Home size={18} />
+          <span>Orders</span>
+        </button>
+
+        <button
+          type="button"
+          className="crm-mobile-nav-item pos-action"
+          onClick={() => handleOpenManualOrder()}
+        >
+          <div className="crm-mobile-pos-badge">
+            <Plus size={22} color="#FFFFFF" />
+          </div>
+          <span>+ POS</span>
+        </button>
+
+        <button
+          type="button"
+          className={`crm-mobile-nav-item ${activeTab === 'kitchen' ? 'active' : ''}`}
+          onClick={() => setActiveTab('kitchen')}
+        >
+          <ChefHat size={18} />
+          <span>Kitchen</span>
+        </button>
+
+        <button
+          type="button"
+          className={`crm-mobile-nav-item ${activeTab === 'catalog' ? 'active' : ''}`}
+          onClick={() => setActiveTab('catalog')}
+        >
+          <Package size={18} />
+          <span>Catalog</span>
+        </button>
+
+        <button
+          type="button"
+          className="crm-mobile-nav-item"
+          onClick={() => setMobileMenuOpen(true)}
+        >
+          <Menu size={18} />
+          <span>Menu</span>
+        </button>
       </div>
     </div>
   );
