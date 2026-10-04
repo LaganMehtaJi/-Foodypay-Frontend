@@ -731,13 +731,17 @@ export async function assignStoreOwnerEmailApi(storeId, ownerEmail) {
   return data;
 }
 
-export async function assignZonesToStoreApi(storeId, zoneIds) {
+export async function assignStoreZonesApi(storeId, zoneIds) {
   const res = await safeFetch(`/stores/${storeId}/zones`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ zoneIds }),
   });
   return await parseJsonResponse(res);
+}
+
+export async function assignZonesToStoreApi(storeId, zoneIds) {
+  return assignStoreZonesApi(storeId, zoneIds);
 }
 
 export async function checkDeliveryAvailabilityApi(lat, lng) {
