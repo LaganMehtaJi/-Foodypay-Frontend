@@ -2761,61 +2761,112 @@ input:checked + .crm-blue-slider:before {
 
   /* Header Bar Mobile Adjustment */
   .crm-header-bar {
-    flex-direction: column;
-    align-items: stretch !important;
-    gap: 12px !important;
-    padding: 12px 14px !important;
-    border-radius: 12px !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 100 !important;
+    margin-bottom: 12px !important;
+    padding: 10px 12px !important;
+    border-radius: 0 0 12px 12px !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06) !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-top: none !important;
   }
 
   .crm-header-left {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .crm-header-right {
-    width: 100%;
-    justify-content: space-between;
-    flex-wrap: wrap;
+    width: auto !important;
+    justify-content: flex-start !important;
     gap: 8px !important;
   }
 
+  .crm-header-right {
+    width: auto !important;
+    justify-content: flex-end !important;
+    flex-wrap: nowrap !important;
+    gap: 6px !important;
+  }
+
   .crm-header-clock-badge {
-    padding: 6px 10px;
-    font-size: 12px;
+    display: none !important;
+  }
+
+  .desktop-only-pos {
+    display: none !important;
   }
 
   .crm-header-sound-btn {
-    width: 34px;
-    height: 34px;
-  }
-
-  .crm-header-pos-btn {
-    padding: 8px 12px;
-    font-size: 12.5px;
+    width: 32px !important;
+    height: 32px !important;
   }
 
   .crm-header-logout-btn {
-    padding: 8px 10px;
-    font-size: 12px;
+    padding: 6px 10px !important;
+    font-size: 11.5px !important;
   }
 
   .crm-page-heading {
-    font-size: 17px !important;
+    font-size: 15px !important;
   }
 
   /* Filter Tabs & Search Bar */
   .crm-filter-bar {
-    flex-direction: column;
+    flex-direction: column !important;
     align-items: stretch !important;
     gap: 10px !important;
+    padding: 10px 12px !important;
+    border-radius: 12px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .crm-filter-tabs-container {
+    width: 100% !important;
+    overflow-x: auto !important;
+    scrollbar-width: none !important;
   }
 
   .crm-filter-tabs {
-    overflow-x: auto;
-    white-space: nowrap;
-    padding-bottom: 4px;
-    scrollbar-width: none;
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+    padding-bottom: 4px !important;
+    display: flex !important;
+    gap: 6px !important;
+  }
+
+  .crm-search-and-actions-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  .crm-search-box-wrap {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: 1 1 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .crm-grid-columns-control {
+    display: none !important;
+  }
+
+  .desktop-create-btn {
+    display: none !important;
+  }
+
+  .crm-orders-grid {
+    grid-template-columns: 1fr !important;
+    width: 100% !important;
+  }
+
+  .crm-order-card {
+    width: 100% !important;
+    box-sizing: border-box !important;
   }
 
   /* Table Containers Horizontal Scrolling */

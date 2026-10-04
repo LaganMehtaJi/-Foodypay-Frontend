@@ -3681,7 +3681,7 @@ export default function DashboardPage({ onShowToast }) {
             {/* Quick Manual Order Button */}
             <button
               type="button"
-              className="crm-header-pos-btn"
+              className="crm-header-pos-btn desktop-only-pos"
               onClick={() => handleOpenManualOrder()}
             >
               <Plus size={16} />
@@ -3957,8 +3957,8 @@ export default function DashboardPage({ onShowToast }) {
             })()}
 
             {/* FILTER BAR WITH CARDS PER ROW SELECTOR & ORDER SEARCH */}
-            <div className="crm-filter-bar" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', flex: '1 1 auto' }}>
+            <div className="crm-filter-bar">
+              <div className="crm-filter-tabs-container">
                 <div className="crm-filter-tabs">
                   {[
                     { key: 'all', label: 'All Orders' },
@@ -3980,23 +3980,11 @@ export default function DashboardPage({ onShowToast }) {
                     </button>
                   ))}
                 </div>
+              </div>
 
+              <div className="crm-search-and-actions-row">
                 {/* GLOBAL ORDER SEARCH BOX (SEARCH BY NAME, PHONE, ORDER #, TABLE, DISH) */}
-                <div
-                  className="crm-search-box-wrap"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    backgroundColor: '#FFFFFF',
-                    border: '1.5px solid #CBD5E1',
-                    borderRadius: '12px',
-                    padding: '6px 12px',
-                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
-                    flex: '1 1 260px',
-                    maxWidth: '380px',
-                  }}
-                >
+                <div className="crm-search-box-wrap">
                   <Search size={16} color="#64748B" style={{ flexShrink: 0 }} />
                   <input
                     type="text"
@@ -4037,10 +4025,8 @@ export default function DashboardPage({ onShowToast }) {
                     </button>
                   )}
                 </div>
-              </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                {/* 1 to 6 CARDS PER ROW SELECTOR CONTROL */}
+                {/* 1 to 6 CARDS PER ROW SELECTOR CONTROL (DESKTOP ONLY) */}
                 <div className="crm-grid-columns-control">
                   <span className="crm-grid-control-label">
                     <SlidersHorizontal size={14} /> Cards / Row:
@@ -4060,7 +4046,7 @@ export default function DashboardPage({ onShowToast }) {
 
                 <button
                   type="button"
-                  className="btn-create-order-primary"
+                  className="btn-create-order-primary desktop-create-btn"
                   onClick={handleOpenManualOrder}
                   title="Create counter or dine-in order"
                 >
