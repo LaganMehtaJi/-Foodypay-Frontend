@@ -181,8 +181,8 @@ export const getAvailableProducts = async (req, res, next) => {
       }
     }
 
-    // If no active stores cover this customer location
-    if (activeZones.length > 0 && eligibleStores.length === 0) {
+    // If active zones or active stores exist but none cover this customer location
+    if ((activeZones.length > 0 || activeStores.length > 0) && eligibleStores.length === 0) {
       return res.status(200).json({
         available: false,
         reason: 'AREA_NOT_SUPPORTED',

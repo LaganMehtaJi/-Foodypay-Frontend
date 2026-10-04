@@ -445,7 +445,9 @@ export default function CustomerMenuPage({ onShowToast }) {
           // Fetch products for location
           try {
             const prodRes = await fetchAvailableProductsApi(lat, lng, selectedCategory);
-            if (prodRes && Array.isArray(prodRes.dishes) && prodRes.dishes.length > 0) {
+            if (prodRes && prodRes.available === false) {
+              setDishes([]);
+            } else if (prodRes && Array.isArray(prodRes.dishes)) {
               setDishes(prodRes.dishes);
             }
           } catch (e) {}
@@ -731,12 +733,23 @@ export default function CustomerMenuPage({ onShowToast }) {
         }));
       };
 
-      try {
-        const apiDishes = await fetchPublicDishesApi(merchantId, effectiveMerchantId);
-        if (Array.isArray(apiDishes)) {
-          setDishes(normalizeDishes(apiDishes));
-        }
-      } catch (err) {}
+      if (locationState.lat && locationState.lng) {
+        try {
+          const locationRes = await fetchAvailableProductsApi(locationState.lat, locationState.lng, selectedCategory);
+          if (locationRes && locationRes.available === false) {
+            setDishes([]);
+          } else if (locationRes && Array.isArray(locationRes.dishes)) {
+            setDishes(normalizeDishes(locationRes.dishes));
+          }
+        } catch (locErr) {}
+      } else {
+        try {
+          const apiDishes = await fetchPublicDishesApi(merchantId, effectiveMerchantId);
+          if (Array.isArray(apiDishes)) {
+            setDishes(normalizeDishes(apiDishes));
+          }
+        } catch (err) {}
+      }
 
       const savedMeals = localStorage.getItem('foodypay_crm_meals_v1');
       if (savedMeals) {
@@ -770,7 +783,7 @@ export default function CustomerMenuPage({ onShowToast }) {
     loadDynamicMenu();
     window.addEventListener('storage', loadDynamicMenu);
     return () => window.removeEventListener('storage', loadDynamicMenu);
-  }, [restaurantSlug, merchantId, rawRestName]);
+  }, [restaurantSlug, merchantId, rawRestName, locationState.lat, locationState.lng, selectedCategory]);
 
   // Dynamic favicon & title
   useEffect(() => {
