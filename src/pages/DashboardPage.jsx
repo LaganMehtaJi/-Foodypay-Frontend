@@ -12371,7 +12371,7 @@ export default function DashboardPage({ onShowToast }) {
                 </button>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div className="crm-form-group">
                   <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Center Latitude *</label>
                   <input
@@ -12396,6 +12396,7 @@ export default function DashboardPage({ onShowToast }) {
                     onChange={(e) => setZoneForm({ ...zoneForm, centerLongitude: e.target.value })}
                   />
                 </div>
+              </div>
               <div className="crm-form-group">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                   <label style={{ fontSize: '12.5px', fontWeight: 800 }}>
