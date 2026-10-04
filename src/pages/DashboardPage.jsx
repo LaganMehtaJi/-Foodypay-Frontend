@@ -12797,6 +12797,42 @@ export default function DashboardPage({ onShowToast }) {
       </div>
 
       {/* NATIVE MOBILE APP BOTTOM NAVIGATION BAR */}
+      {/* FLOATING ACTION PILLS ABOVE BOTTOM NAV BAR (Ref: User Image) */}
+      <div className="crm-mobile-floating-actions">
+        <button
+          type="button"
+          className="crm-mobile-float-btn secondary"
+          onClick={() => {
+            const storeUrl = window.location.origin;
+            if (navigator.share) {
+              navigator.share({ title: storeControls.restName || 'My Restaurant', url: storeUrl }).catch(() => {});
+            } else {
+              navigator.clipboard.writeText(storeUrl);
+              addToast('Store link copied to clipboard!');
+            }
+          }}
+        >
+          <Share2 size={16} color="#15803D" />
+          <span>Share Shop</span>
+        </button>
+
+        <button
+          type="button"
+          className="crm-mobile-float-btn primary"
+          onClick={() => {
+            if (activeTab === 'catalog') {
+              setIsAddProductModalOpen(true);
+            } else {
+              handleOpenManualOrder();
+            }
+          }}
+        >
+          <Plus size={16} />
+          <span>{activeTab === 'catalog' ? 'Add Product' : 'New Order'}</span>
+        </button>
+      </div>
+
+      {/* NATIVE MOBILE APP BOTTOM NAVIGATION BAR (Ref: User Image) */}
       <div className="crm-mobile-bottom-nav">
         <button
           type="button"
@@ -12804,36 +12840,40 @@ export default function DashboardPage({ onShowToast }) {
           onClick={() => setActiveTab('home_orders')}
         >
           <Home size={18} />
-          <span>Orders</span>
+          <span>Home</span>
         </button>
 
         <button
           type="button"
-          className="crm-mobile-nav-item pos-action"
-          onClick={() => handleOpenManualOrder()}
-        >
-          <div className="crm-mobile-pos-badge">
-            <Plus size={22} color="#FFFFFF" />
-          </div>
-          <span>+ POS</span>
-        </button>
-
-        <button
-          type="button"
-          className={`crm-mobile-nav-item ${activeTab === 'kitchen' ? 'active' : ''}`}
-          onClick={() => setActiveTab('kitchen')}
-        >
-          <ChefHat size={18} />
-          <span>Kitchen</span>
-        </button>
-
-        <button
-          type="button"
-          className={`crm-mobile-nav-item ${activeTab === 'catalog' ? 'active' : ''}`}
+          className={`crm-mobile-nav-item ${activeTab === 'catalog' || activeTab === 'catalog_collections' ? 'active' : ''}`}
           onClick={() => setActiveTab('catalog')}
         >
           <Package size={18} />
-          <span>Catalog</span>
+          <span>Catalogue</span>
+        </button>
+
+        <button
+          type="button"
+          className={`crm-mobile-nav-item ${activeTab === 'grow' ? 'active' : ''}`}
+          onClick={() => {
+            if (isGrowLocked) {
+              setUpgradeModalFeature({ title: 'Grow Analytics', badge: 'PRO', description: 'Unlock real-time sales telemetry & customer growth metrics.' });
+            } else {
+              setActiveTab('grow');
+            }
+          }}
+        >
+          <TrendingUp size={18} />
+          <span>Grow</span>
+        </button>
+
+        <button
+          type="button"
+          className={`crm-mobile-nav-item ${activeTab === 'utilities' || activeTab === 'delivery_zones' ? 'active' : ''}`}
+          onClick={() => setActiveTab('utilities')}
+        >
+          <QrCode size={18} />
+          <span>Utilities</span>
         </button>
 
         <button
@@ -12842,7 +12882,7 @@ export default function DashboardPage({ onShowToast }) {
           onClick={() => setMobileMenuOpen(true)}
         >
           <Menu size={18} />
-          <span>Menu</span>
+          <span>More</span>
         </button>
       </div>
     </div>

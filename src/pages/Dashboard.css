@@ -2961,12 +2961,55 @@ input:checked + .crm-blue-slider:before {
   }
 }
 
-/* NATIVE MOBILE BOTTOM APP NAV BAR */
+/* NATIVE MOBILE FLOATING ACTION PILLS ABOVE BOTTOM NAV */
+.crm-mobile-floating-actions {
+  display: none;
+}
+
 .crm-mobile-bottom-nav {
   display: none;
 }
 
 @media (max-width: 768px) {
+  .crm-mobile-floating-actions {
+    display: flex;
+    position: fixed;
+    bottom: 68px;
+    left: 12px;
+    right: 12px;
+    z-index: 9998;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .crm-mobile-float-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 16px;
+    border-radius: 30px;
+    font-size: 13.5px;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.15);
+    transition: transform 0.15s ease;
+  }
+
+  .crm-mobile-float-btn.secondary {
+    background: #FFFFFF;
+    color: #0F172A;
+    border: 2px solid #0F172A;
+  }
+
+  .crm-mobile-float-btn.primary {
+    background: #0F172A;
+    color: #FFFFFF;
+    border: 2px solid #0F172A;
+  }
+
   .crm-mobile-bottom-nav {
     display: flex;
     position: fixed;
@@ -3005,24 +3048,8 @@ input:checked + .crm-blue-slider:before {
     font-weight: 800;
   }
 
-  .crm-mobile-nav-item.pos-action {
-    position: relative;
-    top: -12px;
-  }
-
-  .crm-mobile-pos-badge {
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #1D4ED8 0%, #2563EB 100%);
-    box-shadow: 0 4px 12px rgba(29, 78, 216, 0.35);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
   .crm-main {
-    padding-bottom: 74px !important;
+    padding-bottom: 130px !important;
   }
 }
 
