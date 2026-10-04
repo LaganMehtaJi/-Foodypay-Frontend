@@ -37,7 +37,7 @@ export const getDeliveryZones = async (req, res, next) => {
 // @access  Admin
 export const createDeliveryZone = async (req, res, next) => {
   try {
-    const { name, city, state, pincode, centerLatitude, centerLongitude, radius, isActive } = req.body;
+    const { name, city, state, pincode, centerLatitude, centerLongitude, radius, coveredSectors, isActive } = req.body;
 
     if (!name || centerLatitude === undefined || centerLongitude === undefined) {
       return res.status(400).json({
@@ -48,6 +48,12 @@ export const createDeliveryZone = async (req, res, next) => {
 
     const zoneId = `ZONE-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
+    const parsedSectors = Array.isArray(coveredSectors)
+      ? coveredSectors
+      : typeof coveredSectors === 'string'
+      ? coveredSectors.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
+
     const zone = await DeliveryZone.create({
       zoneId,
       name,
@@ -57,6 +63,7 @@ export const createDeliveryZone = async (req, res, next) => {
       centerLatitude: Number(centerLatitude),
       centerLongitude: Number(centerLongitude),
       radius: Number(radius) || 5,
+      coveredSectors: parsedSectors,
       isActive: isActive !== undefined ? Boolean(isActive) : true,
     });
 

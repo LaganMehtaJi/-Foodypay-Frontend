@@ -44,6 +44,10 @@ const deliveryZoneSchema = new mongoose.Schema(
       required: [true, 'Please enter delivery zone radius in KM'],
       default: 5,
     },
+    coveredSectors: {
+      type: [String],
+      default: [],
+    },
     isActive: {
       type: Boolean,
       default: true,

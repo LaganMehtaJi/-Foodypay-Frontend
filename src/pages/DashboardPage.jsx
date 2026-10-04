@@ -6525,6 +6525,16 @@ export default function DashboardPage({ onShowToast }) {
                           </span>
                         </div>
 
+                        {(Array.isArray(zone.coveredSectors) ? zone.coveredSectors : (zone.coveredSectors || '').split(',')).filter(Boolean).length > 0 && (
+                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '2px' }}>
+                            {(Array.isArray(zone.coveredSectors) ? zone.coveredSectors : (zone.coveredSectors || '').split(',')).filter(Boolean).map((sec, i) => (
+                              <span key={i} style={{ fontSize: '10.5px', fontWeight: 700, padding: '2px 7px', borderRadius: '6px', background: '#F1F5F9', color: '#334155', border: '1px solid #E2E8F0' }}>
+                                🏷️ {sec.trim()}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
                         <div style={{ background: '#F8FAFC', padding: '10px 12px', borderRadius: '10px', fontSize: '12px', color: '#475569', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                           <div><b>Center GPS:</b> {zone.centerLatitude?.toFixed(4)}, {zone.centerLongitude?.toFixed(4)}</div>
                           <div><b>Coverage Radius:</b> {zone.radius} KM</div>
@@ -6544,6 +6554,7 @@ export default function DashboardPage({ onShowToast }) {
                                 centerLatitude: zone.centerLatitude || 30.7046,
                                 centerLongitude: zone.centerLongitude || 76.7179,
                                 radius: zone.radius || 5,
+                                coveredSectors: Array.isArray(zone.coveredSectors) ? zone.coveredSectors.join(', ') : (zone.coveredSectors || ''),
                                 isActive: zone.isActive !== false,
                               });
                               setIsAddZoneModalOpen(true);
@@ -12385,21 +12396,99 @@ export default function DashboardPage({ onShowToast }) {
                     onChange={(e) => setZoneForm({ ...zoneForm, centerLongitude: e.target.value })}
                   />
                 </div>
-                <div className="crm-form-group">
-                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Zone Radius (KM) *</label>
-                  <input
-                    type="number"
-                    step="any"
-                    required
-                    className="crm-input"
-                    placeholder="5"
-                    value={zoneForm.radius}
-                    onChange={(e) => setZoneForm({ ...zoneForm, radius: e.target.value })}
-                  />
+              <div className="crm-form-group">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>
+                    🚀 Interactive Delivery Coverage Radius: <span style={{ color: '#1E40AF', fontSize: '14px', fontWeight: 900 }}>{zoneForm.radius || 5} KM</span>
+                  </label>
+                  <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 700 }}>
+                    Coverage Area: ~{(Math.PI * Math.pow(Number(zoneForm.radius || 5), 2)).toFixed(1)} sq. km
+                  </span>
+                </div>
+
+                <input
+                  type="range"
+                  min="0.5"
+                  max="30"
+                  step="0.5"
+                  className="crm-slider"
+                  style={{ width: '100%', height: '7px', accentColor: '#1E40AF', cursor: 'pointer' }}
+                  value={zoneForm.radius || 5}
+                  onChange={(e) => setZoneForm({ ...zoneForm, radius: Number(e.target.value) })}
+                />
+
+                <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 700, alignSelf: 'center' }}>Quick Presets:</span>
+                  {[2, 5, 8, 10, 15, 25].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setZoneForm({ ...zoneForm, radius: val })}
+                      style={{
+                        padding: '3px 10px',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        borderRadius: '12px',
+                        border: '1px solid #BFDBFE',
+                        background: Number(zoneForm.radius) === val ? '#1E40AF' : '#EFF6FF',
+                        color: Number(zoneForm.radius) === val ? '#FFFFFF' : '#1E40AF',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {val} KM
+                    </button>
+                  ))}
                 </div>
               </div>
-              <div style={{ fontSize: '11px', color: '#64748B', marginTop: '-8px' }}>
-                💡 Tip: Open <a href={`https://www.google.com/maps/@${zoneForm.centerLatitude || 30.7046},${zoneForm.centerLongitude || 76.7179},15z`} target="_blank" rel="noopener noreferrer" style={{ color: '#2563EB', fontWeight: 700 }}>Google Maps</a>, right-click any sector (e.g. Sector 71, Mattaur) to copy exact Lat & Lng.
+
+              {/* COVERED SECTORS & SUB-LOCATIONS INPUT & TAGS */}
+              <div className="crm-form-group">
+                <label style={{ fontSize: '12.5px', fontWeight: 800 }}>
+                  🏷️ Covered Sectors & Sub-Locations in Zone (Comma Separated) *
+                </label>
+                <input
+                  type="text"
+                  className="crm-input"
+                  placeholder="e.g. Sector 70, Sector 71, Mattaur, Phase 7, Sector 61"
+                  value={zoneForm.coveredSectors || ''}
+                  onChange={(e) => setZoneForm({ ...zoneForm, coveredSectors: e.target.value })}
+                />
+                <div style={{ fontSize: '11px', color: '#64748B', marginTop: '4px' }}>
+                  Click suggested sectors below to quick-add to covered zone list:
+                </div>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
+                  {['Sector 70', 'Sector 71', 'Mattaur', 'Phase 7', 'Sector 61', 'Sector 76', 'Phase 8', 'Phase 3B2', 'Sector 68'].map((sec) => {
+                    const currentList = (zoneForm.coveredSectors || '').split(',').map(s => s.trim()).filter(Boolean);
+                    const isSelected = currentList.includes(sec);
+                    return (
+                      <button
+                        key={sec}
+                        type="button"
+                        onClick={() => {
+                          let newList;
+                          if (isSelected) {
+                            newList = currentList.filter(s => s !== sec);
+                          } else {
+                            newList = [...currentList, sec];
+                          }
+                          setZoneForm({ ...zoneForm, coveredSectors: newList.join(', ') });
+                        }}
+                        style={{
+                          padding: '3px 10px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          borderRadius: '12px',
+                          border: isSelected ? '1px solid #15803D' : '1px dashed #94A3B8',
+                          background: isSelected ? '#DCFCE7' : '#F8FAFC',
+                          color: isSelected ? '#166534' : '#475569',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {isSelected ? '✓ ' : '+ '} {sec}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* LIVE GOOGLE MAPS VISUALIZATION PREVIEW CARD */}
@@ -12437,7 +12526,7 @@ export default function DashboardPage({ onShowToast }) {
                       style={{ border: 0 }}
                       loading="lazy"
                       allowFullScreen
-                      src={`https://maps.google.com/maps?q=${zoneForm.centerLatitude},${zoneForm.centerLongitude}&z=14&output=embed`}
+                      src={`https://maps.google.com/maps?q=${zoneForm.centerLatitude},${zoneForm.centerLongitude}&z=${Number(zoneForm.radius || 5) <= 2 ? 15 : Number(zoneForm.radius || 5) <= 5 ? 14 : Number(zoneForm.radius || 5) <= 10 ? 13 : 12}&output=embed`}
                     />
                   ) : (
                     <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#64748B', fontSize: '13px' }}>
@@ -12475,7 +12564,7 @@ export default function DashboardPage({ onShowToast }) {
                 </div>
 
                 <div style={{ padding: '10px 14px', background: '#EFF6FF', fontSize: '11.5px', color: '#1E3A8A', borderTop: '1px solid #DBEAFE', lineHeight: '1.4' }}>
-                  <b>🎯 Zone Geofence Coverage:</b> All customers within <b>{zoneForm.radius || 5} KM</b> of center ({zoneForm.centerLatitude || 30.7046}, {zoneForm.centerLongitude || 76.7179}) covering sectors like <i>Sector 70, Sector 71, Mattaur, Sector 61</i> will automatically get product availability & delivery access.
+                  <b>🎯 Zone Geofence Coverage:</b> All customers within <b>{zoneForm.radius || 5} KM</b> of center ({zoneForm.centerLatitude || 30.7046}, {zoneForm.centerLongitude || 76.7179}) covering <b>{zoneForm.coveredSectors || 'Sector 70, Sector 71, Mattaur, Phase 7'}</b> will automatically get product availability & delivery access.
                 </div>
               </div>
 
