@@ -53,6 +53,7 @@ import {
   MessageSquare,
   ThumbsUp,
   AlertCircle,
+  MapPin,
 } from 'lucide-react';
 import {
   playOrderPlaced,
