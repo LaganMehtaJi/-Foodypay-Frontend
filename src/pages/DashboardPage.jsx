@@ -6398,56 +6398,9 @@ export default function DashboardPage({ onShowToast }) {
                 </p>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingZoneObj(null);
-                    setZoneForm({ name: '', city: 'Mohali', state: 'Punjab', pincode: '', centerLatitude: 30.7046, centerLongitude: 76.7179, radius: 5, isActive: true });
-                    setIsAddZoneModalOpen(true);
-                  }}
-                  style={{
-                    backgroundColor: '#FFFFFF',
-                    color: '#1E40AF',
-                    border: 'none',
-                    padding: '12px 20px',
-                    borderRadius: '16px',
-                    fontWeight: 800,
-                    fontSize: '14px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    boxShadow: '0 4px 14px rgba(0,0,0,0.15)'
-                  }}
-                >
-                  <Plus size={18} /> + Add Delivery Zone
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingStoreObj(null);
-                    setStoreForm({ name: '', ownerName: '', ownerEmail: '', gstNumber: '', licenseNumber: '', address: '', city: 'Mohali', state: 'Punjab', pincode: '', latitude: 30.7046, longitude: 76.7179, deliveryRadius: 5, isActive: true });
-                    setIsAddStoreModalOpen(true);
-                  }}
-                  style={{
-                    backgroundColor: '#10B981',
-                    color: '#FFFFFF',
-                    border: 'none',
-                    padding: '12px 20px',
-                    borderRadius: '16px',
-                    fontWeight: 800,
-                    fontSize: '14px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    boxShadow: '0 4px 14px rgba(16,185,129,0.3)'
-                  }}
-                >
-                  <Store size={18} /> + Register New Store
-                </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#EFF6FF', border: '1px solid #BFDBFE', padding: '10px 16px', borderRadius: '12px', color: '#1E40AF', fontSize: '12.5px', fontWeight: 700 }}>
+                <MapPin size={18} color="#1E40AF" />
+                <span>ℹ️ Read-Only View: Displaying active delivery zones and store locations assigned to your account. System location updates & zone creation are managed centrally in Super Admin Portal (/admin).</span>
               </div>
             </div>
 
@@ -6541,47 +6494,7 @@ export default function DashboardPage({ onShowToast }) {
                           <div><b>Assigned Stores:</b> {zone.assignedStoresCount !== undefined ? zone.assignedStoresCount : 0}</div>
                         </div>
 
-                        <div style={{ display: 'flex', gap: '8px', marginTop: 'auto' }}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingZoneObj(zone);
-                              setZoneForm({
-                                name: zone.name || '',
-                                city: zone.city || 'Mohali',
-                                state: zone.state || 'Punjab',
-                                pincode: zone.pincode || '',
-                                centerLatitude: zone.centerLatitude || 30.7046,
-                                centerLongitude: zone.centerLongitude || 76.7179,
-                                radius: zone.radius || 5,
-                                coveredSectors: Array.isArray(zone.coveredSectors) ? zone.coveredSectors.join(', ') : (zone.coveredSectors || ''),
-                                isActive: zone.isActive !== false,
-                              });
-                              setIsAddZoneModalOpen(true);
-                            }}
-                            style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                          >
-                            <Edit3 size={14} /> Edit Zone
-                          </button>
 
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (window.confirm(`Are you sure you want to delete zone "${zone.name}"?`)) {
-                                try {
-                                  await deleteDeliveryZoneApi(zone._id || zone.zoneId);
-                                  addToast(`Zone "${zone.name}" deleted successfully.`);
-                                  loadDeliveryAndStoresData();
-                                } catch (err) {
-                                  addToast(`Error deleting zone: ${err.message}`);
-                                }
-                              }
-                            }}
-                            style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #FECACA', background: '#FEF2F2', color: '#DC2626', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
                       </div>
                     ))}
                   </div>
@@ -6651,77 +6564,7 @@ export default function DashboardPage({ onShowToast }) {
                           </div>
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: 'auto' }}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedStoreForZones(store);
-                              setSelectedZoneIdsForStore(Array.isArray(store.deliveryZones) ? store.deliveryZones.map((z) => z._id) : []);
-                              setIsAssignStoreZonesModalOpen(true);
-                            }}
-                            style={{ padding: '8px', borderRadius: '8px', border: '1px solid #93C5FD', background: '#EFF6FF', color: '#1E40AF', fontWeight: 800, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                          >
-                            <MapPin size={14} /> Assign Zones
-                          </button>
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedStoreForOwner(store);
-                              setAssignOwnerEmailInput(store.ownerEmail || '');
-                              setIsAssignOwnerEmailModalOpen(true);
-                            }}
-                            style={{ padding: '8px', borderRadius: '8px', border: '1px solid #FDBA74', background: '#FFF7ED', color: '#C2410C', fontWeight: 800, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
-                          >
-                            <User size={14} /> Assign Owner Email
-                          </button>
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingStoreObj(store);
-                              setStoreForm({
-                                name: store.name || '',
-                                ownerName: store.ownerName || '',
-                                ownerEmail: store.ownerEmail || '',
-                                gstNumber: store.gstNumber || '',
-                                licenseNumber: store.licenseNumber || '',
-                                address: store.address || '',
-                                city: store.city || 'Mohali',
-                                state: store.state || 'Punjab',
-                                pincode: store.pincode || '',
-                                latitude: store.latitude || 30.7046,
-                                longitude: store.longitude || 76.7179,
-                                deliveryRadius: store.deliveryRadius || 5,
-                                isActive: store.isActive !== false,
-                              });
-                              setIsAddStoreModalOpen(true);
-                            }}
-                            style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                          >
-                            <Edit3 size={14} /> Edit Details
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              if (window.confirm(`Are you sure you want to delete store "${store.name}"?`)) {
-                                try {
-                                  await deleteStoreApi(store._id || store.storeId);
-                                  addToast(`Store "${store.name}" deleted successfully.`);
-                                  loadDeliveryAndStoresData();
-                                } catch (err) {
-                                  addToast(`Error deleting store: ${err.message}`);
-                                }
-                              }
-                            }}
-                            style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #FECACA', background: '#FEF2F2', color: '#DC2626', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
                       </div>
                     ))}
                   </div>

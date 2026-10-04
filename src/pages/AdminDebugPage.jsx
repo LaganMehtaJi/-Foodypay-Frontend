@@ -38,6 +38,8 @@ import {
   Activity,
   Plus,
   Star,
+  MapPin,
+  Truck,
 } from 'lucide-react';
 import {
   fetchRegisteredUsersApi,
@@ -46,6 +48,16 @@ import {
   toggleUserLockApi,
   updateUserSubscriptionApi,
   fetchPublicOrdersApi,
+  fetchDeliveryZonesApi,
+  createDeliveryZoneApi,
+  updateDeliveryZoneApi,
+  deleteDeliveryZoneApi,
+  fetchStoresApi,
+  createStoreApi,
+  updateStoreApi,
+  deleteStoreApi,
+  assignStoreZonesApi,
+  assignStoreOwnerEmailApi,
 } from '../utils/api';
 
 export default function AdminDebugPage({ onShowToast }) {
@@ -97,6 +109,107 @@ export default function AdminDebugPage({ onShowToast }) {
       return '';
     }
   });
+
+  // Delivery Zones & Stores Management State for Super Admin
+  const [deliveryZones, setDeliveryZones] = useState([]);
+  const [storesList, setStoresList] = useState([]);
+  const [deliverySubTab, setDeliverySubTab] = useState('zones'); // 'zones' | 'stores'
+  const [isAddZoneModalOpen, setIsAddZoneModalOpen] = useState(false);
+  const [editingZoneObj, setEditingZoneObj] = useState(null);
+  const [zoneForm, setZoneForm] = useState({
+    name: '',
+    city: 'Mohali',
+    state: 'Punjab',
+    pincode: '',
+    centerLatitude: 30.7046,
+    centerLongitude: 76.7179,
+    radius: 5,
+    coveredSectors: '',
+    isActive: true,
+  });
+
+  const [isAddStoreModalOpen, setIsAddStoreModalOpen] = useState(false);
+  const [editingStoreObj, setEditingStoreObj] = useState(null);
+  const [storeForm, setStoreForm] = useState({
+    name: '',
+    ownerName: '',
+    ownerEmail: '',
+    gstNumber: '',
+    licenseNumber: '',
+    address: '',
+    city: 'Mohali',
+    state: 'Punjab',
+    pincode: '',
+    latitude: 30.7046,
+    longitude: 76.7179,
+    deliveryRadius: 5,
+    isActive: true,
+  });
+
+  const [isAssignStoreZonesModalOpen, setIsAssignStoreZonesModalOpen] = useState(false);
+  const [selectedStoreForZones, setSelectedStoreForZones] = useState(null);
+  const [selectedZoneIdsForStore, setSelectedZoneIdsForStore] = useState([]);
+
+  const [isAssignOwnerEmailModalOpen, setIsAssignOwnerEmailModalOpen] = useState(false);
+  const [selectedStoreForOwner, setSelectedStoreForOwner] = useState(null);
+  const [assignOwnerEmailInput, setAssignOwnerEmailInput] = useState('');
+
+  const loadDeliveryAndStoresData = async () => {
+    try {
+      const [zones, stores] = await Promise.all([
+        fetchDeliveryZonesApi(),
+        fetchStoresApi(),
+      ]);
+      if (Array.isArray(zones)) setDeliveryZones(zones);
+      if (Array.isArray(stores)) setStoresList(stores);
+    } catch (err) {
+      console.warn('Delivery and stores sync error:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'delivery_zones') {
+      loadDeliveryAndStoresData();
+    }
+  }, [activeTab]);
+
+  const handleSaveZoneSubmit = async (e) => {
+    e.preventDefault();
+    if (!zoneForm.name.trim()) return;
+
+    try {
+      if (editingZoneObj) {
+        await updateDeliveryZoneApi(editingZoneObj._id || editingZoneObj.zoneId, zoneForm);
+        if (onShowToast) onShowToast(`Delivery Zone "${zoneForm.name}" updated successfully!`);
+      } else {
+        await createDeliveryZoneApi(zoneForm);
+        if (onShowToast) onShowToast(`New Delivery Zone "${zoneForm.name}" created successfully!`);
+      }
+      setIsAddZoneModalOpen(false);
+      loadDeliveryAndStoresData();
+    } catch (err) {
+      if (onShowToast) onShowToast(`Error saving zone: ${err.message}`);
+    }
+  };
+
+  const handleSaveStoreSubmit = async (e) => {
+    e.preventDefault();
+    if (!storeForm.name.trim() || !storeForm.ownerEmail.trim()) return;
+
+    try {
+      if (editingStoreObj) {
+        await updateStoreApi(editingStoreObj._id || editingStoreObj.storeId, storeForm);
+        if (onShowToast) onShowToast(`Store "${storeForm.name}" updated successfully!`);
+      } else {
+        await createStoreApi(storeForm);
+        if (onShowToast) onShowToast(`New Store "${storeForm.name}" registered successfully!`);
+      }
+      setIsAddStoreModalOpen(false);
+      loadDeliveryAndStoresData();
+    } catch (err) {
+      if (onShowToast) onShowToast(`Error saving store: ${err.message}`);
+    }
+  };
 
   const handleSetFeaturedStore = (user) => {
     const targetId = user.foodypayId || user.merchantId || user._id;
@@ -599,9 +712,28 @@ export default function AdminDebugPage({ onShowToast }) {
             </button>
 
             <button
+              onClick={() => setActiveTab('delivery_zones')}
+              style={{
+                backgroundColor: activeTab === 'delivery_zones' ? '#1E40AF' : '#1E293B',
+                color: '#F8FAFC',
+                border: '1px solid #334155',
+                padding: '9px 16px',
+                borderRadius: '10px',
+                fontWeight: 700,
+                fontSize: '13px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <Truck size={15} /> Delivery Zones & Stores
+            </button>
+
+            <button
               onClick={() => setActiveTab('subscription_settings')}
               style={{
-                backgroundColor: '#1E293B',
+                backgroundColor: activeTab === 'subscription_settings' ? '#1E40AF' : '#1E293B',
                 color: '#F8FAFC',
                 border: '1px solid #334155',
                 padding: '9px 16px',
@@ -698,6 +830,7 @@ export default function AdminDebugPage({ onShowToast }) {
             { id: 'merchants', label: ' Merchant Accounts', count: registeredUsers.length },
             { id: 'customers', label: ' Customers & CRM', count: aggregateCustomers.length || registeredUsers.length },
             { id: 'orders', label: ' Live Orders Feed', count: globalOrders.length },
+            { id: 'delivery_zones', label: '🚚 Delivery Zones & Stores', count: (deliveryZones || []).length },
             { id: 'subscription_settings', label: '️ Global Subscription Settings' },
           ].map((tab) => (
             <button
@@ -1225,6 +1358,311 @@ export default function AdminDebugPage({ onShowToast }) {
                 <Check size={18} /> Save Global Subscription Settings
               </button>
             </form>
+        {/* TAB: SUPER ADMIN DELIVERY ZONES & STORES MANAGEMENT */}
+        {activeTab === 'delivery_zones' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ backgroundColor: '#0F172A', border: '1px solid #1E293B', borderRadius: '20px', padding: '24px', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '20px' }}>
+                <div>
+                  <h2 style={{ margin: '0 0 4px', fontSize: '22px', fontWeight: 900, color: '#FFFFFF' }}>
+                    🚚 Delivery Zones &amp; Marketplace Store Registry
+                  </h2>
+                  <p style={{ margin: 0, fontSize: '13.5px', color: '#94A3B8' }}>
+                    Master Super Admin control center to manage dynamic delivery zones, GPS radius geofencing, covered sectors, and store assignments.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingZoneObj(null);
+                      setZoneForm({ name: '', city: 'Mohali', state: 'Punjab', pincode: '', centerLatitude: 30.7046, centerLongitude: 76.7179, radius: 5, coveredSectors: '', isActive: true });
+                      setIsAddZoneModalOpen(true);
+                    }}
+                    style={{
+                      backgroundColor: '#1E40AF',
+                      color: '#FFFFFF',
+                      border: 'none',
+                      padding: '12px 20px',
+                      borderRadius: '14px',
+                      fontWeight: 800,
+                      fontSize: '13.5px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      boxShadow: '0 4px 14px rgba(30,64,175,0.3)'
+                    }}
+                  >
+                    <Plus size={18} /> + Add Delivery Zone
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingStoreObj(null);
+                      setStoreForm({ name: '', ownerName: '', ownerEmail: '', gstNumber: '', licenseNumber: '', address: '', city: 'Mohali', state: 'Punjab', pincode: '', latitude: 30.7046, longitude: 76.7179, deliveryRadius: 5, isActive: true });
+                      setIsAddStoreModalOpen(true);
+                    }}
+                    style={{
+                      backgroundColor: '#10B981',
+                      color: '#FFFFFF',
+                      border: 'none',
+                      padding: '12px 20px',
+                      borderRadius: '14px',
+                      fontWeight: 800,
+                      fontSize: '13.5px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      boxShadow: '0 4px 14px rgba(16,185,129,0.3)'
+                    }}
+                  >
+                    <Store size={18} /> + Register New Store
+                  </button>
+                </div>
+              </div>
+
+              {/* Sub-tabs for Zones vs Stores */}
+              <div style={{ display: 'flex', gap: '12px', borderBottom: '1px solid #1E293B', paddingBottom: '12px', marginBottom: '20px' }}>
+                <button
+                  type="button"
+                  onClick={() => setDeliverySubTab('zones')}
+                  style={{
+                    padding: '10px 20px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    fontWeight: 800,
+                    fontSize: '13.5px',
+                    cursor: 'pointer',
+                    backgroundColor: deliverySubTab === 'zones' ? '#1E40AF' : '#1E293B',
+                    color: deliverySubTab === 'zones' ? '#FFFFFF' : '#94A3B8',
+                  }}
+                >
+                  📍 Delivery Zones ({(deliveryZones || []).length})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDeliverySubTab('stores')}
+                  style={{
+                    padding: '10px 20px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    fontWeight: 800,
+                    fontSize: '13.5px',
+                    cursor: 'pointer',
+                    backgroundColor: deliverySubTab === 'stores' ? '#1E40AF' : '#1E293B',
+                    color: deliverySubTab === 'stores' ? '#FFFFFF' : '#94A3B8',
+                  }}
+                >
+                  🏪 Stores &amp; Owner Email Access ({(storesList || []).length})
+                </button>
+              </div>
+
+              {/* ZONES CARDS GRID */}
+              {deliverySubTab === 'zones' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+                  {(deliveryZones || []).map((zone) => (
+                    <div key={zone._id || zone.zoneId} style={{ backgroundColor: '#161F33', borderRadius: '16px', border: '1px solid #1E293B', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#38BDF8', background: 'rgba(56,189,248,0.1)', padding: '2px 8px', borderRadius: '6px' }}>
+                            {zone.zoneId || 'ZONE'}
+                          </span>
+                          <h4 style={{ margin: '6px 0 2px', fontSize: '18px', fontWeight: 900, color: '#FFF' }}>{zone.name}</h4>
+                          <div style={{ fontSize: '12.5px', color: '#94A3B8' }}>📍 {zone.city}{zone.state ? `, ${zone.state}` : ''} {zone.pincode ? `(${zone.pincode})` : ''}</div>
+                        </div>
+                        <span style={{ fontSize: '11px', fontWeight: 800, padding: '3px 10px', borderRadius: '12px', background: zone.isActive !== false ? '#064E3B' : '#7F1D1D', color: zone.isActive !== false ? '#6EE7B7' : '#FECACA' }}>
+                          {zone.isActive !== false ? 'ACTIVE' : 'INACTIVE'}
+                        </span>
+                      </div>
+
+                      {(Array.isArray(zone.coveredSectors) ? zone.coveredSectors : (zone.coveredSectors || '').split(',')).filter(Boolean).length > 0 && (
+                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                          {(Array.isArray(zone.coveredSectors) ? zone.coveredSectors : (zone.coveredSectors || '').split(',')).filter(Boolean).map((sec, i) => (
+                            <span key={i} style={{ fontSize: '10.5px', fontWeight: 700, padding: '2px 7px', borderRadius: '6px', background: '#1E293B', color: '#94A3B8', border: '1px solid #334155' }}>
+                              🏷️ {sec.trim()}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      <div style={{ backgroundColor: '#0F172A', padding: '10px 12px', borderRadius: '10px', fontSize: '12px', color: '#CBD5E1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                        <div><b>Center GPS:</b> {zone.centerLatitude?.toFixed(4)}, {zone.centerLongitude?.toFixed(4)}</div>
+                        <div><b>Coverage Radius:</b> {zone.radius} KM</div>
+                        <div><b>Assigned Stores:</b> {zone.assignedStoresCount !== undefined ? zone.assignedStoresCount : 0}</div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '8px', marginTop: 'auto' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingZoneObj(zone);
+                            setZoneForm({
+                              name: zone.name || '',
+                              city: zone.city || 'Mohali',
+                              state: zone.state || 'Punjab',
+                              pincode: zone.pincode || '',
+                              centerLatitude: zone.centerLatitude || 30.7046,
+                              centerLongitude: zone.centerLongitude || 76.7179,
+                              radius: zone.radius || 5,
+                              coveredSectors: Array.isArray(zone.coveredSectors) ? zone.coveredSectors.join(', ') : (zone.coveredSectors || ''),
+                              isActive: zone.isActive !== false,
+                            });
+                            setIsAddZoneModalOpen(true);
+                          }}
+                          style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid #334155', background: '#1E293B', color: '#FFF', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                        >
+                          <Edit3 size={14} /> Edit Zone
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (window.confirm(`Are you sure you want to delete zone "${zone.name}"?`)) {
+                              try {
+                                await deleteDeliveryZoneApi(zone._id || zone.zoneId);
+                                if (onShowToast) onShowToast(`Zone "${zone.name}" deleted successfully.`);
+                                loadDeliveryAndStoresData();
+                              } catch (err) {
+                                if (onShowToast) onShowToast(`Error deleting zone: ${err.message}`);
+                              }
+                            }
+                          }}
+                          style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #7F1D1D', background: '#451A1D', color: '#FCA5A5', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* STORES CARDS GRID */}
+              {deliverySubTab === 'stores' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '16px' }}>
+                  {(storesList || []).map((store) => (
+                    <div key={store._id || store.storeId} style={{ backgroundColor: '#161F33', borderRadius: '16px', border: '1px solid #1E293B', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#34D399', background: 'rgba(52,211,153,0.1)', padding: '2px 8px', borderRadius: '6px' }}>
+                            {store.storeId || 'STORE'}
+                          </span>
+                          <h4 style={{ margin: '6px 0 2px', fontSize: '18px', fontWeight: 900, color: '#FFF' }}>{store.name}</h4>
+                          <div style={{ fontSize: '12.5px', color: '#94A3B8' }}>📍 {store.address}, {store.city}</div>
+                        </div>
+                        <span style={{ fontSize: '11px', fontWeight: 800, padding: '3px 10px', borderRadius: '12px', background: store.isActive !== false ? '#064E3B' : '#7F1D1D', color: store.isActive !== false ? '#6EE7B7' : '#FECACA' }}>
+                          {store.isActive !== false ? 'ACTIVE' : 'INACTIVE'}
+                        </span>
+                      </div>
+
+                      <div style={{ backgroundColor: '#0F172A', padding: '10px 12px', borderRadius: '10px', fontSize: '12.5px', color: '#60A5FA' }}>
+                        <b>📧 Owner Email Access:</b> <span style={{ fontWeight: 800, textDecoration: 'underline' }}>{store.ownerEmail || 'Not Assigned'}</span>
+                        {store.ownerName ? ` (${store.ownerName})` : ''}
+                      </div>
+
+                      <div style={{ backgroundColor: '#0F172A', padding: '10px 12px', borderRadius: '10px', fontSize: '12px', color: '#CBD5E1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                        <div><b>Store GPS:</b> {store.latitude?.toFixed(4)}, {store.longitude?.toFixed(4)}</div>
+                        <div><b>Delivery Radius:</b> {store.deliveryRadius} KM</div>
+                        <div><b>GST No:</b> {store.gstNumber || 'N/A'}</div>
+                        <div><b>License:</b> {store.licenseNumber || 'N/A'}</div>
+                      </div>
+
+                      <div>
+                        <div style={{ fontSize: '12px', fontWeight: 800, color: '#94A3B8', marginBottom: '6px' }}>Assigned Delivery Zones:</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {Array.isArray(store.deliveryZones) && store.deliveryZones.length > 0 ? (
+                            store.deliveryZones.map((z) => (
+                              <span key={z._id || z.name} style={{ background: '#1E293B', color: '#38BDF8', padding: '3px 10px', borderRadius: '12px', fontSize: '11.5px', fontWeight: 800, border: '1px solid #334155' }}>
+                                📍 {z.name} ({z.city})
+                              </span>
+                            ))
+                          ) : (
+                            <span style={{ color: '#64748B', fontSize: '12px', fontStyle: 'italic' }}>No zones assigned yet</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: 'auto' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedStoreForZones(store);
+                            setSelectedZoneIdsForStore(Array.isArray(store.deliveryZones) ? store.deliveryZones.map((z) => z._id) : []);
+                            setIsAssignStoreZonesModalOpen(true);
+                          }}
+                          style={{ padding: '8px', borderRadius: '8px', border: '1px solid #1E40AF', background: '#1E3A8A', color: '#93C5FD', fontWeight: 800, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                        >
+                          <MapPin size={14} /> Assign Zones
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedStoreForOwner(store);
+                            setAssignOwnerEmailInput(store.ownerEmail || '');
+                            setIsAssignOwnerEmailModalOpen(true);
+                          }}
+                          style={{ padding: '8px', borderRadius: '8px', border: '1px solid #C2410C', background: '#431407', color: '#FDBA74', fontWeight: 800, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                        >
+                          <User size={14} /> Assign Owner Email
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingStoreObj(store);
+                            setStoreForm({
+                              name: store.name || '',
+                              ownerName: store.ownerName || '',
+                              ownerEmail: store.ownerEmail || '',
+                              gstNumber: store.gstNumber || '',
+                              licenseNumber: store.licenseNumber || '',
+                              address: store.address || '',
+                              city: store.city || 'Mohali',
+                              state: store.state || 'Punjab',
+                              pincode: store.pincode || '',
+                              latitude: store.latitude || 30.7046,
+                              longitude: store.longitude || 76.7179,
+                              deliveryRadius: store.deliveryRadius || 5,
+                              isActive: store.isActive !== false,
+                            });
+                            setIsAddStoreModalOpen(true);
+                          }}
+                          style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid #334155', background: '#1E293B', color: '#FFF', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                        >
+                          <Edit3 size={14} /> Edit Details
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (window.confirm(`Are you sure you want to delete store "${store.name}"?`)) {
+                              try {
+                                await deleteStoreApi(store._id || store.storeId);
+                                if (onShowToast) onShowToast(`Store "${store.name}" deleted successfully.`);
+                                loadDeliveryAndStoresData();
+                              } catch (err) {
+                                if (onShowToast) onShowToast(`Error deleting store: ${err.message}`);
+                              }
+                            }
+                          }}
+                          style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #7F1D1D', background: '#451A1D', color: '#FCA5A5', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -1507,8 +1945,558 @@ export default function AdminDebugPage({ onShowToast }) {
             </div>
           </div>
         </div>
+      {/* ==========================================================================
+          MODAL 4: ADD / EDIT DELIVERY ZONE MODAL FOR SUPER ADMIN
+          ========================================================================== */}
+      {isAddZoneModalOpen && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }} onClick={() => setIsAddZoneModalOpen(false)}>
+          <div style={{ backgroundColor: '#0F172A', border: '1px solid #1E40AF', borderRadius: '20px', padding: '28px', maxWidth: '540px', width: '100%', color: '#FFF', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <MapPin size={22} color="#38BDF8" />
+                <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 900 }}>
+                  {editingZoneObj ? 'Edit Delivery Zone' : 'Add New Delivery Zone'}
+                </h3>
+              </div>
+              <button type="button" onClick={() => setIsAddZoneModalOpen(false)} style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveZoneSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>Zone Name / Sector (Dynamic) *</label>
+                <input
+                  type="text"
+                  required
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                  placeholder="e.g. Sector 70 or Phase 7 or Downtown"
+                  value={zoneForm.name}
+                  onChange={(e) => setZoneForm({ ...zoneForm, name: e.target.value })}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>City *</label>
+                  <input
+                    type="text"
+                    required
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                    placeholder="Mohali"
+                    value={zoneForm.city}
+                    onChange={(e) => setZoneForm({ ...zoneForm, city: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>State</label>
+                  <input
+                    type="text"
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                    placeholder="Punjab"
+                    value={zoneForm.state}
+                    onChange={(e) => setZoneForm({ ...zoneForm, state: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>Pincode</label>
+                  <input
+                    type="text"
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                    placeholder="160071"
+                    value={zoneForm.pincode}
+                    onChange={(e) => setZoneForm({ ...zoneForm, pincode: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '2px', marginBottom: '-6px' }}>
+                <span style={{ fontSize: '11.5px', color: '#94A3B8', fontWeight: 600 }}>
+                  📍 Google Maps Coordinates &amp; Delivery Radius
+                </span>
+                <button
+                  type="button"
+                  style={{ padding: '4px 10px', fontSize: '11.5px', background: '#1E3A8A', color: '#93C5FD', border: '1px solid #1E40AF', borderRadius: '6px', cursor: 'pointer' }}
+                  onClick={() => {
+                    if (navigator.geolocation) {
+                      navigator.geolocation.getCurrentPosition(
+                        (pos) => {
+                          setZoneForm((prev) => ({
+                            ...prev,
+                            centerLatitude: pos.coords.latitude,
+                            centerLongitude: pos.coords.longitude,
+                          }));
+                          if (onShowToast) onShowToast('📍 Current GPS coordinates loaded!');
+                        },
+                        () => alert('Could not fetch location.')
+                      );
+                    }
+                  }}
+                >
+                  📍 Fill My Current GPS Coords
+                </button>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>Center Latitude *</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                    placeholder="30.7046"
+                    value={zoneForm.centerLatitude}
+                    onChange={(e) => setZoneForm({ ...zoneForm, centerLatitude: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>Center Longitude *</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                    placeholder="76.7179"
+                    value={zoneForm.centerLongitude}
+                    onChange={(e) => setZoneForm({ ...zoneForm, centerLongitude: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8' }}>
+                    🚀 Interactive Delivery Coverage Radius: <span style={{ color: '#38BDF8', fontSize: '14px', fontWeight: 900 }}>{zoneForm.radius || 5} KM</span>
+                  </label>
+                  <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 700 }}>
+                    Area: ~{(Math.PI * Math.pow(Number(zoneForm.radius || 5), 2)).toFixed(1)} sq. km
+                  </span>
+                </div>
+
+                <input
+                  type="range"
+                  min="0.5"
+                  max="30"
+                  step="0.5"
+                  style={{ width: '100%', height: '7px', accentColor: '#38BDF8', cursor: 'pointer' }}
+                  value={zoneForm.radius || 5}
+                  onChange={(e) => setZoneForm({ ...zoneForm, radius: Number(e.target.value) })}
+                />
+
+                <div style={{ display: 'flex', gap: '6px', marginTop: '8px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 700, alignSelf: 'center' }}>Quick Presets:</span>
+                  {[2, 5, 8, 10, 15, 25].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setZoneForm({ ...zoneForm, radius: val })}
+                      style={{
+                        padding: '3px 10px',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        borderRadius: '12px',
+                        border: '1px solid #1E40AF',
+                        background: Number(zoneForm.radius) === val ? '#1E40AF' : '#1E293B',
+                        color: Number(zoneForm.radius) === val ? '#FFFFFF' : '#38BDF8',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {val} KM
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* COVERED SECTORS & SUB-LOCATIONS INPUT & TAGS */}
+              <div>
+                <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>
+                  🏷️ Covered Sectors &amp; Sub-Locations in Zone (Comma Separated) *
+                </label>
+                <input
+                  type="text"
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                  placeholder="e.g. Sector 70, Sector 71, Mattaur, Phase 7, Sector 61"
+                  value={zoneForm.coveredSectors || ''}
+                  onChange={(e) => setZoneForm({ ...zoneForm, coveredSectors: e.target.value })}
+                />
+                <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px' }}>
+                  Click suggested sectors below to quick-add to covered zone list:
+                </div>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
+                  {['Sector 70', 'Sector 71', 'Mattaur', 'Phase 7', 'Sector 61', 'Sector 76', 'Phase 8', 'Phase 3B2', 'Sector 68'].map((sec) => {
+                    const currentList = (zoneForm.coveredSectors || '').split(',').map(s => s.trim()).filter(Boolean);
+                    const isSelected = currentList.includes(sec);
+                    return (
+                      <button
+                        key={sec}
+                        type="button"
+                        onClick={() => {
+                          let newList;
+                          if (isSelected) {
+                            newList = currentList.filter(s => s !== sec);
+                          } else {
+                            newList = [...currentList, sec];
+                          }
+                          setZoneForm({ ...zoneForm, coveredSectors: newList.join(', ') });
+                        }}
+                        style={{
+                          padding: '3px 10px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          borderRadius: '12px',
+                          border: isSelected ? '1px solid #10B981' : '1px dashed #475569',
+                          background: isSelected ? '#064E3B' : '#1E293B',
+                          color: isSelected ? '#6EE7B7' : '#94A3B8',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {isSelected ? '✓ ' : '+ '} {sec}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* LIVE GOOGLE MAPS PREVIEW CARD */}
+              <div style={{ borderRadius: '12px', border: '1px solid #1E40AF', background: '#161F33', overflow: 'hidden', marginTop: '4px' }}>
+                <div style={{ background: 'linear-gradient(90deg, #1E40AF 0%, #3B82F6 100%)', padding: '8px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#FFF' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 800 }}>
+                    <MapPin size={16} color="#93C5FD" />
+                    <span>🗺️ Live Google Maps Delivery Zone Preview</span>
+                  </div>
+                  <span style={{ fontSize: '11px', background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: '12px', fontWeight: 700 }}>
+                    Radius: {zoneForm.radius || 5} KM
+                  </span>
+                </div>
+
+                <div style={{ position: 'relative', height: '220px', width: '100%', background: '#0F172A' }}>
+                  {zoneForm.centerLatitude && zoneForm.centerLongitude ? (
+                    <iframe
+                      title="Google Map Preview"
+                      width="100%"
+                      height="220"
+                      style={{ border: 0 }}
+                      loading="lazy"
+                      allowFullScreen
+                      src={`https://maps.google.com/maps?q=${zoneForm.centerLatitude},${zoneForm.centerLongitude}&z=${Number(zoneForm.radius || 5) <= 2 ? 15 : Number(zoneForm.radius || 5) <= 5 ? 14 : Number(zoneForm.radius || 5) <= 10 ? 13 : 12}&output=embed`}
+                    />
+                  ) : (
+                    <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#94A3B8', fontSize: '13px' }}>
+                      Enter Latitude &amp; Longitude to view live map preview
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ padding: '10px 14px', background: '#0F172A', fontSize: '11.5px', color: '#93C5FD', borderTop: '1px solid #1E293B', lineHeight: '1.4' }}>
+                  <b>🎯 Zone Geofence Coverage:</b> All customers within <b>{zoneForm.radius || 5} KM</b> of center ({zoneForm.centerLatitude || 30.7046}, {zoneForm.centerLongitude || 76.7179}) covering <b>{zoneForm.coveredSectors || 'Sector 70, Sector 71, Mattaur, Phase 7'}</b> will automatically get product availability &amp; delivery access.
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="checkbox"
+                  id="zoneActiveCheck"
+                  checked={zoneForm.isActive}
+                  onChange={(e) => setZoneForm({ ...zoneForm, isActive: e.target.checked })}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                />
+                <label htmlFor="zoneActiveCheck" style={{ fontSize: '13px', fontWeight: 700, cursor: 'pointer', color: '#FFF' }}>
+                  Enable Delivery in this Zone (Active)
+                </label>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '12px' }}>
+                <button type="button" style={{ backgroundColor: '#1E293B', color: '#CBD5E1', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }} onClick={() => setIsAddZoneModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" style={{ backgroundColor: '#1E40AF', color: '#FFF', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 900, fontSize: '13.5px', cursor: 'pointer' }}>
+                  {editingZoneObj ? 'Save Changes' : 'Create Delivery Zone'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
-    </div>
+      {/* ==========================================================================
+          MODAL 5: REGISTER / EDIT STORE MODAL FOR SUPER ADMIN
+          ========================================================================== */}
+      {isAddStoreModalOpen && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }} onClick={() => setIsAddStoreModalOpen(false)}>
+          <div style={{ backgroundColor: '#0F172A', border: '1px solid #10B981', borderRadius: '20px', padding: '28px', maxWidth: '620px', width: '100%', color: '#FFF', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Store size={22} color="#34D399" />
+                <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 900 }}>
+                  {editingStoreObj ? 'Edit Store Registration' : 'Register New Store'}
+                </h3>
+              </div>
+              <button type="button" onClick={() => setIsAddStoreModalOpen(false)} style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveStoreSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>Store Name *</label>
+                  <input
+                    type="text"
+                    required
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                    placeholder="e.g. FoodyPay Bistro Mohali"
+                    value={storeForm.name}
+                    onChange={(e) => setStoreForm({ ...storeForm, name: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>Owner Name</label>
+                  <input
+                    type="text"
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                    placeholder="e.g. John Doe"
+                    value={storeForm.ownerName}
+                    onChange={(e) => setStoreForm({ ...storeForm, ownerName: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>Owner Email Address (Assigned Access) *</label>
+                <input
+                  type="email"
+                  required
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                  placeholder="owner@restaurant.com"
+                  value={storeForm.ownerEmail}
+                  onChange={(e) => setStoreForm({ ...storeForm, ownerEmail: e.target.value })}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>GST Number</label>
+                  <input
+                    type="text"
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                    placeholder="07AAAAA0000A1Z5"
+                    value={storeForm.gstNumber}
+                    onChange={(e) => setStoreForm({ ...storeForm, gstNumber: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>FSSAI / License Number</label>
+                  <input
+                    type="text"
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                    placeholder="10020011000123"
+                    value={storeForm.licenseNumber}
+                    onChange={(e) => setStoreForm({ ...storeForm, licenseNumber: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>Address Line *</label>
+                <input
+                  type="text"
+                  required
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                  placeholder="SCO 104, Main Market Road"
+                  value={storeForm.address}
+                  onChange={(e) => setStoreForm({ ...storeForm, address: e.target.value })}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>City *</label>
+                  <input
+                    type="text"
+                    required
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                    placeholder="Mohali"
+                    value={storeForm.city}
+                    onChange={(e) => setStoreForm({ ...storeForm, city: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>State</label>
+                  <input
+                    type="text"
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                    placeholder="Punjab"
+                    value={storeForm.state}
+                    onChange={(e) => setStoreForm({ ...storeForm, state: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>Pincode</label>
+                  <input
+                    type="text"
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                    placeholder="160071"
+                    value={storeForm.pincode}
+                    onChange={(e) => setStoreForm({ ...storeForm, pincode: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>Store Latitude *</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                    placeholder="30.7046"
+                    value={storeForm.latitude}
+                    onChange={(e) => setStoreForm({ ...storeForm, latitude: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>Store Longitude *</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                    placeholder="76.7179"
+                    value={storeForm.longitude}
+                    onChange={(e) => setStoreForm({ ...storeForm, longitude: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>Delivery Radius (KM) *</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                    placeholder="5"
+                    value={storeForm.deliveryRadius}
+                    onChange={(e) => setStoreForm({ ...storeForm, deliveryRadius: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '12px' }}>
+                <button type="button" style={{ backgroundColor: '#1E293B', color: '#CBD5E1', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }} onClick={() => setIsAddStoreModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" style={{ backgroundColor: '#10B981', color: '#FFF', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 900, fontSize: '13.5px', cursor: 'pointer' }}>
+                  {editingStoreObj ? 'Save Changes' : 'Register Store'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================================================
+          MODAL 6: ASSIGN ZONES TO STORE MODAL FOR SUPER ADMIN
+          ========================================================================== */}
+      {isAssignStoreZonesModalOpen && selectedStoreForZones && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }} onClick={() => setIsAssignStoreZonesModalOpen(false)}>
+          <div style={{ backgroundColor: '#0F172A', border: '1px solid #1E40AF', borderRadius: '20px', padding: '28px', maxWidth: '500px', width: '100%', color: '#FFF' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 16px', fontSize: '18px', fontWeight: 900 }}>
+              Assign Delivery Zones for {selectedStoreForZones.name}
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '300px', overflowY: 'auto', marginBottom: '20px' }}>
+              {(deliveryZones || []).map((zone) => {
+                const isSelected = selectedZoneIdsForStore.includes(zone._id || zone.zoneId);
+                return (
+                  <label key={zone._id || zone.zoneId} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', background: isSelected ? '#1E3A8A' : '#161F33', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={(e) => {
+                        const targetId = zone._id || zone.zoneId;
+                        if (e.target.checked) {
+                          setSelectedZoneIdsForStore((prev) => [...prev, targetId]);
+                        } else {
+                          setSelectedZoneIdsForStore((prev) => prev.filter((id) => id !== targetId));
+                        }
+                      }}
+                    />
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: '13.5px' }}>{zone.name}</div>
+                      <div style={{ fontSize: '11.5px', color: '#94A3B8' }}>{zone.city} ({zone.radius} KM)</div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button type="button" style={{ backgroundColor: '#1E293B', color: '#CBD5E1', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }} onClick={() => setIsAssignStoreZonesModalOpen(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                style={{ backgroundColor: '#1E40AF', color: '#FFF', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 900, fontSize: '13.5px', cursor: 'pointer' }}
+                onClick={async () => {
+                  try {
+                    await assignStoreZonesApi(selectedStoreForZones._id || selectedStoreForZones.storeId, selectedZoneIdsForStore);
+                    if (onShowToast) onShowToast(`Zones updated for ${selectedStoreForZones.name}!`);
+                    setIsAssignStoreZonesModalOpen(false);
+                    loadDeliveryAndStoresData();
+                  } catch (err) {
+                    if (onShowToast) onShowToast(`Error assigning zones: ${err.message}`);
+                  }
+                }}
+              >
+                Save Assigned Zones
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================================================
+          MODAL 7: ASSIGN OWNER EMAIL ACCESS MODAL FOR SUPER ADMIN
+          ========================================================================== */}
+      {isAssignOwnerEmailModalOpen && selectedStoreForOwner && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }} onClick={() => setIsAssignOwnerEmailModalOpen(false)}>
+          <div style={{ backgroundColor: '#0F172A', border: '1px solid #EA580C', borderRadius: '20px', padding: '28px', maxWidth: '480px', width: '100%', color: '#FFF' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 16px', fontSize: '18px', fontWeight: 900 }}>
+              Assign Owner Email Access for {selectedStoreForOwner.name}
+            </h3>
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '6px' }}>Owner Email Address *</label>
+              <input
+                type="email"
+                required
+                style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', boxSizing: 'border-box' }}
+                placeholder="merchant@restaurant.com"
+                value={assignOwnerEmailInput}
+                onChange={(e) => setAssignOwnerEmailInput(e.target.value)}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button type="button" style={{ backgroundColor: '#1E293B', color: '#CBD5E1', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }} onClick={() => setIsAssignOwnerEmailModalOpen(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                style={{ backgroundColor: '#EA580C', color: '#FFF', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 900, fontSize: '13.5px', cursor: 'pointer' }}
+                onClick={async () => {
+                  try {
+                    await assignStoreOwnerEmailApi(selectedStoreForOwner._id || selectedStoreForOwner.storeId, assignOwnerEmailInput);
+                    if (onShowToast) onShowToast(`Owner email access updated for ${selectedStoreForOwner.name}!`);
+                    setIsAssignOwnerEmailModalOpen(false);
+                    loadDeliveryAndStoresData();
+                  } catch (err) {
+                    if (onShowToast) onShowToast(`Error assigning email: ${err.message}`);
+                  }
+                }}
+              >
+                Save Owner Access Email
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
   );
 }

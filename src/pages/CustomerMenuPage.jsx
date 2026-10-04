@@ -429,7 +429,14 @@ export default function CustomerMenuPage({ onShowToast }) {
         const lng = position.coords.longitude;
         try {
           const res = await checkDeliveryAvailabilityApi(lat, lng);
-          const isAvail = res.available !== false;
+          let resolvedLabel = '';
+          if (Array.isArray(res.matchingZones) && res.matchingZones.length > 0) {
+            const mz = res.matchingZones[0];
+            resolvedLabel = `${mz.name}${mz.city && mz.name !== mz.city ? `, ${mz.city}` : ''}`;
+          } else {
+            resolvedLabel = 'Mohali, Punjab';
+          }
+
           setLocationState({
             loading: false,
             requested: true,
@@ -439,7 +446,7 @@ export default function CustomerMenuPage({ onShowToast }) {
             available: isAvail,
             reason: res.reason || null,
             message: res.message || '',
-            addressLabel: `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+            addressLabel: resolvedLabel,
           });
 
           // Fetch products for location
@@ -1737,7 +1744,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                 {locationState.loading
                   ? '📍 Detecting Location...'
                   : locationState.lat && locationState.lng
-                  ? `📍 GPS: ${locationState.lat.toFixed(4)}, ${locationState.lng.toFixed(4)}`
+                  ? `📍 ${locationState.addressLabel || 'Sector 70, Mohali'}`
                   : savedAddresses.length > 0
                   ? savedAddresses[0].text
                   : '📍 Click to Detect Location'}
@@ -1861,7 +1868,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                   {locationState.loading
                     ? '📍 Detecting Location...'
                     : locationState.lat && locationState.lng
-                    ? `📍 GPS: ${locationState.lat.toFixed(4)}, ${locationState.lng.toFixed(4)}`
+                    ? `📍 ${locationState.addressLabel || 'Sector 70, Mohali'}`
                     : savedAddresses.length > 0
                     ? savedAddresses[0].text
                     : '📍 Tap to Detect Location'}
