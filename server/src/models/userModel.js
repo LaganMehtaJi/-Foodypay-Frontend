@@ -79,16 +79,16 @@ const userSchema = new mongoose.Schema(
     },
     subscriptionPrice: {
       type: Number,
-      default: 499,
+      default: 0,
     },
     subscriptionStatus: {
       type: String,
       enum: ['Active', 'Expired', 'Locked', 'Trial'],
-      default: 'Active',
+      default: 'Trial',
     },
     subscriptionPlan: {
       type: String,
-      default: 'Pro Business Plan',
+      default: 'Free Trial (14 Days)',
     },
     subscriptionExpiry: {
       type: Date,

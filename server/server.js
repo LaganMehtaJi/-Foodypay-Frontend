@@ -19,6 +19,9 @@ import settingRoutes from './src/routes/settingRoutes.js';
 import reviewRoutes from './src/routes/reviewRoutes.js';
 import paymentRoutes from './src/routes/paymentRoutes.js';
 import notificationRoutes from './src/routes/notificationRoutes.js';
+import deliveryZoneRoutes from './src/routes/deliveryZoneRoutes.js';
+import storeRoutes from './src/routes/storeRoutes.js';
+import customerLocationRoutes from './src/routes/customerLocationRoutes.js';
 import { notFound, errorHandler } from './src/middlewares/errorMiddleware.js';
 
 // Load environment variables
@@ -121,6 +124,10 @@ app.use('/api/settings', settingRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/delivery', deliveryZoneRoutes);
+app.use('/api/stores', storeRoutes);
+app.use('/api/customer/location', customerLocationRoutes);
+app.use('/api/customer', customerLocationRoutes);
 
 // Error Handling Middlewares
 app.use(notFound);

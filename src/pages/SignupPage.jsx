@@ -36,6 +36,7 @@ export default function SignupPage({ onShowToast }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState('Starter Free');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -108,9 +109,15 @@ export default function SignupPage({ onShowToast }) {
     }
 
     if (res && res.success && res.data) {
+      const freeUserData = {
+        ...res.data,
+        subscriptionPlan: 'Starter Free',
+        subscriptionStatus: 'Free Trial',
+        subscriptionPrice: 0,
+      };
       if (res.data.token) {
         localStorage.setItem('foodypay_token', res.data.token);
-        localStorage.setItem('foodypay_user', JSON.stringify(res.data));
+        localStorage.setItem('foodypay_user', JSON.stringify(freeUserData));
       }
 
       playMilestoneCelebration();
@@ -344,7 +351,12 @@ export default function SignupPage({ onShowToast }) {
       }
 
       if (response && response.success && response.data) {
-        const userData = response.data;
+        const userData = {
+          ...response.data,
+          subscriptionPlan: 'Starter Free',
+          subscriptionStatus: 'Free Trial',
+          subscriptionPrice: 0,
+        };
 
         if (userData.token) {
           localStorage.setItem('foodypay_token', userData.token);
@@ -680,6 +692,77 @@ export default function SignupPage({ onShowToast }) {
                   )}
                 </div>
               </div>
+            </div>
+
+            {/* PLAN SELECTION STEP */}
+            <div style={{ marginTop: '8px', marginBottom: '6px' }}>
+              <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                Select Your Plan to Continue *
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                {/* Starter Free */}
+                <div
+                  onClick={() => setSelectedPlan('Starter Free')}
+                  style={{
+                    border: selectedPlan === 'Starter Free' ? '2px solid #FF5E14' : '1.5px solid #CBD5E1',
+                    background: selectedPlan === 'Starter Free' ? '#FFF0EB' : '#F8FAFC',
+                    borderRadius: '10px',
+                    padding: '10px 8px',
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <span style={{ fontSize: '9.5px', background: '#DCFCE7', color: '#166534', padding: '1px 6px', borderRadius: '8px', fontWeight: 800, display: 'inline-block', marginBottom: '3px' }}>2% on QR orders</span>
+                  <div style={{ fontWeight: 800, fontSize: '12px', color: '#0F172A' }}>Starter Free</div>
+                  <div style={{ fontWeight: 900, fontSize: '15px', color: '#16A34A', margin: '2px 0' }}>$0 <span style={{ fontSize: '10px', color: '#64748B', fontWeight: 600 }}>/mo</span></div>
+                  <div style={{ fontSize: '9.5px', color: '#64748B', lineHeight: 1.2 }}>Start free forever • Basic features</div>
+                </div>
+
+                {/* Growth Pro */}
+                <div
+                  onClick={() => setSelectedPlan('Growth Pro')}
+                  style={{
+                    border: selectedPlan === 'Growth Pro' ? '2px solid #FF5E14' : '1.5px solid #CBD5E1',
+                    background: selectedPlan === 'Growth Pro' ? '#FFF0EB' : '#F8FAFC',
+                    borderRadius: '10px',
+                    padding: '10px 8px',
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <span style={{ fontSize: '9.5px', background: '#FF5E14', color: '#FFFFFF', padding: '1px 6px', borderRadius: '8px', fontWeight: 800, display: 'inline-block', marginBottom: '3px' }}>Most Popular</span>
+                  <div style={{ fontWeight: 800, fontSize: '12px', color: '#0F172A' }}>Growth Pro</div>
+                  <div style={{ fontWeight: 900, fontSize: '15px', color: '#FF5E14', margin: '2px 0' }}>$35 <span style={{ fontSize: '10px', color: '#64748B', fontWeight: 600 }}>/mo</span></div>
+                  <div style={{ fontSize: '9.5px', color: '#64748B', lineHeight: 1.2 }}>Permanent Website • KDS • CRM</div>
+                </div>
+
+                {/* Enterprise Max */}
+                <div
+                  onClick={() => setSelectedPlan('Enterprise Max')}
+                  style={{
+                    border: selectedPlan === 'Enterprise Max' ? '2px solid #FF5E14' : '1.5px solid #CBD5E1',
+                    background: selectedPlan === 'Enterprise Max' ? '#FFF0EB' : '#F8FAFC',
+                    borderRadius: '10px',
+                    padding: '10px 8px',
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <span style={{ fontSize: '9.5px', background: '#E0E7FF', color: '#3730A3', padding: '1px 6px', borderRadius: '8px', fontWeight: 800, display: 'inline-block', marginBottom: '3px' }}>0% Commission</span>
+                  <div style={{ fontWeight: 800, fontSize: '12px', color: '#0F172A' }}>Enterprise Max</div>
+                  <div style={{ fontWeight: 900, fontSize: '15px', color: '#4F46E5', margin: '2px 0' }}>$75 <span style={{ fontSize: '10px', color: '#64748B', fontWeight: 600 }}>/mo</span></div>
+                  <div style={{ fontSize: '9.5px', color: '#64748B', lineHeight: 1.2 }}>Custom Domain • All Unlocked</div>
+                </div>
+              </div>
+
+              {selectedPlan !== 'Starter Free' && (
+                <div style={{ marginTop: '6px', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '8px', padding: '6px 10px', fontSize: '11px', color: '#1E40AF', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>🔒 Note: Account will register on <strong>Starter Free ($0)</strong>. Upgrade to {selectedPlan} via Razorpay payment inside Dashboard to unlock features.</span>
+                </div>
+              )}
             </div>
 
             {/* SUBMIT BUTTON */}

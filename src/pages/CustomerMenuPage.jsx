@@ -41,44 +41,134 @@ import {
   Mail,
   Store,
   ChevronDown,
-  RefreshCw
+  RefreshCw,
+  Menu,
+  Laptop,
+  Truck,
+  ShieldCheck,
+  FileText,
+  BookOpen
 } from 'lucide-react';
 import { playOrderPlaced } from '../utils/soundEffects';
 import { QrCodeComponent } from '../utils/qrGenerator';
-import { fetchDishesApi, fetchPublicDishesApi, fetchPublicMerchantApi, fetchPublicCouponsApi, createReviewApi, createPublicOrderApi, createRazorpayOrderApi, verifyRazorpaySignatureApi } from '../utils/api';
+import { fetchDishesApi, fetchPublicDishesApi, fetchPublicMerchantApi, fetchPublicCouponsApi, createReviewApi, createPublicOrderApi, createRazorpayOrderApi, verifyRazorpaySignatureApi, checkDeliveryAvailabilityApi, fetchAvailableProductsApi } from '../utils/api';
 
 const AVAILABLE_COUPONS = [];
 
-// Rich Image-Based Category Cards for Food Delivery Home Screen
+const DEFAULT_10_PRODUCTS = [];
+
+// Rich Grocery Category Cards for Home Screen
 const HOME_IMAGE_CATEGORIES = [
-  { id: 'All', name: 'All Items', image: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=300&auto=format&fit=crop&q=80', count: '10+ Items' },
-  { id: 'Pizza', name: 'Pizzas', image: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=300&auto=format&fit=crop&q=80', count: 'Cheesy Slices' },
-  { id: 'Burgers', name: 'Burgers', image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=300&auto=format&fit=crop&q=80', count: 'Juicy Buns' },
-  { id: 'Main Course', name: 'Thalis & Mains', image: 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=300&auto=format&fit=crop&q=80', count: 'Rich Meals' },
-  { id: 'Beverages', name: 'Drinks & Shakes', image: 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=300&auto=format&fit=crop&q=80', count: 'Cool Beverages' },
-  { id: 'Desserts', name: 'Desserts', image: 'https://images.unsplash.com/photo-1587314168485-3236d6710814?w=300&auto=format&fit=crop&q=80', count: 'Sweet Treats' },
-  { id: 'Snacks', name: 'Snacks & Starters', image: 'https://images.unsplash.com/photo-1541544741938-0af808871cc0?w=300&auto=format&fit=crop&q=80', count: 'Quick Bites' },
-  { id: 'Healthy', name: 'Salads & Bowls', image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=300&auto=format&fit=crop&q=80', count: 'Fresh Greens' }
+  { id: 'All', name: 'All 10 Items', image: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=300&auto=format&fit=crop&q=80', count: '10 Essentials' },
+  { id: 'Milk & Dairy', name: 'Milk & Dairy', image: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=300&auto=format&fit=crop&q=80', count: 'Milk, Curd, Paneer' },
+  { id: 'Biscuits & Cookies', name: 'Biscuits & Cookies', image: 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=300&auto=format&fit=crop&q=80', count: 'Biscuits & Cookies' },
+  { id: 'Ice Cream', name: 'Ice Cream', image: 'https://images.unsplash.com/photo-1570197788417-0e82375c9371?w=300&auto=format&fit=crop&q=80', count: 'Chocolate & Vanilla' },
+  { id: 'Snacks & Chips', name: 'Snacks & Chips', image: 'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=300&auto=format&fit=crop&q=80', count: 'Chips & Juice' }
 ];
 
 const getFallbackFoodImage = (name = '', category = '') => {
   const n = (name || '').toLowerCase();
   const c = (category || '').toLowerCase();
-  if (n.includes('pizza') || c.includes('pizza')) return 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=500&auto=format&fit=crop&q=80';
-  if (n.includes('burger') || c.includes('burger')) return 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=500&auto=format&fit=crop&q=80';
-  if (n.includes('fries') || n.includes('snack') || c.includes('starter')) return 'https://images.unsplash.com/photo-1576107232684-1279f390859f?w=500&auto=format&fit=crop&q=80';
-  if (n.includes('shake') || n.includes('drink') || n.includes('coke') || n.includes('coffee') || c.includes('beverage')) return 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=500&auto=format&fit=crop&q=80';
-  if (n.includes('roll') || n.includes('wrap')) return 'https://images.unsplash.com/photo-1626700051175-6818013e1d4f?w=500&auto=format&fit=crop&q=80';
-  if (n.includes('paneer') || n.includes('thali') || n.includes('dal') || n.includes('curry') || n.includes('roti') || n.includes('naan')) return 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=500&auto=format&fit=crop&q=80';
-  if (n.includes('cake') || n.includes('dessert') || n.includes('sweet') || n.includes('ice cream')) return 'https://images.unsplash.com/photo-1587314168485-3236d6710814?w=500&auto=format&fit=crop&q=80';
+
+  // 1. South Indian / Dosa / Idli / Tiffin / Sambar / Vada
+  if (n.includes('south indian') || n.includes('dosa') || n.includes('idli') || n.includes('tiffin') || n.includes('sambar') || n.includes('uttapam') || n.includes('vada')) {
+    return 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=500&auto=format&fit=crop&q=80';
+  }
+  // 2. Pizza
+  if (n.includes('pizza') || c.includes('pizza')) {
+    return 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=500&auto=format&fit=crop&q=80';
+  }
+  // 3. Burger / Fries / Snack / Fast food
+  if (n.includes('burger') || n.includes('fries') || n.includes('snack') || c.includes('snack') || c.includes('burger')) {
+    return 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=500&auto=format&fit=crop&q=80';
+  }
+  // 4. Thali / North Indian / Dal / Naan / Roti
+  if (n.includes('thali') || c.includes('thali') || n.includes('north indian') || n.includes('paneer') || n.includes('subzi') || n.includes('curry')) {
+    return 'https://images.unsplash.com/photo-1631452180519-c014fe946bc7?w=500&auto=format&fit=crop&q=80';
+  }
+  // 5. Biryani / Rice / Pulao
+  if (n.includes('biryani') || n.includes('rice') || n.includes('pulao') || c.includes('biryani')) {
+    return 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=500&auto=format&fit=crop&q=80';
+  }
+  // 6. Pasta / Noodles / Chowmein / Chinese
+  if (n.includes('pasta') || n.includes('noodle') || n.includes('chowmein') || c.includes('chinese')) {
+    return 'https://images.unsplash.com/photo-1621996346565-e3d5d6281829?w=500&auto=format&fit=crop&q=80';
+  }
+  // 7. Coffee / Drinks / Beverages / Shake / Tea
+  if (n.includes('coffee') || n.includes('drink') || n.includes('beverage') || n.includes('shake') || n.includes('tea') || c.includes('beverage')) {
+    return 'https://images.unsplash.com/photo-1551024709-8f23befc6f87?w=500&auto=format&fit=crop&q=80';
+  }
+  // 8. Dessert / Cake / Ice cream
+  if (n.includes('dessert') || n.includes('cake') || n.includes('ice cream') || c.includes('dessert')) {
+    return 'https://images.unsplash.com/photo-1570197788417-0e82375c9371?w=500&auto=format&fit=crop&q=80';
+  }
+  // 9. Milk & Dairy
+  if (n.includes('milk') || c.includes('milk') || n.includes('curd') || n.includes('dahi')) {
+    return 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=500&auto=format&fit=crop&q=80';
+  }
+  // 10. Chips & Biscuits
+  if (n.includes('biscuit') || n.includes('cookie') || n.includes('chip')) {
+    return 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=500&auto=format&fit=crop&q=80';
+  }
+  // 11. Generic Combo / Meal (checked after specific types above)
+  if (n.includes('combo') || n.includes('meal') || c.includes('combo')) {
+    return 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&auto=format&fit=crop&q=80';
+  }
+
   return 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&auto=format&fit=crop&q=80';
 };
 
 const getDishImageUrl = (dish) => {
-  if (dish && typeof dish.image === 'string' && dish.image.trim() !== '' && !dish.image.includes('placeholder')) {
-    return dish.image;
+  if (!dish) return getFallbackFoodImage('', '');
+
+  // Check images array first
+  if (Array.isArray(dish.images) && dish.images.length > 0) {
+    const validImg = dish.images.find(
+      (img) => typeof img === 'string' && img.trim() !== '' && !img.includes('placeholder')
+    );
+    if (validImg) return validImg;
   }
-  return getFallbackFoodImage(dish ? dish.name : '', dish ? dish.category : '');
+
+  // Check image string or object
+  let imgStr = '';
+  if (typeof dish.image === 'string') {
+    imgStr = dish.image;
+  } else if (dish.image && typeof dish.image.url === 'string') {
+    imgStr = dish.image.url;
+  }
+
+  if (imgStr && imgStr.trim() !== '' && !imgStr.includes('placeholder')) {
+    return imgStr;
+  }
+
+  return getFallbackFoodImage(dish.name || '', dish.category || '');
+};
+
+const getDishImagesList = (dish) => {
+  if (!dish) return [];
+  const list = [];
+
+  if (Array.isArray(dish.images) && dish.images.length > 0) {
+    dish.images.forEach((img) => {
+      if (typeof img === 'string' && img.trim() !== '' && !list.includes(img)) {
+        list.push(img);
+      }
+    });
+  }
+
+  let singleImg = '';
+  if (typeof dish.image === 'string') singleImg = dish.image;
+  else if (dish.image && typeof dish.image.url === 'string') singleImg = dish.image.url;
+
+  if (singleImg && singleImg.trim() !== '' && !list.includes(singleImg)) {
+    list.push(singleImg);
+  }
+
+  if (list.length === 0) {
+    list.push(getFallbackFoodImage(dish.name || '', dish.category || ''));
+  }
+
+  return list;
 };
 
 export default function CustomerMenuPage({ onShowToast }) {
@@ -128,28 +218,162 @@ export default function CustomerMenuPage({ onShowToast }) {
       .join(' ');
   };
 
+  const getFeaturedMerchantId = () => {
+    try {
+      const featId = localStorage.getItem('foodypay_featured_merchant_id');
+      if (featId) return featId;
+    } catch (e) {}
+    return 'FP-985569';
+  };
+
   const rawRestName = formatSlug(restaurantSlug || 'FoodyPay Store');
   const rawTable = tableId ? formatSlug(tableId).replace(/tabel/gi, 'Table') : 'Table 1';
-  const effectiveMerchantId = merchantId || 'FP-985569';
+  const effectiveMerchantId = merchantId || getFeaturedMerchantId();
 
-  // Store & Catalog Datasets
-  const [storeInfo, setStoreInfo] = useState({
-    name: rawRestName,
-    merchantId: effectiveMerchantId,
-    table: rawTable,
-    logoUrl: '',
-    gstPercent: 5,
-    upiId: 'lagandhaba@icici',
-    rating: 4.8,
-    deliveryTime: '15-25 min'
+  // Catalog Theme State
+  const [activeCatalogTheme, setActiveCatalogTheme] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_catalog_theme');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {
+      id: 'orange',
+      name: 'Sunset Orange',
+      primary: '#FF5E14',
+      accent: '#D97706',
+      bg: '#FFF0EB',
+      gradient: 'linear-gradient(135deg, #FF5E14 0%, #D97706 100%)',
+    };
   });
 
-  const [dishes, setDishes] = useState([]);
+  useEffect(() => {
+    const handleThemeSync = (e) => {
+      if (e && e.detail) {
+        setActiveCatalogTheme(e.detail);
+      } else {
+        try {
+          const saved = localStorage.getItem('foodypay_catalog_theme');
+          if (saved) setActiveCatalogTheme(JSON.parse(saved));
+        } catch (err) {}
+      }
+    };
+    window.addEventListener('storage', handleThemeSync);
+    window.addEventListener('foodypay_theme_changed', handleThemeSync);
+    return () => {
+      window.removeEventListener('storage', handleThemeSync);
+      window.removeEventListener('foodypay_theme_changed', handleThemeSync);
+    };
+  }, []);
+
+  // Store & Catalog Datasets
+  const [storeInfo, setStoreInfo] = useState(() => {
+    let savedUpi = '';
+    try {
+      savedUpi = localStorage.getItem('foodypay_upi_id') || '';
+      if (!savedUpi) {
+        const rawU = localStorage.getItem('foodypay_user');
+        if (rawU) savedUpi = JSON.parse(rawU).upiId || '';
+      }
+    } catch (e) {}
+
+    return {
+      name: rawRestName,
+      merchantId: effectiveMerchantId,
+      table: rawTable,
+      logoUrl: '',
+      gstPercent: 5,
+      upiId: savedUpi || '7496888449@ptsbi',
+      rating: 4.8,
+      deliveryTime: '15-25 min'
+    };
+  });
+
+  const getInitialDishes = () => {
+    try {
+      const featPayload = localStorage.getItem('foodypay_featured_homepage_merchant');
+      if (featPayload) {
+        const parsed = JSON.parse(featPayload);
+        if (Array.isArray(parsed.products) && parsed.products.length > 0) {
+          return parsed.products.map((item, idx) => ({
+            ...item,
+            id: String(item.id || item._id || `d_${idx}`),
+            price: Number(item.price || item.comboPrice || 0),
+          }));
+        }
+      }
+    } catch (e) {}
+    return [];
+  };
+
+  const [dishes, setDishes] = useState(getInitialDishes);
   const [combos, setCombos] = useState([]);
   const [dbCoupons, setDbCoupons] = useState([]);
-  const [cart, setCart] = useState({});
+  const [carts, setCarts] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_customer_carts');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed === 'object' && parsed !== null) return parsed;
+      }
+    } catch (e) {}
+    return {};
+  });
+
+  const getActiveCartKey = () => {
+    if (navTab === 'scanner') {
+      const tbl = storeInfo.table || rawTable || 'Table 1';
+      return `table_${tbl.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`;
+    }
+    return 'home_delivery';
+  };
+
+  const activeCartKey = getActiveCartKey();
+  const cart = carts[activeCartKey] || {};
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [menuPage, setMenuPage] = useState(1);
+  const ITEMS_PER_PAGE = 12;
+
+  useEffect(() => {
+    setMenuPage(1);
+  }, [selectedCategory, searchQuery]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 450) {
+        setMenuPage((prev) => prev + 1);
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Payment Method Display & Options Config (Synced with POS Dashboard Settings)
+  const [paymentConfig, setPaymentConfig] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_payment_config');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {
+      header: 'Payment Method',
+      upiEnabled: true,
+      upiLabel: 'Online UPI',
+      cashEnabled: true,
+      cashLabel: 'Cash / Pay Counter',
+    };
+  });
+
+  useEffect(() => {
+    const handlePaymentConfigSync = () => {
+      try {
+        const saved = localStorage.getItem('foodypay_payment_config');
+        if (saved) setPaymentConfig(JSON.parse(saved));
+      } catch (e) {}
+    };
+    window.addEventListener('storage', handlePaymentConfigSync);
+    return () => window.removeEventListener('storage', handlePaymentConfigSync);
+  }, []);
   const [dietFilter, setDietFilter] = useState('all');
 
   // Customer Profile & Saved Addresses State
@@ -160,6 +384,9 @@ export default function CustomerMenuPage({ onShowToast }) {
   const [customerDob, setCustomerDob] = useState('');
   const [showDobModal, setShowDobModal] = useState(false);
   const [showPwaInstallBanner, setShowPwaInstallBanner] = useState(true);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [showPwaInstallModal, setShowPwaInstallModal] = useState(false);
+  const [isAppInstalled, setIsAppInstalled] = useState(false);
 
   // Saved Addresses State
   const [savedAddresses, setSavedAddresses] = useState([]);
@@ -168,6 +395,96 @@ export default function CustomerMenuPage({ onShowToast }) {
   const [newAddrFlat, setNewAddrFlat] = useState('');
   const [newAddrText, setNewAddrText] = useState('');
   const [newAddrLandmark, setNewAddrLandmark] = useState('');
+
+  // Automatic Customer Geolocation & Delivery Zone Availability State
+  const [locationState, setLocationState] = useState({
+    loading: false,
+    requested: false,
+    permissionGranted: false,
+    lat: null,
+    lng: null,
+    available: true,
+    reason: null,
+    message: '',
+    addressLabel: '',
+  });
+
+  const handleDetectCustomerLocation = () => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      setLocationState((prev) => ({
+        ...prev,
+        loading: false,
+        requested: true,
+        permissionGranted: false,
+        message: 'Geolocation is not supported by your browser.',
+      }));
+      return;
+    }
+
+    setLocationState((prev) => ({ ...prev, loading: true, requested: true }));
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        try {
+          const res = await checkDeliveryAvailabilityApi(lat, lng);
+          const isAvail = res.available !== false;
+          setLocationState({
+            loading: false,
+            requested: true,
+            permissionGranted: true,
+            lat,
+            lng,
+            available: isAvail,
+            reason: res.reason || null,
+            message: res.message || '',
+            addressLabel: `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+          });
+
+          // Fetch products for location
+          try {
+            const prodRes = await fetchAvailableProductsApi(lat, lng, selectedCategory);
+            if (prodRes && Array.isArray(prodRes.dishes) && prodRes.dishes.length > 0) {
+              setDishes(prodRes.dishes);
+            }
+          } catch (e) {}
+
+          if (!isAvail && onShowToast) {
+            onShowToast('Sorry, Home Delivery is currently not available in your area.');
+          } else if (onShowToast) {
+            onShowToast('📍 Location updated! Delivery is available in your area.');
+          }
+        } catch (err) {
+          setLocationState((prev) => ({
+            ...prev,
+            loading: false,
+            requested: true,
+            permissionGranted: true,
+            lat,
+            lng,
+            addressLabel: `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+          }));
+        }
+      },
+      (err) => {
+        console.warn('Geolocation permission error:', err);
+        setLocationState((prev) => ({
+          ...prev,
+          loading: false,
+          requested: true,
+          permissionGranted: false,
+          message: 'Location permission denied. Please allow location access for auto delivery checks.',
+        }));
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+    );
+  };
+
+  // Trigger Automatic Location Permission Request immediately on page load / website visit
+  useEffect(() => {
+    handleDetectCustomerLocation();
+  }, []);
 
   // Orders State
   const [customerOrders, setCustomerOrders] = useState([]);
@@ -180,6 +497,7 @@ export default function CustomerMenuPage({ onShowToast }) {
 
   // Cart & Checkout state
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isNavMenuOpen, setIsNavMenuOpen] = useState(false);
   const [chefNote, setChefNote] = useState('');
   const [paymentMode, setPaymentMode] = useState('upi'); // 'upi' | 'cash'
   const [appliedCoupon, setAppliedCoupon] = useState(null);
@@ -193,10 +511,52 @@ export default function CustomerMenuPage({ onShowToast }) {
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [ratingStars, setRatingStars] = useState(5);
   const [feedbackText, setFeedbackText] = useState('');
+  const [selectedProductModal, setSelectedProductModal] = useState(null);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
   // Active Placed Order Tracker state
   const [activePlacedOrder, setActivePlacedOrder] = useState(null);
   const [copiedLink, setCopiedLink] = useState(false);
+
+  // Dynamic Steal Deals / Collections Configuration from Merchant POS Dashboard
+  const [stealDealsConfig, setStealDealsConfig] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_steal_deals_config');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {
+      enabled: true,
+      title: 'STEAL DEAL WEEKEND',
+      badgePrice: '9',
+      subtitle: '✦ GET ANY ONE ITEM AT SPECIAL PRICE ✦',
+      items: [
+        { id: 'steal_1', name: 'Corn Cob (Bhutta)', unit: '1 pc', price: 9, originalPrice: 22, unlockAt: 499, isVeg: true, image: 'https://images.unsplash.com/photo-1551754655-cd27e38d2076?w=400&auto=format&fit=crop&q=80' },
+        { id: 'steal_2', name: 'Sleepy Owl Assorted Instant Coffee', unit: '10 pcs', price: 29, originalPrice: 49, unlockAt: 899, isVeg: true, image: 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=400&auto=format&fit=crop&q=80' },
+        { id: 'steal_3', name: 'Farmley Dark Choco Orange Date Bites', unit: '20 g', price: 9, originalPrice: 40, unlockAt: 499, isVeg: true, image: 'https://images.unsplash.com/photo-1549007994-cb92caebd54b?w=400&auto=format&fit=crop&q=80' },
+        { id: 'steal_4', name: 'Fresh Full Cream Milk (1L)', unit: '1 L', price: 49, originalPrice: 66, unlockAt: 299, isVeg: true, image: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=500&auto=format&fit=crop&q=80' },
+        { id: 'steal_5', name: 'Crispy Potato Chips Pack (Salted)', unit: '50 g', price: 9, originalPrice: 20, unlockAt: 199, isVeg: true, image: 'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400&auto=format&fit=crop&q=80' },
+      ]
+    };
+  });
+
+  // Live sync updated UPI ID & Steal Deals config
+  useEffect(() => {
+    const handleUpiSync = () => {
+      try {
+        const savedUpi = localStorage.getItem('foodypay_upi_id');
+        if (savedUpi) {
+          setStoreInfo((prev) => ({ ...prev, upiId: savedUpi }));
+        }
+        const savedSteal = localStorage.getItem('foodypay_steal_deals_config');
+        if (savedSteal) {
+          setStealDealsConfig(JSON.parse(savedSteal));
+        }
+      } catch (e) {}
+    };
+    handleUpiSync();
+    window.addEventListener('storage', handleUpiSync);
+    return () => window.removeEventListener('storage', handleUpiSync);
+  }, []);
 
   // Load saved customer profile & addresses from localStorage
   useEffect(() => {
@@ -235,15 +595,24 @@ export default function CustomerMenuPage({ onShowToast }) {
         const list = JSON.parse(saved);
         if (Array.isArray(list)) {
           setCustomerOrders(list);
-          if (list.length > 0 && !activePlacedOrder) {
-            const latest = list[0];
-            if (latest.status !== 'completed' && latest.status !== 'cancelled') {
-              setActivePlacedOrder(latest);
-            }
-          }
         }
       }
-    } catch (e) {}
+
+      // Active Tracker Banner ONLY appears when customer actively places an order in their session
+      const currentSessionOrder = sessionStorage.getItem('foodypay_active_order');
+      if (currentSessionOrder) {
+        const parsedOrder = JSON.parse(currentSessionOrder);
+        if (parsedOrder && parsedOrder.status !== 'completed' && parsedOrder.status !== 'delivered' && parsedOrder.status !== 'served' && parsedOrder.status !== 'cancelled') {
+          setActivePlacedOrder(parsedOrder);
+        } else {
+          setActivePlacedOrder(null);
+        }
+      } else {
+        setActivePlacedOrder(null);
+      }
+    } catch (e) {
+      setActivePlacedOrder(null);
+    }
   };
 
   useEffect(() => {
@@ -251,6 +620,53 @@ export default function CustomerMenuPage({ onShowToast }) {
     window.addEventListener('storage', loadCustomerOrders);
     return () => window.removeEventListener('storage', loadCustomerOrders);
   }, []);
+
+  // PWA Web App Installation Event Listener
+  useEffect(() => {
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+      setIsAppInstalled(true);
+      setShowPwaInstallBanner(false);
+    }
+
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowPwaInstallBanner(true);
+    };
+
+    const handleAppInstalled = () => {
+      setIsAppInstalled(true);
+      setShowPwaInstallBanner(false);
+      setDeferredPrompt(null);
+      if (onShowToast) onShowToast('FoodyPay Web App installed successfully!');
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, [onShowToast]);
+
+  const handleTriggerAppInstall = async () => {
+    if (deferredPrompt) {
+      try {
+        deferredPrompt.prompt();
+        const choiceResult = await deferredPrompt.userChoice;
+        if (choiceResult && choiceResult.outcome === 'accepted') {
+          if (onShowToast) onShowToast('Installing FoodyPay App on your device...');
+          setShowPwaInstallBanner(false);
+        }
+        setDeferredPrompt(null);
+      } catch (err) {
+        setShowPwaInstallModal(true);
+      }
+    } else {
+      setShowPwaInstallModal(true);
+    }
+  };
 
   // Auto-save user profile details to localStorage
   useEffect(() => {
@@ -265,7 +681,33 @@ export default function CustomerMenuPage({ onShowToast }) {
   // Load menu dataset dynamically from Server API
   const loadDynamicMenu = async () => {
     try {
-      const targetIdentifier = merchantId || restaurantSlug || 'FP-985569';
+      const targetIdentifier = merchantId || restaurantSlug || getFeaturedMerchantId() || 'FP-985569';
+
+      // Check if featured store set by Master Admin
+      try {
+        const featPayload = localStorage.getItem('foodypay_featured_homepage_merchant');
+        if (featPayload && !merchantId && !restaurantSlug) {
+          const parsedFeat = JSON.parse(featPayload);
+          if (parsedFeat && (parsedFeat.businessName || parsedFeat.restaurantName)) {
+            setStoreInfo((prev) => ({
+              ...prev,
+              name: parsedFeat.businessName || parsedFeat.restaurantName || prev.name,
+              merchantId: parsedFeat.foodypayId || parsedFeat.merchantId || prev.merchantId,
+              logoUrl: parsedFeat.logoUrl || prev.logoUrl,
+              upiId: parsedFeat.upiId || prev.upiId,
+            }));
+
+            if (Array.isArray(parsedFeat.products) && parsedFeat.products.length > 0) {
+              const normFeat = parsedFeat.products.map((item, idx) => ({
+                ...item,
+                id: String(item.id || item._id || `d_${idx}`),
+                price: Number(item.price || item.comboPrice || 0),
+              }));
+              setDishes(normFeat);
+            }
+          }
+        }
+      } catch (e) {}
 
       try {
         const merchantData = await fetchPublicMerchantApi(targetIdentifier);
@@ -275,7 +717,7 @@ export default function CustomerMenuPage({ onShowToast }) {
             name: merchantData.businessName || merchantData.name || rawRestName,
             logoUrl: merchantData.logo?.url || prev.logoUrl,
             gstPercent: merchantData.gstPercent !== undefined ? merchantData.gstPercent : 5,
-            upiId: merchantData.upiId || 'lagandhaba@icici',
+            upiId: localStorage.getItem('foodypay_upi_id') || merchantData.upiId || merchantData.upi_id || prev.upiId || '7496888449@ptsbi',
           }));
         }
       } catch (e) {}
@@ -293,12 +735,8 @@ export default function CustomerMenuPage({ onShowToast }) {
         const apiDishes = await fetchPublicDishesApi(merchantId, effectiveMerchantId);
         if (Array.isArray(apiDishes)) {
           setDishes(normalizeDishes(apiDishes));
-        } else {
-          setDishes([]);
         }
-      } catch (err) {
-        setDishes([]);
-      }
+      } catch (err) {}
 
       const savedMeals = localStorage.getItem('foodypay_crm_meals_v1');
       if (savedMeals) {
@@ -349,6 +787,124 @@ export default function CustomerMenuPage({ onShowToast }) {
     iconLink.href = effectiveLogo;
   }, [storeInfo.logoUrl, storeInfo.name]);
 
+  // Robust Table QR Code Parser for Multi-Restaurant & Multi-Table Switching
+  const parseQrCodeData = (qrText) => {
+    if (!qrText || typeof qrText !== 'string') return null;
+    let str = qrText.trim();
+
+    let slug = '';
+    let merchant = '';
+    let table = '';
+
+    if (str.startsWith('http://') || str.startsWith('https://')) {
+      try {
+        const url = new URL(str);
+        if (url.searchParams.get('slug')) slug = url.searchParams.get('slug');
+        if (url.searchParams.get('merchant')) merchant = url.searchParams.get('merchant');
+        if (url.searchParams.get('table')) table = url.searchParams.get('table');
+
+        const hashOrPath = url.hash ? url.hash.replace('#/', '').replace('#', '') : url.pathname.replace(/^\//, '');
+        const parts = hashOrPath.split('/').filter(Boolean);
+        if (parts.length >= 3) {
+          slug = slug || parts[0];
+          merchant = merchant || parts[1];
+          table = table || parts[2];
+        } else if (parts.length === 2) {
+          slug = slug || parts[0];
+          merchant = merchant || parts[1];
+        } else if (parts.length === 1 && !slug) {
+          slug = parts[0];
+        }
+      } catch (e) {}
+    }
+
+    if (!merchant || !table) {
+      const clean = str.replace(/^https?:\/\/[^\/]+/, '').replace(/^#\/?/, '').replace(/^\//, '');
+      const parts = clean.split('/').filter(Boolean);
+      if (parts.length >= 3) {
+        slug = slug || parts[0];
+        merchant = merchant || parts[1];
+        table = table || parts[2];
+      } else if (parts.length === 2) {
+        slug = slug || parts[0];
+        merchant = merchant || parts[1];
+      } else if (parts.length === 1 && !merchant) {
+        if (parts[0].startsWith('FP-')) {
+          merchant = parts[0];
+        } else {
+          slug = parts[0];
+        }
+      }
+    }
+
+    if (!table) table = 'table-1';
+    if (!merchant) merchant = effectiveMerchantId || 'FP-985569';
+    if (!slug) slug = merchant.toLowerCase();
+
+    return { slug, merchant, table };
+  };
+
+  // Handle Scanned Table QR Code (Live Camera or Input)
+  const handleQrDetected = async (rawQrData) => {
+    const parsed = parseQrCodeData(rawQrData);
+    if (!parsed) return;
+
+    stopCamera();
+    setManualQrInput('');
+
+    const formattedTable = parsed.table
+      ? parsed.table.replace(/tabel/gi, 'Table').replace(/table-/gi, 'Table ').replace(/table/gi, 'Table ')
+      : 'Table 1';
+    const formattedSlug = formatSlug(parsed.slug);
+
+    // Update Store Info State immediately
+    setStoreInfo((prev) => ({
+      ...prev,
+      name: formattedSlug || 'FoodyPay Restaurant',
+      merchantId: parsed.merchant,
+      table: formattedTable,
+    }));
+
+    // Reset cart for newly scanned table
+    setCarts((prev) => ({
+      ...prev,
+      ['table_' + formattedTable.toLowerCase().replace(/[^a-z0-9]+/g, '_')]: {}
+    }));
+
+    if (onShowToast) onShowToast(` Table Scanned: ${formattedSlug} (${formattedTable})`);
+
+    // Fetch dynamic menu catalog for newly scanned merchant ID & restaurant
+    try {
+      const targetIdentifier = parsed.merchant || parsed.slug;
+      const mData = await fetchPublicMerchantApi(targetIdentifier);
+      if (mData) {
+        setStoreInfo((prev) => ({
+          ...prev,
+          name: mData.businessName || mData.name || formattedSlug,
+          logoUrl: mData.logo?.url || prev.logoUrl,
+          gstPercent: mData.gstPercent !== undefined ? mData.gstPercent : 5,
+          upiId: localStorage.getItem('foodypay_upi_id') || mData.upiId || mData.upi_id || prev.upiId || '7496888449@ptsbi'
+        }));
+      }
+
+      const newDishes = await fetchPublicDishesApi(parsed.merchant, parsed.merchant);
+      if (Array.isArray(newDishes) && newDishes.length > 0) {
+        const norm = newDishes.map((item, idx) => ({
+          ...item,
+          id: String(item.id || item._id || `d_${idx}`),
+          price: Number(item.price || item.comboPrice || 0)
+        }));
+        setDishes(norm);
+      } else {
+        setDishes([]);
+      }
+    } catch (err) {
+      setDishes([]);
+    }
+
+    navigate(`/${parsed.slug}/${parsed.merchant}/${parsed.table}`);
+  };
+
   // Camera QR Code Scanner controls
   const startCamera = async () => {
     setCameraError(null);
@@ -360,7 +916,7 @@ export default function CustomerMenuPage({ onShowToast }) {
         setIsCameraActive(true);
       }
     } catch (err) {
-      setCameraError('Unable to open camera feed. Enter Table QR Code or URL manually below.');
+      setCameraError('Camera access required. Enter Table QR Code or URL manually below.');
       setIsCameraActive(false);
     }
   };
@@ -380,25 +936,52 @@ export default function CustomerMenuPage({ onShowToast }) {
     }
   }, [navTab]);
 
+  // Live Camera Barcode/QR Code scanning loop
+  useEffect(() => {
+    let animId;
+    let isScanning = true;
+
+    const scanFrame = async () => {
+      if (!isCameraActive || !videoRef.current) return;
+
+      if ('BarcodeDetector' in window) {
+        try {
+          const barcodeDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
+          const barcodes = await barcodeDetector.detect(videoRef.current);
+          if (barcodes && barcodes.length > 0) {
+            const qrValue = barcodes[0].rawValue;
+            if (qrValue && isScanning) {
+              isScanning = false;
+              handleQrDetected(qrValue);
+              return;
+            }
+          }
+        } catch (e) {}
+      }
+      if (isCameraActive) {
+        animId = setTimeout(scanFrame, 350);
+      }
+    };
+
+    if (isCameraActive) {
+      if (!videoRef.current || !videoRef.current.srcObject) {
+        startCamera();
+      }
+      scanFrame();
+    } else {
+      stopCamera();
+    }
+
+    return () => {
+      isScanning = false;
+      if (animId) clearTimeout(animId);
+    };
+  }, [isCameraActive]);
+
   const handleManualQrSubmit = (e) => {
     e.preventDefault();
     if (!manualQrInput.trim()) return;
-
-    let target = manualQrInput.trim();
-    if (target.startsWith('http://') || target.startsWith('https://')) {
-      try {
-        const parsedUrl = new URL(target);
-        target = parsedUrl.pathname + parsedUrl.hash;
-      } catch (err) {}
-    }
-
-    if (onShowToast) onShowToast(` Switching to Table QR: ${target}`);
-    if (target.includes('/')) {
-      navigate(target.startsWith('/') ? target : `/${target}`);
-    } else {
-      navigate(`/${target}/${effectiveMerchantId}/table-1`);
-    }
-    setIsCameraActive(false);
+    handleQrDetected(manualQrInput.trim());
   };
 
   // Saved Addresses handlers
@@ -438,22 +1021,42 @@ export default function CustomerMenuPage({ onShowToast }) {
   const updateCartQty = (dishId, delta) => {
     if (!dishId || dishId === 'undefined') return;
     const key = String(dishId);
-    setCart((prev) => {
-      const current = prev[key] || 0;
-      const next = current + delta;
-      if (next <= 0) {
-        const { [key]: _, ...rest } = prev;
-        return rest;
+    const targetCartKey = getActiveCartKey();
+
+    setCarts((prevCarts) => {
+      const currentCart = prevCarts[targetCartKey] || {};
+      const currentQty = currentCart[key] || 0;
+      const nextQty = currentQty + delta;
+
+      let updatedCart = { ...currentCart };
+      if (nextQty <= 0) {
+        delete updatedCart[key];
+      } else {
+        updatedCart[key] = nextQty;
       }
-      return { ...prev, [key]: next };
+
+      const nextCarts = {
+        ...prevCarts,
+        [targetCartKey]: updatedCart
+      };
+
+      try {
+        localStorage.setItem('foodypay_customer_carts', JSON.stringify(nextCarts));
+      } catch (e) {}
+
+      return nextCarts;
     });
   };
 
-  const getCartCount = () => Object.values(cart).reduce((s, q) => s + (Number(q) || 0), 0);
+  const getCartCount = () => {
+    const currentCart = carts[getActiveCartKey()] || {};
+    return Object.values(currentCart).reduce((s, q) => s + (Number(q) || 0), 0);
+  };
 
   const getSubtotal = () => {
     let total = 0;
-    Object.entries(cart).forEach(([dishId, qty]) => {
+    const currentCart = carts[getActiveCartKey()] || {};
+    Object.entries(currentCart).forEach(([dishId, qty]) => {
       if (!dishId || dishId === 'undefined' || !qty || qty <= 0) return;
       const strId = String(dishId);
       const dish = dishes.find((d) => String(d.id) === strId) || combos.find((c) => String(c.id) === strId);
@@ -465,6 +1068,25 @@ export default function CustomerMenuPage({ onShowToast }) {
     return total;
   };
 
+  const handleReorder = (order) => {
+    if (!order || !Array.isArray(order.items)) return;
+    const targetKey = getActiveCartKey();
+    setCarts((prev) => {
+      const currentCart = prev[targetKey] || {};
+      const updatedCart = { ...currentCart };
+      order.items.forEach((it) => {
+        if (it.id) {
+          updatedCart[String(it.id)] = (updatedCart[String(it.id)] || 0) + (it.qty || 1);
+        }
+      });
+      const nextCarts = { ...prev, [targetKey]: updatedCart };
+      try { localStorage.setItem('foodypay_customer_carts', JSON.stringify(nextCarts)); } catch (e) {}
+      return nextCarts;
+    });
+    setIsCartOpen(true);
+    if (onShowToast) onShowToast(' Re-ordered items added to cart!');
+  };
+
   const subtotal = getSubtotal();
   const discountAmount = appliedCoupon ? subtotal * 0.2 : 0;
   const taxableAmount = Math.max(0, subtotal - discountAmount);
@@ -472,6 +1094,11 @@ export default function CustomerMenuPage({ onShowToast }) {
   const finalTotal = Math.round(taxableAmount + gstAmount);
 
   const filteredDishes = dishes.filter((dish) => {
+    const currentStoreId = (effectiveMerchantId || storeInfo.merchantId || '').toUpperCase();
+    const dishStoreId = (dish.foodypayId || dish.merchantId || '').toUpperCase();
+    if (dishStoreId && currentStoreId && dishStoreId !== currentStoreId) {
+      return false;
+    }
     const matchesSearch =
       dish.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (dish.desc && dish.desc.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -485,25 +1112,43 @@ export default function CustomerMenuPage({ onShowToast }) {
 
   const getAssignedCouponsForUser = () => {
     let list = [];
+    const cleanNum = (p) => (p || '').replace(/\D/g, '').slice(-10);
+    const userPhoneClean = cleanNum(customerPhone);
+    const currentStoreId = (effectiveMerchantId || storeInfo.merchantId || '').toUpperCase();
+
+    const isCouponForThisStore = (c) => {
+      if (!c) return false;
+      const cStoreId = (c.foodypayId || c.merchantId || c.storeId || '').toUpperCase();
+      if (cStoreId && currentStoreId && cStoreId !== currentStoreId && cStoreId !== 'GLOBAL') {
+        return false;
+      }
+      return true;
+    };
 
     // 1. Process DB coupons created from POS Dashboard
     if (Array.isArray(dbCoupons) && dbCoupons.length > 0) {
       dbCoupons.forEach((c) => {
+        if (!isCouponForThisStore(c)) return;
+        const cPhoneClean = cleanNum(c.assignedCustomerPhone || c.targetPhone);
+        const isPhoneMatch = userPhoneClean && cPhoneClean && cPhoneClean === userPhoneClean;
         const isAssigned =
           c.assignedToAll ||
-          (c.assignedCustomerPhone && customerPhone && c.assignedCustomerPhone.includes(customerPhone.trim())) ||
+          !c.assignedCustomerPhone ||
+          c.assignedCustomerPhone === 'all' ||
+          isPhoneMatch ||
           (c.assignedCustomerEmail && customerEmail && c.assignedCustomerEmail.toLowerCase() === customerEmail.trim().toLowerCase()) ||
           (c.assignedCustomerName && customerName && c.assignedCustomerName.toLowerCase().includes(customerName.trim().toLowerCase()));
 
         if (isAssigned) {
           list.push({
             code: c.code,
+            foodypayId: c.foodypayId || c.merchantId || currentStoreId,
             type: c.type ? `${c.type.toUpperCase()} DISCOUNT` : 'STORE VOUCHER',
             discount: c.discount || `Discount Code ${c.code}`,
             minOrder: c.minOrder || 199,
             desc: c.description || 'Voucher assigned to your account from dashboard',
-            badge: c.assignedToAll ? 'STORE OFFER' : 'EXCLUSIVE VIP',
-            assignedReason: c.assignedToAll ? 'Available to Store Diners' : `Assigned to ${customerName || customerPhone || 'You'}`
+            badge: isPhoneMatch ? '🎯 ASSIGNED TO YOUR MOBILE' : (c.assignedToAll ? 'STORE OFFER' : 'EXCLUSIVE VIP'),
+            assignedReason: isPhoneMatch ? `Assigned to Mobile ${customerPhone}` : (c.assignedToAll ? 'Available to Store Diners' : `Assigned to ${customerName || customerPhone || 'You'}`)
           });
         }
       });
@@ -516,21 +1161,27 @@ export default function CustomerMenuPage({ onShowToast }) {
         const parsed = JSON.parse(savedCrmCoupons);
         if (Array.isArray(parsed)) {
           parsed.forEach((c) => {
+            if (!isCouponForThisStore(c)) return;
             if (!list.some(existing => existing.code === c.code)) {
+              const cPhoneClean = cleanNum(c.assignedCustomerPhone || c.targetPhone);
+              const isPhoneMatch = userPhoneClean && cPhoneClean && cPhoneClean === userPhoneClean;
               const isTargetUser =
                 c.assignedToAll ||
-                (c.targetPhone && customerPhone && c.targetPhone.includes(customerPhone.trim())) ||
+                !c.assignedCustomerPhone ||
+                c.assignedCustomerPhone === 'all' ||
+                isPhoneMatch ||
                 (c.targetName && customerName && c.targetName.toLowerCase().includes(customerName.trim().toLowerCase()));
 
               if (isTargetUser) {
                 list.push({
                   code: c.code || 'VIPOFFER',
+                  foodypayId: c.foodypayId || c.merchantId || currentStoreId,
                   type: c.discount || 'SPECIAL OFFER',
                   discount: c.title || c.discount || 'Assigned VIP Discount',
                   minOrder: c.minOrder || 149,
                   desc: c.description || 'Exclusive voucher assigned specifically to your mobile account',
-                  badge: c.badge || 'VIP VOUCHER',
-                  assignedReason: c.targetPhone ? 'Personal VIP Gift' : 'Store Member Offer'
+                  badge: isPhoneMatch ? '🎯 ASSIGNED TO YOUR MOBILE' : (c.badge || 'VIP VOUCHER'),
+                  assignedReason: isPhoneMatch ? `Assigned to Mobile ${customerPhone}` : (c.targetPhone ? 'Personal VIP Gift' : 'Store Member Offer')
                 });
               }
             }
@@ -604,6 +1255,17 @@ export default function CustomerMenuPage({ onShowToast }) {
     if (paymentMode === 'upi' || paymentMode === 'razorpay') {
       setPendingOrderObj(newOrder);
 
+      const activeRoutingMode = localStorage.getItem('foodypay_payment_routing_mode') || 'foodypay_default';
+
+      // 1. Direct Merchant UPI QR Mode -> Open UPI Modal
+      if (activeRoutingMode === 'merchant_upi') {
+        setShowUpiModal(true);
+        setIsCartOpen(false);
+        setIsSubmittingOrder(false);
+        return;
+      }
+
+      // 2. FoodyPay Default Gateway OR Merchant Own Razorpay -> Open Razorpay Checkout Gateway
       const loadRazorpayScript = () => {
         return new Promise((resolve) => {
           if (window.Razorpay) {
@@ -619,31 +1281,51 @@ export default function CustomerMenuPage({ onShowToast }) {
       };
 
       try {
-        const rzpRes = await createRazorpayOrderApi({
-          amount: newOrder.total,
-          currency: 'INR',
-          merchantId: storeInfo.merchantId,
-          foodypayId: effectiveMerchantId,
-          orderId: newOrder.id,
-        });
+        let activeRzpKey = 'rzp_live_TjBEt4gu2aUflB';
+        let activeRzpSecret = 'FPXDLXe3Vbh0NYSpCAXmXOA3';
 
-        if (rzpRes && rzpRes.routingMode === 'merchant_upi') {
-          setShowUpiModal(true);
-          setIsCartOpen(false);
-          setIsSubmittingOrder(false);
-          return;
+        if (activeRoutingMode === 'merchant_razorpay') {
+          activeRzpKey = localStorage.getItem('foodypay_rzp_key_id') || storeInfo.razorpayKeyId || 'rzp_live_TjBEt4gu2aUflB';
+          activeRzpSecret = localStorage.getItem('foodypay_rzp_key_secret') || storeInfo.razorpayKeySecret || 'FPXDLXe3Vbh0NYSpCAXmXOA3';
+        }
+
+        let razorpayOrderId = null;
+        try {
+          const rzpRes = await createRazorpayOrderApi({
+            amount: newOrder.total,
+            currency: 'INR',
+            merchantId: storeInfo.merchantId,
+            foodypayId: effectiveMerchantId,
+            orderId: newOrder.id,
+            razorpayKeyId: activeRzpKey,
+            razorpayKeySecret: activeRzpSecret,
+            paymentRoutingMode: activeRoutingMode,
+          });
+
+          if (rzpRes && rzpRes.routingMode === 'merchant_upi') {
+            setShowUpiModal(true);
+            setIsCartOpen(false);
+            setIsSubmittingOrder(false);
+            return;
+          }
+
+          if (rzpRes && rzpRes.razorpayOrderId) {
+            razorpayOrderId = rzpRes.razorpayOrderId;
+          }
+        } catch (apiErr) {
+          console.warn('Backend order API creation warning (proceeding with direct Razorpay SDK checkout):', apiErr);
         }
 
         const scriptLoaded = await loadRazorpayScript();
-        if (scriptLoaded && window.Razorpay && rzpRes && rzpRes.razorpayOrderId) {
+        if (scriptLoaded && window.Razorpay) {
           const options = {
-            key: rzpRes.keyId || 'rzp_test_FoodyPayDefaultKey123',
-            amount: rzpRes.amount,
-            currency: rzpRes.currency || 'INR',
+            key: activeRzpKey || 'rzp_live_TjBEt4gu2aUflB',
+            amount: Math.round(newOrder.total * 100),
+            currency: 'INR',
             name: storeInfo.name || 'FoodyPay Order',
             description: `Order ${newOrder.id} at ${storeInfo.name}`,
             image: storeInfo.logoUrl || '/Logo.png',
-            order_id: rzpRes.razorpayOrderId,
+            ...(razorpayOrderId ? { order_id: razorpayOrderId } : {}),
             handler: async function (response) {
               try {
                 await verifyRazorpaySignatureApi({
@@ -669,6 +1351,11 @@ export default function CustomerMenuPage({ onShowToast }) {
             theme: {
               color: '#FF5E14',
             },
+            modal: {
+              ondismiss: function () {
+                setIsSubmittingOrder(false);
+              }
+            }
           };
 
           const rzpInstance = new window.Razorpay(options);
@@ -677,8 +1364,11 @@ export default function CustomerMenuPage({ onShowToast }) {
           setIsSubmittingOrder(false);
           return;
         }
-      } catch (err) {}
+      } catch (err) {
+        console.error('Razorpay popup error:', err);
+      }
 
+      // Emergency fallback only if Razorpay CDN script completely fails to load
       setShowUpiModal(true);
       setIsCartOpen(false);
       setIsSubmittingOrder(false);
@@ -724,9 +1414,18 @@ export default function CustomerMenuPage({ onShowToast }) {
     } catch (err) {}
 
     setActivePlacedOrder(orderObj);
+    try {
+      sessionStorage.setItem('foodypay_active_order', JSON.stringify(orderObj));
+    } catch (e) {}
     setIsCartOpen(false);
     setShowUpiModal(false);
-    setCart({});
+    setCarts((prev) => {
+      const nextCarts = { ...prev, [getActiveCartKey()]: {} };
+      try {
+        localStorage.setItem('foodypay_customer_carts', JSON.stringify(nextCarts));
+      } catch (e) {}
+      return nextCarts;
+    });
     setIsSubmittingOrder(false);
 
     if (!customerDob) {
@@ -736,19 +1435,6 @@ export default function CustomerMenuPage({ onShowToast }) {
     }
 
     if (onShowToast) onShowToast(` Order ${orderObj.id} placed successfully!`);
-  };
-
-  const handleReorder = (order) => {
-    if (!order || !order.items) return;
-    const newCart = { ...cart };
-    order.items.forEach(item => {
-      const key = String(item.id || item._id);
-      newCart[key] = (newCart[key] || 0) + (Number(item.qty) || 1);
-    });
-    setCart(newCart);
-    setNavTab('home');
-    setIsCartOpen(true);
-    if (onShowToast) onShowToast(' Previous order items added to cart!');
   };
 
   const handleSaveDobSubmit = (e) => {
@@ -817,6 +1503,143 @@ export default function CustomerMenuPage({ onShowToast }) {
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#FAFAFA', color: '#1E293B', fontFamily: 'system-ui, -apple-system, sans-serif', paddingBottom: '90px' }}>
       
+      {/* Embedded Responsive CSS for FoodyPay Desktop Web vs Mobile */}
+      <style>{`
+        .fp-header-wrap {
+          background: #FFFFFF;
+          color: #0F172A;
+          position: sticky;
+          top: 0;
+          z-index: 40;
+          border-bottom: 1px solid #E2E8F0;
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+          user-select: none;
+        }
+        .fp-header-desktop {
+          display: none;
+          max-width: 1560px;
+          margin: 0 auto;
+          padding: 12px 16px;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          background: #FFFFFF;
+        }
+        .fp-header-mobile {
+          display: block;
+          max-width: 768px;
+          margin: 0 auto;
+          padding: 12px 16px 14px;
+          background: linear-gradient(135deg, #FF5E14 0%, #E04800 100%);
+          color: #FFFFFF;
+        }
+        .fp-main-wrap {
+          max-width: 1560px;
+          margin: 0 auto;
+          padding: 14px 14px 90px;
+          display: flex;
+          gap: 14px;
+        }
+        .fp-desktop-sidebar {
+          display: none;
+          width: 210px;
+          flex-shrink: 0;
+          background: #FFFFFF;
+          border-radius: 16px;
+          border: 1px solid #E2E8F0;
+          padding: 14px 8px;
+          height: fit-content;
+          position: sticky;
+          top: 85px;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.04);
+        }
+        .fp-main-body {
+          flex: 1;
+          min-width: 0;
+        }
+        .fp-mobile-nav-bar {
+          display: flex;
+        }
+        .fp-floating-cart-bar {
+          display: flex;
+        }
+        .fp-card-hover {
+          transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+        }
+        .fp-card-hover:hover {
+          transform: translateY(-4px);
+          box-shadow: 0 12px 28px rgba(255, 94, 20, 0.16) !important;
+          border-color: #FF5E14 !important;
+        }
+        .fp-sidebar-btn {
+          transition: all 0.18s ease;
+        }
+        .fp-sidebar-btn:hover {
+          background-color: #FFF7ED !important;
+          color: #FF5E14 !important;
+        }
+        .fp-desktop-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+          gap: 12px;
+        }
+        .fp-steal-container {
+          display: grid;
+          grid-template-columns: repeat(5, 1fr);
+          gap: 12px;
+          width: 100%;
+        }
+        .fp-steal-card {
+          width: 100% !important;
+          min-width: 0 !important;
+        }
+        .fp-mega-drops-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 12px;
+        }
+
+        @media (min-width: 768px) {
+          .fp-header-desktop {
+            display: flex !important;
+          }
+          .fp-header-mobile {
+            display: none !important;
+          }
+          .fp-desktop-sidebar {
+            display: block !important;
+          }
+          .fp-mobile-nav-bar {
+            display: none !important;
+          }
+          .fp-floating-cart-bar {
+            display: none !important;
+          }
+        }
+
+        @media (max-width: 767px) {
+          .fp-desktop-grid {
+            grid-template-columns: repeat(2, 1fr) !important;
+            gap: 10px !important;
+          }
+          .fp-steal-container {
+            display: flex !important;
+            gap: 12px !important;
+            overflow-x: auto !important;
+            padding-bottom: 6px;
+          }
+          .fp-steal-card {
+            width: 145px !important;
+            min-width: 145px !important;
+            flex-shrink: 0 !important;
+          }
+          .fp-mega-drops-grid {
+            grid-template-columns: repeat(2, 1fr) !important;
+            gap: 10px !important;
+          }
+        }
+      `}</style>
+
       {/* Light Mobile PWA Web App Install Banner */}
       {showPwaInstallBanner && (
         <div style={{
@@ -835,11 +1658,7 @@ export default function CustomerMenuPage({ onShowToast }) {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{ width: '28px', height: '28px', borderRadius: '6px', backgroundColor: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', padding: '2px', border: '1px solid #CBD5E1' }}>
-              {storeInfo.logoUrl ? (
-                <img src={storeInfo.logoUrl} alt={storeInfo.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-              ) : (
-                <img src="/Logo.png" alt="App Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-              )}
+              <img src="/Logo.png" alt="App Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
             </div>
             <div>
               <span style={{ fontWeight: 500, color: '#0F172A' }}>Install FoodyPay App</span>
@@ -849,10 +1668,7 @@ export default function CustomerMenuPage({ onShowToast }) {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <button
-              onClick={() => {
-                alert(` FoodyPay Web App Ready! Add to your Home Screen for fast 1-click food ordering.`);
-                setShowPwaInstallBanner(false);
-              }}
+              onClick={handleTriggerAppInstall}
               style={{
                 backgroundColor: '#FF5E14',
                 color: '#FFF',
@@ -879,153 +1695,469 @@ export default function CustomerMenuPage({ onShowToast }) {
         </div>
       )}
 
-      {/* Main Top Header - Clean Delivery Style Header on Home, Table Info on Scanner */}
-      <header style={{
-        backgroundColor: '#FFFFFF',
-        borderBottom: '1px solid #F1F5F9',
-        position: 'sticky',
+      {/* Main Top Header - Responsive Desktop & Mobile FoodyPay Orange Bar */}
+      <header className="fp-header-wrap" style={{
         top: showPwaInstallBanner ? '42px' : 0,
-        zIndex: 40,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-        userSelect: 'none'
       }}>
-        <div style={{ maxWidth: '768px', margin: '0 auto', padding: '10px 16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-            
-            {/* Left Header Brand info */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              {storeInfo.logoUrl ? (
-                <img
-                  src={storeInfo.logoUrl}
-                  alt={storeInfo.name}
-                  style={{ width: '40px', height: '40px', borderRadius: '10px', objectFit: 'cover', border: '1px solid #E2E8F0', flexShrink: 0 }}
-                  onError={(e) => { e.target.style.display = 'none'; }}
-                />
-              ) : (
-                <div style={{
-                  width: '40px',
-                  height: '40px',
-                  borderRadius: '10px',
-                  backgroundColor: '#FFF7ED',
-                  color: '#FF5E14',
-                  border: '1px solid #FFEDD5',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontWeight: 500,
-                  fontSize: '17px',
-                  flexShrink: 0
-                }}>
-                  {storeInfo.name.charAt(0)}
-                </div>
-              )}
+        {/* 1. DESKTOP LAPTOP HEADER VIEW (Min-width: 768px) - EXACT BLINKIT MATCH */}
+        <div className="fp-header-desktop">
+          {/* Logo & Brand */}
+          <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }} onClick={() => setNavTab('home')}>
+            <img
+              src="/Logo.png"
+              alt="FoodyPay Official Logo"
+              style={{ height: '38px', width: 'auto', objectFit: 'contain', display: 'block' }}
+            />
+          </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                {navTab === 'home' ? (
-                  /* REGULAR FOOD DELIVERY HEADER (NO Table No or QR Info) */
-                  <>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <h1 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#0F172A', letterSpacing: '-0.01em' }}>
-                        FoodyPay Delivery
-                      </h1>
-                      <span style={{ fontSize: '10px', backgroundColor: '#ECFDF5', color: '#047857', border: '1px solid #A7F3D0', padding: '1px 6px', borderRadius: '12px', fontWeight: 500 }}>
-                         15-25 min
-                      </span>
-                    </div>
-                    <div style={{ fontSize: '11.5px', color: '#64748B', fontWeight: 400, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <MapPin size={12} color="#FF5E14" />
-                      <span>{savedAddresses.length > 0 ? savedAddresses[0].text : 'Select Delivery Location'}</span>
-                    </div>
-                  </>
-                ) : (
-                  /* SCANNER / TABLE DINE-IN HEADER */
-                  <>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <h1 style={{ margin: 0, fontSize: '15px', fontWeight: 500, color: '#0F172A', letterSpacing: '-0.01em' }}>
-                        {storeInfo.name}
-                      </h1>
-                      <span style={{ fontSize: '10px', backgroundColor: '#ECFDF5', color: '#047857', border: '1px solid #A7F3D0', padding: '1px 6px', borderRadius: '12px', fontWeight: 500, whiteSpace: 'nowrap' }}>
-                         Live QR Menu
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#64748B', fontWeight: 400 }}>
-                      <span style={{ backgroundColor: '#F1F5F9', color: '#475569', fontWeight: 500, padding: '1px 6px', borderRadius: '4px', border: '1px solid #E2E8F0' }}>
-                        {storeInfo.merchantId}
-                      </span>
-                      <span style={{ backgroundColor: '#FFF7ED', color: '#C2410C', fontWeight: 500, padding: '1px 6px', borderRadius: '4px', border: '1px solid #FFEDD5' }}>
-                         {storeInfo.table}
-                      </span>
-                    </div>
-                  </>
-                )}
+          {/* Vertical Separator */}
+          <div style={{ width: '1px', height: '36px', backgroundColor: '#E2E8F0', margin: '0 8px' }} />
+
+          {/* Delivery Info with Auto Location Trigger */}
+          <div style={{ display: 'flex', flexDirection: 'column', cursor: 'pointer', minWidth: '220px' }} onClick={handleDetectCustomerLocation} title="Click to refresh or detect location">
+            <div style={{ fontSize: '16px', fontWeight: 900, color: '#0F172A', lineHeight: '1.2', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>Delivery in 8 minutes</span>
+              {locationState.loading && <RefreshCw size={14} className="spin" color="#FF5E14" />}
+            </div>
+            <div style={{ fontSize: '12px', color: '#475569', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+              <span style={{ maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: locationState.available === false ? '#DC2626' : '#475569' }}>
+                {locationState.loading
+                  ? '📍 Detecting Location...'
+                  : locationState.lat && locationState.lng
+                  ? `📍 GPS: ${locationState.lat.toFixed(4)}, ${locationState.lng.toFixed(4)}`
+                  : savedAddresses.length > 0
+                  ? savedAddresses[0].text
+                  : '📍 Click to Detect Location'}
+              </span>
+              <ChevronDown size={14} color="#334155" />
+            </div>
+          </div>
+
+          {/* Wide Desktop Search Bar */}
+          <div style={{ flex: 1, maxWidth: '640px', position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <Search size={18} color="#64748B" style={{ position: 'absolute', left: '14px', pointerEvents: 'none' }} />
+            <input
+              type="text"
+              placeholder='Search "butter", "bread", "milk", "dishes", "snacks"...'
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                width: '100%',
+                backgroundColor: '#F8FAFC',
+                border: '1px solid #E2E8F0',
+                borderRadius: '12px',
+                padding: '11px 16px 11px 42px',
+                fontSize: '14px',
+                fontWeight: 500,
+                color: '#0F172A',
+                outline: 'none'
+              }}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                style={{ position: 'absolute', right: '48px', background: '#E2E8F0', border: 'none', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B', cursor: 'pointer' }}
+              >
+                <X size={12} />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                if (onShowToast) onShowToast('🎙️ Voice Search active! Say item name...');
+              }}
+              style={{ position: 'absolute', right: '12px', background: 'none', border: 'none', color: '#FF5E14', cursor: 'pointer', display: 'flex' }}
+              title="Voice Search"
+            >
+              <Sparkles size={18} color="#FF5E14" />
+            </button>
+          </div>
+
+          {/* Desktop Right Actions: Account Dropdown & My Cart */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+            {/* Account ▾ Button */}
+            <button
+              type="button"
+              onClick={() => setIsNavMenuOpen(true)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#334155',
+                fontWeight: 700,
+                fontSize: '15px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer',
+                padding: '6px 10px',
+                borderRadius: '8px',
+              }}
+              title="Open Account & Navigation Menu"
+            >
+              <span>{customerName ? customerName : 'Account'}</span>
+              <ChevronDown size={16} color="#334155" />
+            </button>
+
+            {/* Green My Cart Pill Button */}
+            <button
+              type="button"
+              onClick={() => setIsCartOpen(true)}
+              style={{
+                backgroundColor: '#0C831F',
+                color: '#FFFFFF',
+                border: 'none',
+                padding: '10px 22px',
+                borderRadius: '12px',
+                fontWeight: 800,
+                fontSize: '14.5px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(12, 131, 31, 0.25)'
+              }}
+            >
+              <ShoppingBag size={18} color="#FFFFFF" />
+              <span>My Cart</span>
+              {getCartCount() > 0 ? (
+                <span style={{ backgroundColor: 'rgba(255,255,255,0.25)', color: '#FFF', padding: '2px 8px', borderRadius: '12px', fontSize: '12.5px', fontWeight: 900 }}>
+                  {getCartCount()} • ₹{finalTotal}
+                </span>
+              ) : (
+                <span style={{ fontSize: '12.5px', color: 'rgba(255,255,255,0.85)', fontWeight: 600 }}>Empty</span>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* 2. MOBILE HEADER VIEW (Max-width: 767px) */}
+        <div className="fp-header-mobile">
+          {/* Row 1: Delivery Time & Location Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+            <div>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.02em', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>FoodyPay in</span>
+                <span style={{ backgroundColor: 'rgba(255,255,255,0.2)', padding: '1px 6px', borderRadius: '10px', fontSize: '10px', fontWeight: 700 }}>24/7</span>
+              </div>
+              <div style={{ fontSize: '24px', fontWeight: 900, color: '#FFFFFF', lineHeight: '1.1', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>8 minutes</span>
+              </div>
+              <div style={{ fontSize: '12.5px', color: '#FFFFFF', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px', cursor: 'pointer' }} onClick={handleDetectCustomerLocation} title="Click to refresh or detect location">
+                <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {locationState.loading
+                    ? '📍 Detecting Location...'
+                    : locationState.lat && locationState.lng
+                    ? `📍 GPS: ${locationState.lat.toFixed(4)}, ${locationState.lng.toFixed(4)}`
+                    : savedAddresses.length > 0
+                    ? savedAddresses[0].text
+                    : '📍 Tap to Detect Location'}
+                </span>
+                <ChevronDown size={14} color="#FFFFFF" />
               </div>
             </div>
 
-            {/* Right Action buttons */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-              <button
-                onClick={handleShareLink}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  backgroundColor: '#F8FAFC',
-                  border: '1px solid #E2E8F0',
-                  padding: '5px 10px',
-                  borderRadius: '16px',
-                  fontSize: '11.5px',
-                  fontWeight: 500,
-                  color: '#475569',
-                  cursor: 'pointer',
-                  outline: 'none',
-                  WebkitTapHighlightColor: 'transparent',
-                  userSelect: 'none'
-                }}
-              >
-                {copiedLink ? <Check size={13} color="#16A34A" /> : <Share2 size={13} />}
-                <span>{copiedLink ? 'Copied' : 'Share'}</span>
-              </button>
-
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <button
                 onClick={() => setNavTab('profile')}
                 style={{
-                  width: '32px',
-                  height: '32px',
+                  width: '36px',
+                  height: '36px',
                   borderRadius: '50%',
-                  backgroundColor: navTab === 'profile' ? '#FF5E14' : '#FFF7ED',
-                  color: navTab === 'profile' ? '#FFFFFF' : '#C2410C',
-                  border: '1px solid #FFEDD5',
+                  backgroundColor: '#FFFFFF',
+                  color: '#FF5E14',
+                  border: 'none',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  fontWeight: 500,
-                  fontSize: '13px',
+                  fontWeight: 900,
+                  fontSize: '15px',
                   cursor: 'pointer',
-                  outline: 'none',
-                  WebkitTapHighlightColor: 'transparent',
-                  userSelect: 'none',
-                  lineHeight: 1
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
                 }}
-                title="My Profile"
               >
-                {customerName ? customerName.charAt(0).toUpperCase() : <User size={15} />}
+                {customerName ? customerName.charAt(0).toUpperCase() : <User size={18} color="#FF5E14" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsNavMenuOpen(true)}
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  backgroundColor: '#FFFFFF',
+                  color: '#FF5E14',
+                  border: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+                }}
+                title="Navigation Menu"
+              >
+                <Menu size={18} color="#FF5E14" />
               </button>
             </div>
+          </div>
+
+          {/* Row 2: Search Input with Audio Wave Button */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+            <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <Search size={18} color="#64748B" style={{ position: 'absolute', left: '12px', pointerEvents: 'none' }} />
+              <input
+                type="text"
+                placeholder='Search "birthday gift", "milk", "dishes"...'
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  width: '100%',
+                  backgroundColor: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '10px 14px 10px 38px',
+                  fontSize: '13.5px',
+                  fontWeight: 500,
+                  color: '#0F172A',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                  outline: 'none'
+                }}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  style={{ position: 'absolute', right: '10px', background: '#F1F5F9', border: 'none', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B', cursor: 'pointer' }}
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+
+            <button
+              style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: '12px',
+                backgroundColor: '#FFFFFF',
+                border: 'none',
+                color: '#FF5E14',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                cursor: 'pointer'
+              }}
+              onClick={() => {
+                if (onShowToast) onShowToast('🎙️ Voice Search active! Say item name...');
+              }}
+            >
+              <Sparkles size={18} color="#FF5E14" />
+            </button>
+          </div>
+
+          {/* Row 3: Horizontal Scrollable Category Icons */}
+          <div className="crm-no-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: '16px', overflowX: 'auto', paddingBottom: '4px' }}>
+            {[
+              { id: 'All', label: 'All', icon: Sparkles, hasNew: false },
+              { id: 'Navratri', label: 'Navratri', icon: Flame, hasNew: true },
+              { id: 'Electronics', label: 'Electronics', icon: Smartphone, hasNew: false },
+              { id: 'Beauty', label: 'Beauty', icon: Award, hasNew: false },
+              { id: 'Gifting', label: 'Gifting', icon: Gift, hasNew: false },
+              { id: 'Milk & Dairy', label: 'Dairy', icon: Utensils, hasNew: false },
+              { id: 'Snacks & Chips', label: 'Snacks', icon: ShoppingBag, hasNew: false },
+            ].map((cat) => {
+              const IconComp = cat.icon;
+              const isSel = selectedCategory === cat.id;
+
+              return (
+                <div
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.id)}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '4px',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                    position: 'relative'
+                  }}
+                >
+                  {cat.hasNew && (
+                    <span style={{ position: 'absolute', top: '-6px', right: '-4px', backgroundColor: '#EF4444', color: '#FFF', fontSize: '9px', fontWeight: 900, padding: '1px 5px', borderRadius: '8px', zIndex: 2 }}>
+                      New
+                    </span>
+                  )}
+                  <div
+                    style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '10px',
+                      backgroundColor: isSel ? '#FFFFFF' : 'rgba(255,255,255,0.18)',
+                      color: isSel ? '#FF5E14' : '#FFFFFF',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <IconComp size={18} />
+                  </div>
+                  <span style={{ fontSize: '11px', fontWeight: isSel ? 800 : 500, color: '#FFFFFF', whiteSpace: 'nowrap' }}>
+                    {cat.label}
+                  </span>
+                  {isSel && (
+                    <div style={{ width: '20px', height: '3px', backgroundColor: '#FFFFFF', borderRadius: '2px', marginTop: '1px' }} />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </header>
 
-      {/* Main App Workspace */}
-      <div style={{ maxWidth: '768px', margin: '0 auto', padding: '14px 14px 90px' }}>
+      {/* Responsive Main App Workspace (Desktop Sidebar + Mobile/Desktop Content) */}
+      <div className="fp-main-wrap">
+        {/* DESKTOP LEFT CATEGORY SIDEBAR */}
+        <aside className="fp-desktop-sidebar">
+          <div style={{ fontSize: '11px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '12px', paddingLeft: '8px' }}>
+            Categories
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {[
+              { id: 'All', label: 'All Essentials', icon: Sparkles },
+              { id: 'Navratri', label: 'Navratri Special', icon: Flame, hasNew: true },
+              { id: 'Electronics', label: 'Electronics & Tech', icon: Smartphone },
+              { id: 'Beauty', label: 'Beauty & Wellness', icon: Award },
+              { id: 'Gifting', label: 'Gifting & Sweets', icon: Gift },
+              { id: 'Milk & Dairy', label: 'Fresh Milk & Dairy', icon: Utensils },
+              { id: 'Snacks & Chips', label: 'Snacks & Munchies', icon: ShoppingBag },
+            ].map((cat) => {
+              const IconComp = cat.icon;
+              const isSel = selectedCategory === cat.id;
+
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.id)}
+                  className="fp-sidebar-btn"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    padding: '10px 12px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    borderLeft: isSel ? '4px solid #FF5E14' : '4px solid transparent',
+                    backgroundColor: isSel ? '#FFF7ED' : 'transparent',
+                    color: isSel ? '#FF5E14' : '#334155',
+                    fontWeight: isSel ? 800 : 500,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    width: '100%'
+                  }}
+                >
+                  <div style={{
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '8px',
+                    backgroundColor: isSel ? '#FF5E14' : '#F1F5F9',
+                    color: isSel ? '#FFF' : '#64748B',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    <IconComp size={16} />
+                  </div>
+                  <span style={{ flex: 1, fontSize: '12.5px', fontWeight: isSel ? 800 : 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {cat.label}
+                  </span>
+                  {cat.hasNew && (
+                    <span style={{ backgroundColor: '#EF4444', color: '#FFF', fontSize: '8.5px', fontWeight: 900, padding: '1px 5px', borderRadius: '6px' }}>
+                      NEW
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </aside>
+
+        {/* MAIN BODY AREA */}
+        <div className="fp-main-body">
+
+        {/* Dynamic Location Availability Alert Banner */}
+        {locationState.available === false && (
+          <div style={{
+            backgroundColor: '#FEF2F2',
+            border: '2px solid #FCA5A5',
+            borderRadius: '16px',
+            padding: '20px 24px',
+            margin: '0 0 20px 0',
+            boxShadow: '0 8px 24px rgba(220, 38, 38, 0.08)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div style={{
+                width: '46px',
+                height: '46px',
+                borderRadius: '14px',
+                backgroundColor: '#FEE2E2',
+                color: '#DC2626',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <AlertCircle size={26} />
+              </div>
+              <div>
+                <h3 style={{ margin: '0 0 4px 0', fontSize: '16px', fontWeight: 900, color: '#991B1B' }}>
+                  Sorry, Home Delivery is currently not available in your area.
+                </h3>
+                <p style={{ margin: 0, fontSize: '13px', color: '#B91C1C', fontWeight: 600 }}>
+                  {locationState.message || 'We do not have active store coverage for your current latitude/longitude coordinates.'}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleDetectCustomerLocation}
+              style={{
+                backgroundColor: '#DC2626',
+                color: '#FFFFFF',
+                border: 'none',
+                padding: '10px 18px',
+                borderRadius: '12px',
+                fontWeight: 800,
+                fontSize: '13px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <RefreshCw size={15} /> Re-check Location
+            </button>
+          </div>
+        )}
 
         {/* Light Active Order Tracker Banner */}
-        {activePlacedOrder && (
+        {activePlacedOrder && activePlacedOrder.status !== 'completed' && activePlacedOrder.status !== 'delivered' && activePlacedOrder.status !== 'served' && (
           <div style={{
             backgroundColor: '#F0F9FF',
             border: '1px solid #BAE6FD',
             borderRadius: '14px',
             padding: '14px',
-            marginBottom: '16px'
+            marginBottom: '16px',
+            position: 'relative'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1040,24 +2172,49 @@ export default function CustomerMenuPage({ onShowToast }) {
                 </div>
               </div>
 
-              <button
-                onClick={() => setShowRatingModal(true)}
-                style={{
-                  backgroundColor: '#FFF',
-                  border: '1px solid #FCD34D',
-                  color: '#D97706',
-                  padding: '5px 10px',
-                  borderRadius: '8px',
-                  fontSize: '11.5px',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                <Star size={13} fill="#F59E0B" /> Rate Food
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  onClick={() => setShowRatingModal(true)}
+                  style={{
+                    backgroundColor: '#FFF',
+                    border: '1px solid #FCD34D',
+                    color: '#D97706',
+                    padding: '5px 10px',
+                    borderRadius: '8px',
+                    fontSize: '11.5px',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <Star size={13} fill="#F59E0B" /> Rate Food
+                </button>
+                <button
+                  onClick={() => {
+                    setActivePlacedOrder(null);
+                    try {
+                      sessionStorage.removeItem('foodypay_active_order');
+                    } catch (e) {}
+                  }}
+                  style={{
+                    background: '#E0F2FE',
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: '26px',
+                    height: '26px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#0369A1',
+                    cursor: 'pointer'
+                  }}
+                  title="Dismiss Banner"
+                >
+                  <X size={15} />
+                </button>
+              </div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '10px 0 6px', fontSize: '11px', fontWeight: 500 }}>
@@ -1085,259 +2242,385 @@ export default function CustomerMenuPage({ onShowToast }) {
         )}
 
         {/* -----------------------------------------------------------------------
-            TAB 1: HOME (REGULAR FOOD DELIVERY HOME SCREEN - NO TABLE / QR INFO)
+            TAB 1: HOME (BLINKIT / ZOMATO QUICK COMMERCE UI MATCHING USER SCREENSHOT)
             ----------------------------------------------------------------------- */}
         {navTab === 'home' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            
-            {/* Delivery Style Search Banner */}
-            <div style={{
-              background: 'linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%)',
-              border: '1px solid #FED7AA',
-              borderRadius: '16px',
-              padding: '16px',
-              color: '#9A3412'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <span style={{ backgroundColor: '#FFF', color: '#C2410C', padding: '2px 8px', borderRadius: '12px', fontSize: '10.5px', fontWeight: 500, border: '1px solid #FFEDD5' }}>
-                   Express Food Delivery
-                </span>
-                <span style={{ fontSize: '11.5px', color: '#C2410C', fontWeight: 500 }}>
-                  Offer 50% OFF Applied
-                </span>
-              </div>
-              <h2 style={{ margin: '0 0 4px', fontSize: '18px', fontWeight: 600, color: '#7C2D12', lineHeight: '1.3' }}>
-                What are you craving today?
-              </h2>
 
-              {/* Light Search Box */}
-              <div style={{ position: 'relative', marginTop: '12px' }}>
-                <Search size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
-                <input
-                  type="text"
-                  placeholder="Search dishes, burgers, pizza, thalis..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px 10px 36px',
-                    borderRadius: '10px',
-                    border: '1px solid #FDBA74',
-                    outline: 'none',
-                    fontSize: '13px',
-                    backgroundColor: '#FFFFFF',
-                    color: '#1E293B',
-                    boxSizing: 'border-box',
-                    fontWeight: 400
-                  }}
-                />
-              </div>
-            </div>
+            {/* STEAL ₹9 DEAL BANNER & MEGA PRICE DROPS (HIDDEN WHEN USER TYPES IN SEARCH BAR) */}
+            {!searchQuery.trim() && (
+              <>
+                {/* STEAL ₹9 DEAL BANNER & SLIDER (DYNAMICALLY MANAGED FROM POS DASHBOARD /COLLECTIONS) */}
+                {stealDealsConfig && stealDealsConfig.enabled !== false && Array.isArray(stealDealsConfig.items) && stealDealsConfig.items.length > 0 && (
+                  <div style={{
+                    background: 'linear-gradient(135deg, #FF5E14 0%, #D94400 100%)',
+                    borderRadius: '20px',
+                    padding: '16px 14px 18px',
+                    color: '#FFFFFF',
+                    boxShadow: '0 8px 24px rgba(255, 94, 20, 0.25)'
+                  }}>
+                    {/* Steal Deal Header Badge */}
+                    <div style={{ textAlign: 'center', marginBottom: '14px' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'linear-gradient(90deg, #F59E0B 0%, #EAB308 100%)', color: '#0F172A', padding: '4px 16px', borderRadius: '20px', fontWeight: 900, fontSize: '18px', textTransform: 'uppercase', letterSpacing: '0.5px', boxShadow: '0 4px 14px rgba(245, 158, 11, 0.4)' }}>
+                        <span>{stealDealsConfig.title || 'STEAL DEAL'}</span>
+                        {stealDealsConfig.badgePrice && (
+                          <span style={{ backgroundColor: '#0F172A', color: '#F59E0B', borderRadius: '50%', padding: '0 8px', height: '28px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '15px' }}>
+                            ₹{stealDealsConfig.badgePrice}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#FCD34D', marginTop: '6px', letterSpacing: '0.04em' }}>
+                        {stealDealsConfig.subtitle || '✦ GET ANY ONE ITEM AT SPECIAL PRICE ✦'}
+                      </div>
+                    </div>
 
-            {/* CLEAR IMAGE-BASED CATEGORY CARDS (Replaces small icons) */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#0F172A' }}>Explore Categories</h3>
-                <span style={{ fontSize: '11.5px', color: '#FF5E14', fontWeight: 500 }}>{HOME_IMAGE_CATEGORIES.length} Categories</span>
-              </div>
+                    {/* Steal Deal Cards Container */}
+                    <div className="fp-steal-container crm-no-scrollbar">
+                      {stealDealsConfig.items.map((deal) => {
+                        const dealCartQty = cart[deal.id] || 0;
 
-              {/* Horizontal Scrollable Image Category Cards */}
-              <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '6px', scrollbarWidth: 'none' }}>
-                {HOME_IMAGE_CATEGORIES.map((cat) => {
-                  const isSelected = selectedCategory === cat.id;
-                  return (
-                    <button
-                      key={cat.id}
-                      onClick={() => setSelectedCategory(cat.id)}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        background: '#FFF',
-                        border: isSelected ? '2px solid #FF5E14' : '1px solid #E2E8F0',
-                        borderRadius: '14px',
-                        padding: '6px',
-                        cursor: 'pointer',
-                        minWidth: '94px',
-                        maxWidth: '94px',
-                        boxShadow: isSelected ? '0 3px 10px rgba(255,94,20,0.15)' : '0 1px 3px rgba(0,0,0,0.03)',
-                        flexShrink: 0,
-                        transition: 'transform 0.15s ease'
-                      }}
-                    >
-                      <img
-                        src={cat.image}
-                        alt={cat.name}
-                        style={{ width: '82px', height: '64px', borderRadius: '10px', objectFit: 'cover' }}
-                      />
-                      <span style={{ fontSize: '11.5px', fontWeight: isSelected ? 600 : 500, color: isSelected ? '#FF5E14' : '#0F172A', marginTop: '6px', textAlign: 'center', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', width: '100%' }}>
-                        {cat.name}
-                      </span>
-                      <span style={{ fontSize: '9.5px', color: '#64748B', fontWeight: 400 }}>
-                        {cat.count}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+                        return (
+                          <div
+                            key={deal.id}
+                            className="fp-steal-card fp-card-hover"
+                            style={{
+                              backgroundColor: '#FFFFFF',
+                              borderRadius: '16px',
+                              padding: '10px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                              boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
+                            }}
+                          >
+                            {/* Item Image */}
+                            <div style={{ position: 'relative', width: '100%', height: '110px', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#F8FAFC', marginBottom: '8px' }}>
+                              <img src={deal.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80'} alt={deal.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              {deal.isVeg && (
+                                <div style={{ position: 'absolute', bottom: '6px', right: '6px', backgroundColor: '#FFF', borderRadius: '4px', padding: '2px', border: '1px solid #16A34A' }}>
+                                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#16A34A' }} />
+                                </div>
+                              )}
+                            </div>
 
-            {/* Diet Filter Switcher */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFF', padding: '8px 12px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
-              <span style={{ fontSize: '12.5px', fontWeight: 500, color: '#475569' }}>Dietary Filter</span>
-              <div style={{ display: 'flex', backgroundColor: '#F8FAFC', padding: '2px', borderRadius: '8px', border: '1px solid #F1F5F9' }}>
-                <button
-                  onClick={() => setDietFilter('all')}
-                  style={{ border: 'none', backgroundColor: dietFilter === 'all' ? '#FFF' : 'transparent', color: dietFilter === 'all' ? '#0F172A' : '#64748B', fontWeight: 500, fontSize: '11.5px', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer' }}
-                >
-                  All
-                </button>
-                <button
-                  onClick={() => setDietFilter('veg')}
-                  style={{ border: 'none', backgroundColor: dietFilter === 'veg' ? '#10B981' : 'transparent', color: dietFilter === 'veg' ? '#FFF' : '#10B981', fontWeight: 500, fontSize: '11.5px', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer' }}
-                >
-                   Veg
-                </button>
-                <button
-                  onClick={() => setDietFilter('nonveg')}
-                  style={{ border: 'none', backgroundColor: dietFilter === 'nonveg' ? '#EF4444' : 'transparent', color: dietFilter === 'nonveg' ? '#FFF' : '#EF4444', fontWeight: 500, fontSize: '11.5px', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer' }}
-                >
-                   Non-Veg
-                </button>
-              </div>
-            </div>
+                            {/* Unit & Select Button Row */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                              <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 600 }}>{deal.unit || '1 pc'}</span>
+                              <button
+                                onClick={() => updateCartQty(deal.id, 1)}
+                                style={{
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#FF5E14',
+                                  border: '1.5px solid #FF5E14',
+                                  borderRadius: '8px',
+                                  padding: '3px 10px',
+                                  fontSize: '11.5px',
+                                  fontWeight: 800,
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                {dealCartQty > 0 ? `${dealCartQty} Added` : 'Select'}
+                              </button>
+                            </div>
 
-            {/* BLINKIT-STYLE PRODUCTS GRID (REPLACES POPULAR DISHES) */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#0F172A' }}>
-                  {selectedCategory === 'All' ? 'Instant Food Items' : `${selectedCategory}`}
-                </h3>
-                <span style={{ fontSize: '11.5px', color: '#64748B', fontWeight: 400 }}>{filteredDishes.length} Items</span>
-              </div>
+                            {/* Price Row */}
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '4px' }}>
+                              <span style={{ fontSize: '16px', fontWeight: 900, color: '#0F172A' }}>₹{deal.price}</span>
+                              {deal.originalPrice && (
+                                <span style={{ fontSize: '11px', color: '#94A3B8', textDecoration: 'line-through', fontWeight: 600 }}>₹{deal.originalPrice}</span>
+                              )}
+                            </div>
 
-              {filteredDishes.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '36px 20px', backgroundColor: '#FFF', borderRadius: '14px', border: '1px dashed #CBD5E1', color: '#64748B' }}>
-                  <Utensils size={32} color="#94A3B8" style={{ marginBottom: '6px' }} />
-                  <div style={{ fontSize: '14.5px', fontWeight: 500, color: '#0F172A' }}>No dishes found</div>
-                  <div style={{ fontSize: '12px', marginTop: '2px', fontWeight: 400 }}>Try adjusting your search or diet filter.</div>
-                </div>
-              ) : (
-                /* Blinkit-Style Responsive Product Cards Grid */
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px' }}>
-                  {filteredDishes.map((dish) => {
-                    const qty = cart[dish.id] || 0;
-                    const inStock = dish.inStock !== false;
-                    const imgUrl = getDishImageUrl(dish);
+                            {/* Unlock threshold banner */}
+                            {deal.unlockAt && (
+                              <div style={{ backgroundColor: '#FEF3C7', color: '#92400E', fontSize: '9.5px', fontWeight: 800, padding: '2px 6px', borderRadius: '4px', marginBottom: '6px', display: 'inline-block' }}>
+                                Unlocks at ₹{deal.unlockAt} ▶
+                              </div>
+                            )}
 
-                    return (
+                            {/* Item Name */}
+                            <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#0F172A', lineHeight: '1.2', height: '28px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {deal.name}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* MEGA PRICE DROPS CATEGORIES */}
+                <div>
+                  <div style={{ textAlign: 'center', marginBottom: '12px' }}>
+                    <div style={{ fontSize: '16px', fontWeight: 900, color: '#FF5E14', letterSpacing: '0.04em' }}>
+                      ✦ MEGA PRICE DROPS ✦
+                    </div>
+                  </div>
+
+                  <div className="fp-mega-drops-grid">
+                    {[
+                      { title: 'Home Cleaning', discount: 'Up to 60% OFF', bg: '#FEF3C7', border: '#FDE68A', text: '#92400E', image: 'https://images.unsplash.com/photo-1583947215259-38e31be8751f?w=300&auto=format&fit=crop&q=80' },
+                      { title: 'Kitchen Essentials', discount: 'Up to 40% OFF', bg: '#DCFCE7', border: '#86EFAC', text: '#15803D', image: 'https://images.unsplash.com/photo-1596040033229-a9821ebd058d?w=300&auto=format&fit=crop&q=80' },
+                      { title: 'Food & Beverage', discount: 'Up to 40% OFF', bg: '#EFF6FF', border: '#BFDBFE', text: '#1D4ED8', image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300&auto=format&fit=crop&q=80' },
+                      { title: 'Self Care & Wellness', discount: 'Up to 55% OFF', bg: '#FCE7F3', border: '#FBCFE8', text: '#BE185D', image: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=300&auto=format&fit=crop&q=80' }
+                    ].map((cat, i) => (
                       <div
-                        key={dish.id}
+                        key={i}
+                        onClick={() => setSelectedCategory('All')}
                         style={{
-                          backgroundColor: '#FFFFFF',
+                          backgroundColor: cat.bg,
+                          border: `1.5px solid ${cat.border}`,
                           borderRadius: '16px',
-                          border: '1px solid #E2E8F0',
                           padding: '12px',
                           display: 'flex',
                           flexDirection: 'column',
                           justifyContent: 'space-between',
-                          boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-                          opacity: inStock ? 1 : 0.6
+                          height: '105px',
+                          position: 'relative',
+                          overflow: 'hidden',
+                          cursor: 'pointer'
                         }}
                       >
-                        {/* Product Image & Veg/Non-Veg Badge */}
-                        <div style={{ position: 'relative', width: '100%', height: '135px', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#F8FAFC', marginBottom: '10px' }}>
-                          <img
-                            src={imgUrl}
-                            alt={dish.name}
-                            onError={(e) => {
-                              e.target.onerror = null;
-                              e.target.src = getFallbackFoodImage(dish.name, dish.category);
-                            }}
-                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                          />
+                        <span style={{ fontSize: '10px', fontWeight: 900, backgroundColor: cat.text, color: '#FFF', padding: '2px 8px', borderRadius: '8px', width: 'fit-content' }}>
+                          {cat.discount}
+                        </span>
+
+                        <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#0F172A', zIndex: 2, marginTop: 'auto' }}>
+                          {cat.title}
+                        </span>
+
+                        <img
+                          src={cat.image}
+                          alt={cat.title}
+                          style={{ position: 'absolute', right: '-10px', bottom: '-10px', width: '65px', height: '65px', objectFit: 'cover', borderRadius: '50%', opacity: 0.85 }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* FULL PRODUCTS CATALOG GRID */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900, color: '#0F172A' }}>
+                  {searchQuery.trim() ? `Search Results for "${searchQuery}"` : (selectedCategory === 'All' ? 'All Menu & Dishes' : selectedCategory)}
+                </h3>
+                <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>{filteredDishes.length} Items</span>
+              </div>
+
+              <div className="fp-desktop-grid">
+                {filteredDishes.slice(0, menuPage * ITEMS_PER_PAGE).map((dish) => {
+                  const qty = cart[dish.id] || 0;
+                  const imgUrl = getDishImageUrl(dish);
+
+                  return (
+                    <div
+                      key={dish.id}
+                      onClick={() => setSelectedProductModal(dish)}
+                      className="fp-card-hover"
+                      style={{
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: '16px',
+                        border: '1.5px solid #E2E8F0',
+                        padding: '10px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {/* Product Image & Veg Badge */}
+                      <div style={{ position: 'relative', width: '100%', height: '130px', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#F8FAFC', marginBottom: '8px' }}>
+                        <img
+                          src={imgUrl}
+                          alt={dish.name}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                        />
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '6px',
+                            left: '6px',
+                            backgroundColor: '#FFFFFF',
+                            borderRadius: '6px',
+                            padding: '2px 6px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.12)',
+                            border: '1px solid #E2E8F0'
+                          }}
+                        >
+                          <div style={{ width: '10px', height: '10px', border: '1.5px solid #16A34A', padding: '1px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: '#16A34A' }} />
+                          </div>
+                          <span style={{ fontSize: '9px', fontWeight: 800, color: '#15803D' }}>
+                            VEG
+                          </span>
+                        </div>
+
+                        {/* Top Right Percentage OFF Badge */}
+                        {dish.showDiscountTag !== false && Number(dish.originalPrice) > Number(dish.price) && (
                           <div
                             style={{
                               position: 'absolute',
                               top: '6px',
-                              left: '6px',
-                              backgroundColor: '#FFFFFF',
+                              right: '6px',
+                              backgroundColor: '#FF5E14',
+                              color: '#FFFFFF',
                               borderRadius: '6px',
                               padding: '2px 6px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              boxShadow: '0 2px 4px rgba(0,0,0,0.12)',
-                              border: '1px solid #E2E8F0'
+                              fontSize: '9.5px',
+                              fontWeight: 900,
+                              boxShadow: '0 2px 6px rgba(255,94,20,0.3)',
+                              zIndex: 2
                             }}
                           >
-                            <div style={{ width: '11px', height: '11px', border: `1.5px solid ${dish.isVeg ? '#16A34A' : '#DC2626'}`, padding: '1px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <div style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: dish.isVeg ? '#16A34A' : '#DC2626' }} />
-                            </div>
-                            <span style={{ fontSize: '9.5px', fontWeight: 700, color: dish.isVeg ? '#15803D' : '#B91C1C' }}>
-                              {dish.isVeg ? 'VEG' : 'NON-VEG'}
-                            </span>
+                            {Math.round(((Number(dish.originalPrice) - Number(dish.price)) / Number(dish.originalPrice)) * 100)}% OFF
                           </div>
+                        )}
+                      </div>
+
+                      {/* Product Details */}
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                        <div>
+                          <h4 style={{ margin: '0 0 3px', fontSize: '13.5px', fontWeight: 800, color: '#0F172A', lineHeight: '1.25' }}>
+                            {dish.name}
+                          </h4>
+                          <p style={{ margin: '0 0 8px', fontSize: '11px', color: '#64748B', fontWeight: 400, lineHeight: '1.2' }}>
+                            {dish.description || 'Fresh quality product delivered fast.'}
+                          </p>
                         </div>
 
-                        {/* Product Details */}
-                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                          <div>
-                            <h4 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: 700, color: '#0F172A', lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                              {dish.name}
-                            </h4>
-                            <p style={{ margin: '0 0 10px', fontSize: '11.5px', color: '#64748B', fontWeight: 400, lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                              {dish.desc || 'Prepared fresh with high quality ingredients.'}
-                            </p>
-                          </div>
-
-                          {/* Price & Add Stepper */}
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #F1F5F9', paddingTop: '8px', marginTop: '4px' }}>
-                            <span style={{ fontSize: '15px', fontWeight: 800, color: '#0F172A' }}>₹{dish.price}</span>
-
-                            {!inStock ? (
-                              <span style={{ fontSize: '10.5px', color: '#EF4444', fontWeight: 600 }}>Out of stock</span>
-                            ) : qty === 0 ? (
-                              <button
-                                onClick={() => updateCartQty(dish.id, 1)}
-                                style={{
-                                  backgroundColor: '#FFF7ED',
-                                  color: '#FF5E14',
-                                  border: '1.5px solid #FF5E14',
-                                  borderRadius: '8px',
-                                  padding: '5px 14px',
-                                  fontSize: '12px',
-                                  fontWeight: 700,
-                                  cursor: 'pointer',
-                                  boxShadow: '0 2px 4px rgba(255,94,20,0.1)'
-                                }}
-                              >
-                                + ADD
-                              </button>
-                            ) : (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', backgroundColor: '#FF5E14', borderRadius: '8px', padding: '4px 8px', boxShadow: '0 2px 6px rgba(255,94,20,0.25)' }}>
-                                <button
-                                  onClick={() => updateCartQty(dish.id, -1)}
-                                  style={{ background: 'none', border: 'none', color: '#FFF', cursor: 'pointer', padding: '1px', display: 'flex' }}
-                                >
-                                  <Minus size={13} />
-                                </button>
-                                <span style={{ color: '#FFF', fontWeight: 700, fontSize: '12.5px', minWidth: '14px', textAlign: 'center' }}>
-                                  {qty}
+                        {/* Price & Add Stepper */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #F1F5F9', paddingTop: '8px', marginTop: '4px' }}>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: '5px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '16px', fontWeight: 900, color: '#0F172A' }}>₹{dish.price}</span>
+                            {dish.showDiscountTag !== false && Number(dish.originalPrice) > Number(dish.price) && (
+                              <>
+                                <span style={{ fontSize: '11px', color: '#94A3B8', textDecoration: 'line-through', fontWeight: 600 }}>₹{dish.originalPrice}</span>
+                                <span style={{ fontSize: '9.5px', fontWeight: 800, color: '#059669', backgroundColor: '#ECFDF5', border: '1px solid #A7F3D0', padding: '1px 4px', borderRadius: '4px' }}>
+                                  {Math.round(((Number(dish.originalPrice) - Number(dish.price)) / Number(dish.originalPrice)) * 100)}% OFF
                                 </span>
-                                <button
-                                  onClick={() => updateCartQty(dish.id, 1)}
-                                  style={{ background: 'none', border: 'none', color: '#FFF', cursor: 'pointer', padding: '1px', display: 'flex' }}
-                                >
-                                  <Plus size={13} />
-                                </button>
-                              </div>
+                              </>
                             )}
                           </div>
+
+                          {qty === 0 ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateCartQty(dish.id, 1);
+                              }}
+                              style={{
+                                backgroundColor: '#FFFFFF',
+                                color: '#FF5E14',
+                                border: '1.5px solid #FF5E14',
+                                borderRadius: '8px',
+                                padding: '5px 14px',
+                                fontSize: '12px',
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                boxShadow: '0 2px 4px rgba(255,94,20,0.12)'
+                              }}
+                            >
+                              + ADD
+                            </button>
+                          ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#FF5E14', borderRadius: '8px', padding: '4px 8px', boxShadow: '0 2px 6px rgba(255,94,20,0.25)' }}>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateCartQty(dish.id, -1);
+                                }}
+                                style={{ background: 'none', border: 'none', color: '#FFF', cursor: 'pointer', padding: '1px', display: 'flex' }}
+                              >
+                                <Minus size={13} />
+                              </button>
+                              <span style={{ color: '#FFF', fontWeight: 800, fontSize: '12.5px', minWidth: '14px', textAlign: 'center' }}>
+                                {qty}
+                              </span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateCartQty(dish.id, 1);
+                                }}
+                                style={{ background: 'none', border: 'none', color: '#FFF', cursor: 'pointer', padding: '1px', display: 'flex' }}
+                              >
+                                <Plus size={13} />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    );
-                  })}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Infinite Scroll & Pagination Controls */}
+              {filteredDishes.length > 0 && (
+                <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ fontSize: '12.5px', color: '#64748B', fontWeight: 700 }}>
+                    Showing {Math.min(menuPage * ITEMS_PER_PAGE, filteredDishes.length)} of {filteredDishes.length} dishes
+                  </div>
+                  {menuPage * ITEMS_PER_PAGE < filteredDishes.length && (
+                    <button
+                      type="button"
+                      onClick={() => setMenuPage((prev) => prev + 1)}
+                      style={{
+                        background: 'linear-gradient(135deg, #FF5E14, #E04D0B)',
+                        color: '#FFFFFF',
+                        border: 'none',
+                        padding: '10px 24px',
+                        borderRadius: '24px',
+                        fontSize: '13.5px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 14px rgba(255, 94, 20, 0.3)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}
+                    >
+                      <span>Load More Products 🔽</span>
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {filteredDishes.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '48px 20px', backgroundColor: '#FFFFFF', borderRadius: '16px', border: '1px solid #E2E8F0', marginTop: '12px' }}>
+                  {searchQuery.trim() ? (
+                    <>
+                      <Search size={36} color="#94A3B8" style={{ marginBottom: '10px' }} />
+                      <h4 style={{ margin: '0 0 6px', fontSize: '15.5px', fontWeight: 800, color: '#0F172A' }}>No items found for "{searchQuery}"</h4>
+                      <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#64748B' }}>Check your spelling or try searching for another item.</p>
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        style={{ backgroundColor: '#FF5E14', color: '#FFF', border: 'none', borderRadius: '10px', padding: '9px 20px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+                      >
+                        Clear Search Filter
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <Utensils size={42} color="#94A3B8" style={{ marginBottom: '12px' }} />
+                      <h4 style={{ margin: '0 0 6px', fontSize: '16.5px', fontWeight: 800, color: '#0F172A' }}>No products in store catalog yet</h4>
+                      <p style={{ margin: '0 0 18px', fontSize: '13px', color: '#64748B', maxWidth: '420px', margin: '0 auto 18px', lineHeight: '1.4' }}>
+                        Products added by the merchant in POS Dashboard or CRM Console will appear live here automatically.
+                      </p>
+                      <Link
+                        to="/crm"
+                        style={{ backgroundColor: '#FF5E14', color: '#FFF', padding: '10px 22px', borderRadius: '12px', textDecoration: 'none', fontWeight: 800, fontSize: '13.5px', display: 'inline-block', boxShadow: '0 4px 14px rgba(255, 94, 20, 0.3)' }}
+                      >
+                        + Add Products in CRM Console
+                      </Link>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -1352,21 +2635,21 @@ export default function CustomerMenuPage({ onShowToast }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             
             {/* Table Dine-In Status Card & Scan Again Option */}
-            <div style={{ backgroundColor: '#FFF', padding: '16px', borderRadius: '16px', border: '1px solid #E2E8F0', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ backgroundColor: '#FFF7ED', color: '#FF5E14', padding: '10px', borderRadius: '12px', display: 'flex' }}>
-                    <QrCode size={22} />
+            <div style={{ backgroundColor: '#FFF', padding: '16px', borderRadius: '16px', border: '1px solid #FED7AA', boxShadow: '0 4px 14px rgba(255, 94, 20, 0.08)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ backgroundColor: '#FF5E14', color: '#FFF', padding: '12px', borderRadius: '14px', display: 'flex', boxShadow: '0 4px 10px rgba(255, 94, 20, 0.3)' }}>
+                    <QrCode size={24} />
                   </div>
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#0F172A' }}>{storeInfo.name}</h2>
-                      <span style={{ fontSize: '10px', backgroundColor: '#FFF7ED', color: '#C2410C', border: '1px solid #FFEDD5', padding: '1px 6px', borderRadius: '6px', fontWeight: 500 }}>
-                         {storeInfo.table}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#0F172A' }}>{storeInfo.name}</h2>
+                      <span style={{ fontSize: '11px', backgroundColor: '#FF5E14', color: '#FFF', padding: '2px 8px', borderRadius: '8px', fontWeight: 700, boxShadow: '0 2px 6px rgba(255,94,20,0.2)' }}>
+                        🪑 {storeInfo.table}
                       </span>
                     </div>
-                    <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 400, marginTop: '2px' }}>
-                      Merchant ID: <code>{storeInfo.merchantId}</code> • Direct Table Self-Ordering
+                    <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 400, marginTop: '4px' }}>
+                      Merchant ID: <code style={{ backgroundColor: '#F1F5F9', padding: '1px 5px', borderRadius: '4px', color: '#334155' }}>{storeInfo.merchantId}</code> • Live Table Self-Ordering Catalog
                     </div>
                   </div>
                 </div>
@@ -1374,43 +2657,118 @@ export default function CustomerMenuPage({ onShowToast }) {
                 <button
                   onClick={() => setIsCameraActive(!isCameraActive)}
                   style={{
-                    backgroundColor: '#F8FAFC',
-                    color: '#0F172A',
-                    border: '1px solid #CBD5E1',
-                    padding: '6px 10px',
-                    borderRadius: '8px',
-                    fontSize: '11.5px',
-                    fontWeight: 500,
+                    backgroundColor: isCameraActive ? '#EF4444' : '#FF5E14',
+                    color: '#FFF',
+                    border: 'none',
+                    padding: '8px 14px',
+                    borderRadius: '10px',
+                    fontSize: '12px',
+                    fontWeight: 600,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '4px',
-                    whiteSpace: 'nowrap'
+                    gap: '6px',
+                    whiteSpace: 'nowrap',
+                    boxShadow: '0 3px 10px rgba(0,0,0,0.1)'
                   }}
                 >
-                  <RefreshCw size={12} /> {isCameraActive ? 'Close Scanner' : 'Scan Again'}
+                  <Camera size={14} /> {isCameraActive ? 'Close Scanner' : '📷 Scan Again / New Table'}
                 </button>
               </div>
             </div>
 
-            {/* Collapsible Camera Scanner Feed */}
+            {/* Collapsible High-Tech Camera Scanner Viewport */}
             {isCameraActive && (
               <div style={{
-                backgroundColor: '#1E293B',
-                borderRadius: '16px',
-                padding: '16px',
+                backgroundColor: '#0F172A',
+                borderRadius: '20px',
+                padding: '20px 16px',
                 color: '#FFF',
                 textAlign: 'center',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
+                boxShadow: '0 10px 30px rgba(15, 23, 42, 0.4)',
+                border: '1px solid #334155',
+                position: 'relative',
+                overflow: 'hidden'
               }}>
-                <div style={{ width: '100%', maxWidth: '280px', height: '180px', borderRadius: '12px', overflow: 'hidden', position: 'relative', border: '2px solid #FF5E14' }}>
-                  <video ref={videoRef} style={{ width: '100%', height: '100%', objectFit: 'cover' }} playsInline muted />
-                  <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '130px', height: '130px', border: '2px dashed #FF5E14', borderRadius: '12px' }} />
+                {/* Header Badge */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', backgroundColor: 'rgba(255, 94, 20, 0.15)', border: '1px solid rgba(255, 94, 20, 0.3)', padding: '4px 12px', borderRadius: '20px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#22C55E', boxShadow: '0 0 8px #22C55E' }} />
+                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#FF7A38', letterSpacing: '0.02em' }}>
+                    Camera Active • Point at Table QR Code
+                  </span>
                 </div>
-                {cameraError && <div style={{ fontSize: '11.5px', color: '#FCA5A5', marginTop: '8px' }}>{cameraError}</div>}
+
+                {/* Camera Viewport Frame */}
+                <div style={{
+                  width: '100%',
+                  maxWidth: '300px',
+                  height: '220px',
+                  borderRadius: '16px',
+                  overflow: 'hidden',
+                  position: 'relative',
+                  backgroundColor: '#020617',
+                  border: '2px solid #FF5E14',
+                  boxShadow: '0 0 25px rgba(255, 94, 20, 0.25)'
+                }}>
+                  <video ref={videoRef} style={{ width: '100%', height: '100%', objectFit: 'cover' }} playsInline muted />
+                  
+                  {/* High-Tech Scanner Frame Overlay with Corner Accents */}
+                  <div style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    width: '160px',
+                    height: '160px',
+                    borderRadius: '16px',
+                    boxShadow: '0 0 0 4000px rgba(15, 23, 42, 0.55)',
+                    pointerEvents: 'none',
+                    border: '1px solid rgba(255, 94, 20, 0.4)'
+                  }}>
+                    {/* Top-Left Corner Accent */}
+                    <div style={{ position: 'absolute', top: '-2px', left: '-2px', width: '22px', height: '22px', borderTop: '3.5px solid #FF5E14', borderLeft: '3.5px solid #FF5E14', borderTopLeftRadius: '10px' }} />
+                    {/* Top-Right Corner Accent */}
+                    <div style={{ position: 'absolute', top: '-2px', right: '-2px', width: '22px', height: '22px', borderTop: '3.5px solid #FF5E14', borderRight: '3.5px solid #FF5E14', borderTopRightRadius: '10px' }} />
+                    {/* Bottom-Left Corner Accent */}
+                    <div style={{ position: 'absolute', bottom: '-2px', left: '-2px', width: '22px', height: '22px', borderBottom: '3.5px solid #FF5E14', borderLeft: '3.5px solid #FF5E14', borderBottomLeftRadius: '10px' }} />
+                    {/* Bottom-Right Corner Accent */}
+                    <div style={{ position: 'absolute', bottom: '-2px', right: '-2px', width: '22px', height: '22px', borderBottom: '3.5px solid #FF5E14', borderRight: '3.5px solid #FF5E14', borderBottomRightRadius: '10px' }} />
+
+                    {/* Animated Scanning Beam line */}
+                    <div style={{
+                      position: 'absolute',
+                      left: '8px',
+                      right: '8px',
+                      height: '2px',
+                      backgroundColor: '#FF5E14',
+                      boxShadow: '0 0 12px 3px #FF5E14',
+                      borderRadius: '2px',
+                      animation: 'scanBeam 2s infinite ease-in-out'
+                    }} />
+                  </div>
+                </div>
+
+                <style>{`
+                  @keyframes scanBeam {
+                    0% { top: 10%; opacity: 0.3; }
+                    50% { top: 85%; opacity: 1; }
+                    100% { top: 10%; opacity: 0.3; }
+                  }
+                `}</style>
+
+                {cameraError ? (
+                  <div style={{ fontSize: '12px', color: '#FCA5A5', marginTop: '10px', backgroundColor: 'rgba(239, 68, 68, 0.15)', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                    ⚠️ {cameraError}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '10px', fontWeight: 400 }}>
+                    Auto-detects merchant table URL & opens catalog instantly
+                  </div>
+                )}
               </div>
             )}
 
@@ -1494,6 +2852,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                   return (
                     <div
                       key={dish.id}
+                      onClick={() => setSelectedProductModal(dish)}
                       style={{
                         backgroundColor: '#FFFFFF',
                         borderRadius: '16px',
@@ -1503,7 +2862,8 @@ export default function CustomerMenuPage({ onShowToast }) {
                         flexDirection: 'column',
                         justifyContent: 'space-between',
                         boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-                        opacity: inStock ? 1 : 0.6
+                        opacity: inStock ? 1 : 0.6,
+                        cursor: 'pointer'
                       }}
                     >
                       {/* Product Image & Veg/Non-Veg Badge */}
@@ -1539,6 +2899,27 @@ export default function CustomerMenuPage({ onShowToast }) {
                             {dish.isVeg ? 'VEG' : 'NON-VEG'}
                           </span>
                         </div>
+
+                        {/* Top Right Percentage OFF Badge Overlay */}
+                        {dish.showDiscountTag !== false && Number(dish.originalPrice) > Number(dish.price) && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              top: '6px',
+                              right: '6px',
+                              backgroundColor: '#FF5E14',
+                              color: '#FFFFFF',
+                              borderRadius: '6px',
+                              padding: '2px 6px',
+                              fontSize: '9.5px',
+                              fontWeight: 900,
+                              boxShadow: '0 2px 6px rgba(255,94,20,0.3)',
+                              zIndex: 2
+                            }}
+                          >
+                            {Math.round(((Number(dish.originalPrice) - Number(dish.price)) / Number(dish.originalPrice)) * 100)}% OFF
+                          </div>
+                        )}
                       </div>
 
                       {/* Product Details */}
@@ -1554,13 +2935,26 @@ export default function CustomerMenuPage({ onShowToast }) {
 
                         {/* Price & Add Stepper */}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #F1F5F9', paddingTop: '8px', marginTop: '4px' }}>
-                          <span style={{ fontSize: '15px', fontWeight: 800, color: '#0F172A' }}>₹{dish.price}</span>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: '5px', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '15px', fontWeight: 800, color: '#0F172A' }}>₹{dish.price}</span>
+                            {dish.showDiscountTag !== false && Number(dish.originalPrice) > Number(dish.price) && (
+                              <>
+                                <span style={{ fontSize: '11px', color: '#94A3B8', textDecoration: 'line-through', fontWeight: 600 }}>₹{dish.originalPrice}</span>
+                                <span style={{ fontSize: '9.5px', fontWeight: 800, color: '#059669', backgroundColor: '#ECFDF5', border: '1px solid #A7F3D0', padding: '1px 4px', borderRadius: '4px' }}>
+                                  {Math.round(((Number(dish.originalPrice) - Number(dish.price)) / Number(dish.originalPrice)) * 100)}% OFF
+                                </span>
+                              </>
+                            )}
+                          </div>
 
                           {!inStock ? (
                             <span style={{ fontSize: '10.5px', color: '#EF4444', fontWeight: 600 }}>Out of stock</span>
                           ) : qty === 0 ? (
                             <button
-                              onClick={() => updateCartQty(dish.id, 1)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateCartQty(dish.id, 1);
+                              }}
                               style={{
                                 backgroundColor: '#FFF7ED',
                                 color: '#FF5E14',
@@ -1578,7 +2972,10 @@ export default function CustomerMenuPage({ onShowToast }) {
                           ) : (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', backgroundColor: '#FF5E14', borderRadius: '8px', padding: '4px 8px', boxShadow: '0 2px 6px rgba(255,94,20,0.25)' }}>
                               <button
-                                onClick={() => updateCartQty(dish.id, -1)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateCartQty(dish.id, -1);
+                                }}
                                 style={{ background: 'none', border: 'none', color: '#FFF', cursor: 'pointer', padding: '1px', display: 'flex' }}
                               >
                                 <Minus size={13} />
@@ -1587,7 +2984,10 @@ export default function CustomerMenuPage({ onShowToast }) {
                                 {qty}
                               </span>
                               <button
-                                onClick={() => updateCartQty(dish.id, 1)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateCartQty(dish.id, 1);
+                                }}
                                 style={{ background: 'none', border: 'none', color: '#FFF', cursor: 'pointer', padding: '1px', display: 'flex' }}
                               >
                                 <Plus size={13} />
@@ -2104,57 +3504,74 @@ export default function CustomerMenuPage({ onShowToast }) {
           </div>
         )}
 
-      </div>
+      </div> {/* End fp-main-body */}
+    </div> {/* End fp-main-wrap */}
 
       {/* Floating Bottom Cart Summary Bar */}
-      {getCartCount() > 0 && navTab === 'home' && (
-        <div style={{
+      {getCartCount() > 0 && !isCartOpen && (
+        <div className="fp-floating-cart-bar" style={{
           position: 'fixed',
-          bottom: '70px',
+          bottom: '68px',
           left: '50%',
           transform: 'translateX(-50%)',
-          width: 'calc(100% - 28px)',
+          width: 'calc(100% - 24px)',
           maxWidth: '736px',
-          backgroundColor: '#0F172A',
+          backgroundColor: '#FF5E14',
           color: '#FFF',
-          borderRadius: '14px',
-          padding: '10px 16px',
+          borderRadius: '30px',
+          padding: '8px 16px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           zIndex: 80,
-          boxShadow: '0 6px 20px rgba(15,23,42,0.25)'
+          boxShadow: '0 8px 24px rgba(255, 94, 20, 0.35)',
+          border: '1px solid rgba(255,255,255,0.2)'
         }}>
-          <div>
-            <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 400 }}>{getCartCount()} ITEMS ADDED</div>
-            <div style={{ fontSize: '16px', fontWeight: 600, color: '#FFF' }}>
-              ₹{finalTotal} <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 400 }}>(₹{subtotal} + 5% GST)</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{
+              backgroundColor: 'rgba(255,255,255,0.25)',
+              borderRadius: '20px',
+              padding: '4px 10px',
+              fontSize: '11px',
+              fontWeight: 800,
+              letterSpacing: '0.5px'
+            }}>
+              {getCartCount()} {getCartCount() === 1 ? 'ITEM' : 'ITEMS'}
+            </div>
+            <div>
+              <div style={{ fontSize: '15px', fontWeight: 900, color: '#FFF', lineHeight: '1.1' }}>
+                ₹{finalTotal}
+              </div>
+              <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>
+                {navTab === 'scanner' ? `🍽️ ${storeInfo.table || 'Table 1'} (Dine-In)` : '🏠 Home Delivery'}
+              </div>
             </div>
           </div>
 
           <button
             onClick={() => setIsCartOpen(true)}
             style={{
-              backgroundColor: '#FF5E14',
-              color: '#FFF',
+              backgroundColor: '#FFFFFF',
+              color: '#FF5E14',
               border: 'none',
               padding: '8px 16px',
-              borderRadius: '10px',
-              fontWeight: 500,
+              borderRadius: '20px',
+              fontWeight: 800,
               fontSize: '13px',
               display: 'flex',
               alignItems: 'center',
               gap: '4px',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.1)'
             }}
           >
-            View Cart &amp; Pay <ChevronRight size={16} />
+            View Cart <ChevronRight size={16} strokeWidth={3} />
           </button>
         </div>
       )}
 
       {/* 5-TAB FIXED BOTTOM NAVIGATION BAR */}
-      <div style={{
+      <div className="fp-mobile-nav-bar" style={{
         position: 'fixed',
         bottom: 0,
         left: 0,
@@ -2178,12 +3595,12 @@ export default function CustomerMenuPage({ onShowToast }) {
             alignItems: 'center',
             gap: '2px',
             color: navTab === 'home' ? '#FF5E14' : '#64748B',
-            fontWeight: navTab === 'home' ? 600 : 400,
+            fontWeight: navTab === 'home' ? 700 : 500,
             fontSize: '11px',
             cursor: 'pointer'
           }}
         >
-          <HomeIcon size={19} color={navTab === 'home' ? '#FF5E14' : '#64748B'} />
+          <HomeIcon size={19} color={navTab === 'home' ? '#FF5E14' : '#64748B'} strokeWidth={navTab === 'home' ? 2.5 : 2} />
           <span>Home</span>
         </button>
 
@@ -2198,16 +3615,16 @@ export default function CustomerMenuPage({ onShowToast }) {
             alignItems: 'center',
             gap: '2px',
             color: navTab === 'orders' ? '#FF5E14' : '#64748B',
-            fontWeight: navTab === 'orders' ? 600 : 400,
+            fontWeight: navTab === 'orders' ? 700 : 500,
             fontSize: '11px',
             cursor: 'pointer',
             position: 'relative'
           }}
         >
-          <History size={19} color={navTab === 'orders' ? '#FF5E14' : '#64748B'} />
+          <History size={19} color={navTab === 'orders' ? '#FF5E14' : '#64748B'} strokeWidth={navTab === 'orders' ? 2.5 : 2} />
           <span>Orders</span>
           {customerOrders.length > 0 && (
-            <span style={{ position: 'absolute', top: '-3px', right: '-4px', backgroundColor: '#0284C7', color: '#FFF', fontSize: '9px', fontWeight: 500, padding: '1px 4px', borderRadius: '6px' }}>
+            <span style={{ position: 'absolute', top: '-3px', right: '-4px', backgroundColor: '#FF5E14', color: '#FFF', fontSize: '9px', fontWeight: 700, padding: '1px 5px', borderRadius: '8px' }}>
               {customerOrders.length}
             </span>
           )}
@@ -2224,22 +3641,23 @@ export default function CustomerMenuPage({ onShowToast }) {
             alignItems: 'center',
             gap: '2px',
             color: navTab === 'scanner' ? '#FF5E14' : '#64748B',
-            fontWeight: navTab === 'scanner' ? 600 : 400,
+            fontWeight: navTab === 'scanner' ? 700 : 500,
             fontSize: '11px',
             cursor: 'pointer'
           }}
         >
           <div style={{
             backgroundColor: navTab === 'scanner' ? '#FF5E14' : '#FFF7ED',
-            color: navTab === 'scanner' ? '#FFF' : '#C2410C',
-            width: '32px',
-            height: '32px',
+            color: navTab === 'scanner' ? '#FFF' : '#FF5E14',
+            width: '34px',
+            height: '34px',
             borderRadius: '50%',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             marginTop: '-8px',
-            border: '1px solid #FFEDD5'
+            border: '2px solid #FFF',
+            boxShadow: '0 2px 8px rgba(255, 94, 20, 0.25)'
           }}>
             <QrCode size={18} />
           </div>
@@ -2257,15 +3675,15 @@ export default function CustomerMenuPage({ onShowToast }) {
             alignItems: 'center',
             gap: '2px',
             color: navTab === 'coupons' ? '#FF5E14' : '#64748B',
-            fontWeight: navTab === 'coupons' ? 600 : 400,
+            fontWeight: navTab === 'coupons' ? 700 : 500,
             fontSize: '11px',
             cursor: 'pointer',
             position: 'relative'
           }}
         >
-          <Tag size={19} color={navTab === 'coupons' ? '#FF5E14' : '#64748B'} />
+          <Tag size={19} color={navTab === 'coupons' ? '#FF5E14' : '#64748B'} strokeWidth={navTab === 'coupons' ? 2.5 : 2} />
           <span>Coupons</span>
-          <span style={{ position: 'absolute', top: '-3px', right: '-8px', backgroundColor: '#FF5E14', color: '#FFF', fontSize: '8.5px', fontWeight: 500, padding: '1px 4px', borderRadius: '6px' }}>
+          <span style={{ position: 'absolute', top: '-3px', right: '-8px', backgroundColor: '#E11D48', color: '#FFF', fontSize: '8px', fontWeight: 800, padding: '1px 4px', borderRadius: '6px' }}>
             OFFERS
           </span>
         </button>
@@ -2281,12 +3699,12 @@ export default function CustomerMenuPage({ onShowToast }) {
             alignItems: 'center',
             gap: '2px',
             color: navTab === 'profile' ? '#FF5E14' : '#64748B',
-            fontWeight: navTab === 'profile' ? 600 : 400,
+            fontWeight: navTab === 'profile' ? 700 : 500,
             fontSize: '11px',
             cursor: 'pointer'
           }}
         >
-          <User size={19} color={navTab === 'profile' ? '#FF5E14' : '#64748B'} />
+          <User size={19} color={navTab === 'profile' ? '#FF5E14' : '#64748B'} strokeWidth={navTab === 'profile' ? 2.5 : 2} />
           <span>Profile</span>
         </button>
       </div>
@@ -2316,8 +3734,21 @@ export default function CustomerMenuPage({ onShowToast }) {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #E2E8F0', paddingBottom: '12px', marginBottom: '14px' }}>
               <div>
-                <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#0F172A' }}>Your Food Order</h2>
-                <span style={{ fontSize: '11.5px', color: '#64748B', fontWeight: 400 }}>{storeInfo.name} • {navTab === 'scanner' ? storeInfo.table : 'Home Delivery'}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>Your Food Order</h2>
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    padding: '2px 8px',
+                    borderRadius: '10px',
+                    backgroundColor: navTab === 'scanner' ? '#FFF7ED' : '#EFF6FF',
+                    color: navTab === 'scanner' ? '#FF5E14' : '#1D4ED8',
+                    border: navTab === 'scanner' ? '1px solid #FFEDD5' : '1px solid #BFDBFE'
+                  }}>
+                    {navTab === 'scanner' ? `🍽️ ${storeInfo.table || 'Table 1'} (Dine-In)` : '🏠 Home Delivery'}
+                  </span>
+                </div>
+                <span style={{ fontSize: '11.5px', color: '#64748B', fontWeight: 500 }}>{storeInfo.name}</span>
               </div>
               <button
                 onClick={() => setIsCartOpen(false)}
@@ -2397,6 +3828,116 @@ export default function CustomerMenuPage({ onShowToast }) {
                 </div>
               </div>
 
+              {/* Coupon Promocode & Assigned Offers */}
+              <div style={{ marginBottom: '14px', backgroundColor: '#FFF7ED', borderRadius: '12px', padding: '12px', border: '1px solid #FFEDD5' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '12.5px', fontWeight: 800, color: '#9A3412', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Tag size={15} color="#FF5E14" />
+                    <span>{appliedCoupon ? `Applied: ${appliedCoupon.code}` : 'Apply Coupon Promocode'}</span>
+                  </span>
+                  {appliedCoupon && (
+                    <button
+                      type="button"
+                      onClick={() => setAppliedCoupon(null)}
+                      style={{ background: 'none', border: 'none', color: '#EF4444', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer' }}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+
+                {!appliedCoupon ? (
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="text"
+                      placeholder="Enter Promocode..."
+                      style={{ flex: 1, padding: '7px 10px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '12.5px', textTransform: 'uppercase', outline: 'none', fontWeight: 700 }}
+                      id="cartDrawerCouponInput"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const inputEl = document.getElementById('cartDrawerCouponInput');
+                        const val = (inputEl ? inputEl.value : '').trim().toUpperCase();
+                        if (!val) return;
+
+                        const currentStoreId = (effectiveMerchantId || storeInfo.merchantId || '').toUpperCase();
+
+                        // 1. Check if coupon belongs to another store
+                        let localCrmCoupons = [];
+                        try { localCrmCoupons = JSON.parse(localStorage.getItem('foodypay_crm_coupons_v1') || '[]'); } catch (e) {}
+                        const allKnownCoupons = [...(dbCoupons || []), ...localCrmCoupons];
+                        const matchedOtherStore = allKnownCoupons.find((c) => {
+                          if (!c || !c.code || c.code.toUpperCase() !== val) return false;
+                          const cStoreId = (c.foodypayId || c.merchantId || c.storeId || '').toUpperCase();
+                          return cStoreId && currentStoreId && cStoreId !== currentStoreId && cStoreId !== 'GLOBAL';
+                        });
+
+                        if (matchedOtherStore) {
+                          const otherFpId = matchedOtherStore.foodypayId || matchedOtherStore.merchantId;
+                          if (onShowToast) onShowToast(`⚠️ Promocode "${val}" belongs to store ${otherFpId} and is NOT valid for ${storeInfo.name}!`);
+                          return;
+                        }
+
+                        const assignedList = getAssignedCouponsForUser();
+                        const match = assignedList.find((c) => c.code.toUpperCase() === val) || (dbCoupons || []).find((c) => c.code.toUpperCase() === val && (!c.foodypayId || c.foodypayId.toUpperCase() === currentStoreId));
+                        if (match) {
+                          setAppliedCoupon({ code: match.code, label: match.discount || match.type });
+                          if (onShowToast) onShowToast(`🎯 Coupon "${match.code}" Applied!`);
+                        } else {
+                          if (onShowToast) onShowToast(` Invalid or Unassigned Coupon code "${val}" for this store`);
+                        }
+                      }}
+                      style={{ backgroundColor: '#FF5E14', color: '#FFF', border: 'none', borderRadius: '8px', padding: '7px 14px', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
+                    >
+                      Apply
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '12px', color: '#059669', fontWeight: 700 }}>
+                    ✅ 20% Discount applied to final bill!
+                  </div>
+                )}
+
+                {/* Display Available Coupons Assigned to Customer Phone */}
+                {(() => {
+                  const assigned = getAssignedCouponsForUser();
+                  if (assigned.length === 0 || appliedCoupon) return null;
+                  return (
+                    <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 800, color: '#C2410C' }}>
+                        Coupons Available for {customerPhone ? customerPhone : 'Your Mobile'}:
+                      </span>
+                      {assigned.map((cp) => (
+                        <div
+                          key={cp.code}
+                          onClick={() => {
+                            setAppliedCoupon({ code: cp.code, label: cp.discount });
+                            if (onShowToast) onShowToast(`🎯 Coupon "${cp.code}" Applied!`);
+                          }}
+                          style={{
+                            backgroundColor: '#FFF',
+                            border: '1px dashed #FF5E14',
+                            borderRadius: '8px',
+                            padding: '6px 10px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <div>
+                            <span style={{ fontWeight: 900, fontSize: '12px', color: '#FF5E14' }}>{cp.code}</span>
+                            <span style={{ fontSize: '11px', color: '#475569', marginLeft: '6px' }}>({cp.discount})</span>
+                          </div>
+                          <span style={{ fontSize: '10.5px', color: '#FF5E14', fontWeight: 900 }}>TAP TO APPLY</span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+
               {/* Bill Summary */}
               <div style={{ backgroundColor: '#F8FAFC', borderRadius: '10px', padding: '12px', marginBottom: '16px', border: '1px solid #E2E8F0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', color: '#64748B', marginBottom: '5px', fontWeight: 400 }}>
@@ -2416,47 +3957,51 @@ export default function CustomerMenuPage({ onShowToast }) {
               {/* Payment Mode */}
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#334155', marginBottom: '6px' }}>
-                  Payment Method
+                  {paymentConfig.header || 'Payment Method'}
                 </label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMode('upi')}
-                    style={{
-                      border: paymentMode === 'upi' ? '1.5px solid #FF5E14' : '1px solid #CBD5E1',
-                      backgroundColor: paymentMode === 'upi' ? '#FFF7ED' : '#FFF',
-                      padding: '10px',
-                      borderRadius: '10px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      fontWeight: 500,
-                      fontSize: '12.5px',
-                      color: paymentMode === 'upi' ? '#C2410C' : '#475569'
-                    }}
-                  >
-                    <QrCode size={16} color="#FF5E14" /> Online UPI
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMode('cash')}
-                    style={{
-                      border: paymentMode === 'cash' ? '1.5px solid #FF5E14' : '1px solid #CBD5E1',
-                      backgroundColor: paymentMode === 'cash' ? '#FFF7ED' : '#FFF',
-                      padding: '10px',
-                      borderRadius: '10px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      fontWeight: 500,
-                      fontSize: '12.5px',
-                      color: paymentMode === 'cash' ? '#C2410C' : '#475569'
-                    }}
-                  >
-                    <CreditCard size={16} color="#059669" /> Cash / Pay Counter
-                  </button>
+                <div style={{ display: 'grid', gridTemplateColumns: (paymentConfig.upiEnabled !== false && paymentConfig.cashEnabled !== false) ? '1fr 1fr' : '1fr', gap: '8px' }}>
+                  {paymentConfig.upiEnabled !== false && (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMode('upi')}
+                      style={{
+                        border: paymentMode === 'upi' ? '1.5px solid #FF5E14' : '1px solid #CBD5E1',
+                        backgroundColor: paymentMode === 'upi' ? '#FFF7ED' : '#FFF',
+                        padding: '10px',
+                        borderRadius: '10px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontWeight: 500,
+                        fontSize: '12.5px',
+                        color: paymentMode === 'upi' ? '#C2410C' : '#475569'
+                      }}
+                    >
+                      <QrCode size={16} color="#FF5E14" /> {paymentConfig.upiLabel || 'Online UPI'}
+                    </button>
+                  )}
+                  {paymentConfig.cashEnabled !== false && (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMode('cash')}
+                      style={{
+                        border: paymentMode === 'cash' ? '1.5px solid #FF5E14' : '1px solid #CBD5E1',
+                        backgroundColor: paymentMode === 'cash' ? '#FFF7ED' : '#FFF',
+                        padding: '10px',
+                        borderRadius: '10px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontWeight: 500,
+                        fontSize: '12.5px',
+                        color: paymentMode === 'cash' ? '#C2410C' : '#475569'
+                      }}
+                    >
+                      <CreditCard size={16} color="#059669" /> {paymentConfig.cashLabel || 'Cash / Pay Counter'}
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -2482,7 +4027,7 @@ export default function CustomerMenuPage({ onShowToast }) {
       )}
 
       {/* Online UPI QR Modal */}
-      {showUpiModal && pendingOrderObj && (
+      {showUpiModal && (
         <div style={{
           position: 'fixed',
           top: 0, left: 0, right: 0, bottom: 0,
@@ -2494,105 +4039,147 @@ export default function CustomerMenuPage({ onShowToast }) {
           justifyContent: 'center',
           padding: '16px'
         }}>
-          <div style={{
-            backgroundColor: '#FFF',
-            borderRadius: '20px',
-            maxWidth: '380px',
-            width: '100%',
-            padding: '20px',
-            textAlign: 'center'
-          }}>
-            <div style={{ fontSize: '16px', fontWeight: 600, color: '#0F172A', marginBottom: '2px' }}>
-              Scan &amp; Pay via UPI
-            </div>
-            <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '14px', fontWeight: 400 }}>
-              {storeInfo.name} • <code>{storeInfo.upiId}</code>
-            </div>
+          {(() => {
+            const currentUpiId = localStorage.getItem('foodypay_upi_id') || storeInfo.upiId || '7496888449@ptsbi';
+            const displayTotal = (pendingOrderObj && Number(pendingOrderObj.total) > 0)
+              ? Number(pendingOrderObj.total)
+              : (finalTotal > 0 ? finalTotal : subtotal > 0 ? subtotal : 0);
+            const orderIdStr = pendingOrderObj ? (pendingOrderObj.id || '') : '';
+            const encodedStore = encodeURIComponent(storeInfo.name || 'FoodyPay Store');
+            const encodedNote = encodeURIComponent(`Order ${orderIdStr}`);
+            const upiPayUrl = `upi://pay?pa=${encodeURIComponent(currentUpiId)}&pn=${encodedStore}&am=${displayTotal}&tn=${encodedNote}&cu=INR`;
 
-            <div style={{ backgroundColor: '#F8FAFC', padding: '14px', borderRadius: '14px', border: '1px solid #E2E8F0', display: 'inline-block', marginBottom: '10px' }}>
-              <QrCodeComponent
-                text={upiPayUrl}
-                size={160}
-                qrColor="#0F172A"
-                cornerColor="#FF5E14"
-                showLogo={true}
-              />
-            </div>
+            return (
+              <div style={{
+                backgroundColor: '#FFF',
+                borderRadius: '20px',
+                maxWidth: '380px',
+                width: '100%',
+                padding: '20px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '16px', fontWeight: 600, color: '#0F172A', marginBottom: '2px' }}>
+                  Scan &amp; Pay via UPI
+                </div>
+                <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '14px', fontWeight: 400 }}>
+                  {storeInfo.name} • <code style={{ color: '#1D4ED8', fontWeight: 700 }}>{currentUpiId}</code>
+                </div>
 
-            <div style={{ fontSize: '20px', fontWeight: 600, color: '#FF5E14', marginBottom: '12px' }}>
-              ₹{pendingOrderObj.total}
-            </div>
+                <div style={{ backgroundColor: '#F8FAFC', padding: '14px', borderRadius: '14px', border: '1px solid #E2E8F0', display: 'inline-block', marginBottom: '10px' }}>
+                  <QrCodeComponent
+                    text={upiPayUrl}
+                    size={160}
+                    qrColor="#0F172A"
+                    cornerColor="#FF5E14"
+                    showLogo={true}
+                  />
+                </div>
 
-            <div style={{ marginBottom: '14px', width: '100%', textAlign: 'left' }}>
-              <div style={{ fontSize: '11.5px', fontWeight: 500, color: '#475569', marginBottom: '6px', textAlign: 'center' }}>
-                Tap to Pay direct via UPI app:
+                <div style={{ fontSize: '22px', fontWeight: 800, color: '#FF5E14', marginBottom: '12px' }}>
+                  ₹{displayTotal}
+                </div>
+
+                <div style={{ marginBottom: '14px', width: '100%', textAlign: 'left' }}>
+                  <div style={{ fontSize: '11.5px', fontWeight: 500, color: '#475569', marginBottom: '6px', textAlign: 'center' }}>
+                    Tap to Pay direct via UPI app:
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                    <a
+                      href={upiPayUrl}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '8px 6px', borderRadius: '8px', border: '1px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B', fontWeight: 500, fontSize: '12px', textDecoration: 'none'
+                      }}
+                    >
+                       Google Pay
+                    </a>
+
+                    <a
+                      href={upiPayUrl}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '8px 6px', borderRadius: '8px', border: '1px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#5F259F', fontWeight: 500, fontSize: '12px', textDecoration: 'none'
+                      }}
+                    >
+                       PhonePe
+                    </a>
+
+                    <a
+                      href={upiPayUrl}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '8px 6px', borderRadius: '8px', border: '1px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#00BAF2', fontWeight: 500, fontSize: '12px', textDecoration: 'none'
+                      }}
+                    >
+                       Paytm
+                    </a>
+
+                    <a
+                      href={upiPayUrl}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '8px 6px', borderRadius: '8px', border: '1px solid #FF5E14', backgroundColor: '#FFF7ED', color: '#FF5E14', fontWeight: 500, fontSize: '12px', textDecoration: 'none'
+                      }}
+                    >
+                       Pay Any UPI
+                    </a>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <button
+                    onClick={() => {
+                      const finalOrderToSave = pendingOrderObj ? { ...pendingOrderObj, total: displayTotal } : {
+                        id: `#FP-${Math.floor(1000 + Math.random() * 9000)}`,
+                        type: navTab === 'scanner' ? 'Dine-In' : 'Home Delivery',
+                        table: navTab === 'scanner' ? rawTable : 'Delivery',
+                        customer: customerName.trim() || 'Diner',
+                        phone: customerPhone.trim() || '+91 98000 00000',
+                        time: 'Just now',
+                        timestamp: Date.now(),
+                        status: 'new',
+                        seen: false,
+                        paymentStatus: 'paid-upi',
+                        paymentLabel: 'Paid via Direct Merchant UPI QR',
+                        items: [],
+                        total: displayTotal,
+                        merchantId: storeInfo.merchantId,
+                        restaurantSlug,
+                        restaurantName: storeInfo.name,
+                      };
+                      finalizeAndSaveOrder(finalOrderToSave);
+                    }}
+                    style={{
+                      width: '100%',
+                      backgroundColor: '#10B981',
+                      color: '#FFF',
+                      border: 'none',
+                      padding: '12px',
+                      borderRadius: '10px',
+                      fontWeight: 600,
+                      fontSize: '14px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Confirm Payment &amp; Send Order
+                  </button>
+
+                  <button
+                    onClick={() => setShowUpiModal(false)}
+                    style={{
+                      width: '100%',
+                      backgroundColor: 'transparent',
+                      color: '#64748B',
+                      border: 'none',
+                      padding: '6px',
+                      fontWeight: 500,
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel / Change Payment
+                  </button>
+                </div>
               </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                <a
-                  href={upiPayUrl}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '8px 6px', borderRadius: '8px', border: '1px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#1E293B', fontWeight: 500, fontSize: '12px', textDecoration: 'none'
-                  }}
-                >
-                   Google Pay
-                </a>
-
-                <a
-                  href={upiPayUrl}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '8px 6px', borderRadius: '8px', border: '1px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#5F259F', fontWeight: 500, fontSize: '12px', textDecoration: 'none'
-                  }}
-                >
-                   PhonePe
-                </a>
-
-                <a
-                  href={upiPayUrl}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '8px 6px', borderRadius: '8px', border: '1px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#00BAF2', fontWeight: 500, fontSize: '12px', textDecoration: 'none'
-                  }}
-                >
-                   Paytm
-                </a>
-
-                <a
-                  href={upiPayUrl}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', padding: '8px 6px', borderRadius: '8px', border: '1px solid #FF5E14', backgroundColor: '#FFF7ED', color: '#FF5E14', fontWeight: 500, fontSize: '12px', textDecoration: 'none'
-                  }}
-                >
-                   Pay Any UPI
-                </a>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <button
-                onClick={() => finalizeAndSaveOrder(pendingOrderObj)}
-                style={{
-                  width: '100%',
-                  backgroundColor: '#10B981',
-                  color: '#FFF',
-                  border: 'none',
-                  padding: '12px',
-                  borderRadius: '10px',
-                  fontWeight: 600,
-                  fontSize: '14px',
-                  cursor: 'pointer'
-                }}
-              >
-                 Confirm Payment &amp; Send Order
-              </button>
-
-              <button
-                onClick={() => setShowUpiModal(false)}
-                style={{ background: 'none', border: 'none', color: '#64748B', fontWeight: 400, fontSize: '12px', cursor: 'pointer' }}
-              >
-                Cancel / Change Payment
-              </button>
-            </div>
-          </div>
+            );
+          })()}
         </div>
       )}
 
@@ -2776,6 +4363,560 @@ export default function CustomerMenuPage({ onShowToast }) {
                 ⭐ Submit Feedback
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Product Detail & Large Image Modal */}
+      {selectedProductModal && (
+        <div
+          onClick={() => setSelectedProductModal(null)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(5px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px'
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: '24px',
+              maxWidth: '440px',
+              width: '100%',
+              overflow: 'hidden',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.3)',
+              position: 'relative',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+          >
+            {/* Modal Top Close Button */}
+            <button
+              onClick={() => setSelectedProductModal(null)}
+              style={{
+                position: 'absolute',
+                top: '12px',
+                right: '12px',
+                zIndex: 10,
+                backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                border: 'none',
+                borderRadius: '50%',
+                width: '36px',
+                height: '36px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+              }}
+            >
+              <X size={20} color="#0F172A" />
+            </button>
+
+            {/* Large Product Image & Photo Gallery */}
+            {(() => {
+              const modalImages = getDishImagesList(selectedProductModal);
+              const safeIndex = (selectedImageIndex >= 0 && selectedImageIndex < modalImages.length) ? selectedImageIndex : 0;
+              const currentModalImg = modalImages[safeIndex] || getDishImageUrl(selectedProductModal);
+
+              return (
+                <div>
+                  <div style={{ position: 'relative', width: '100%', height: '250px', backgroundColor: '#F8FAFC' }}>
+                    <img
+                      src={currentModalImg}
+                      alt={selectedProductModal.name}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+
+                    {/* Left/Right Carousel Arrows if multiple photos */}
+                    {modalImages.length > 1 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedImageIndex((prev) => (prev - 1 + modalImages.length) % modalImages.length)}
+                          style={{
+                            position: 'absolute',
+                            left: '10px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            backgroundColor: 'rgba(255,255,255,0.9)',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: '32px',
+                            height: '32px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                            fontWeight: 900,
+                            fontSize: '18px'
+                          }}
+                        >
+                          ‹
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedImageIndex((prev) => (prev + 1) % modalImages.length)}
+                          style={{
+                            position: 'absolute',
+                            right: '10px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            backgroundColor: 'rgba(255,255,255,0.9)',
+                            border: 'none',
+                            borderRadius: '50%',
+                            width: '32px',
+                            height: '32px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                            fontWeight: 900,
+                            fontSize: '18px'
+                          }}
+                        >
+                          ›
+                        </button>
+                      </>
+                    )}
+
+                    <div
+                      style={{
+                        position: 'absolute',
+                        bottom: '12px',
+                        left: '12px',
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: '8px',
+                        padding: '4px 10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                        border: '1px solid #E2E8F0'
+                      }}
+                    >
+                      <div style={{ width: '12px', height: '12px', border: `1.5px solid ${selectedProductModal.isVeg ? '#16A34A' : '#DC2626'}`, padding: '1px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: selectedProductModal.isVeg ? '#16A34A' : '#DC2626' }} />
+                      </div>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: selectedProductModal.isVeg ? '#15803D' : '#B91C1C' }}>
+                        {selectedProductModal.isVeg ? 'PURE VEG' : 'NON-VEG'}
+                      </span>
+                    </div>
+
+                    {modalImages.length > 1 && (
+                      <div style={{ position: 'absolute', bottom: '12px', right: '12px', backgroundColor: 'rgba(15,23,42,0.75)', color: '#FFFFFF', padding: '3px 8px', borderRadius: '6px', fontSize: '10.5px', fontWeight: 700 }}>
+                        📷 {safeIndex + 1} / {modalImages.length}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Thumbnail Row if Multiple Photos */}
+                  {modalImages.length > 1 && (
+                    <div style={{ display: 'flex', gap: '8px', padding: '10px 16px', backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0', overflowX: 'auto' }}>
+                      {modalImages.map((imgUrl, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => setSelectedImageIndex(idx)}
+                          style={{
+                            width: '48px',
+                            height: '48px',
+                            borderRadius: '8px',
+                            overflow: 'hidden',
+                            border: safeIndex === idx ? '2px solid #FF5E14' : '1px solid #CBD5E1',
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                            opacity: safeIndex === idx ? 1 : 0.65
+                          }}
+                        >
+                          <img src={imgUrl} alt={`Thumb ${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Product Info Body */}
+            <div style={{ padding: '20px', overflowY: 'auto', flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', marginBottom: '8px' }}>
+                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0F172A', lineHeight: '1.3' }}>
+                  {selectedProductModal.name}
+                </h2>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#FEF3C7', border: '1px solid #FCD34D', padding: '3px 8px', borderRadius: '12px', flexShrink: 0 }}>
+                  <Star size={13} fill="#D97706" color="#D97706" />
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#92400E' }}>{selectedProductModal.rating || 4.8}</span>
+                </div>
+              </div>
+
+              {selectedProductModal.category && (
+                <div style={{ fontSize: '12px', color: '#FF5E14', fontWeight: 600, marginBottom: '10px' }}>
+                  🏷️ {selectedProductModal.category}
+                </div>
+              )}
+
+              <p style={{ margin: '0 0 16px', fontSize: '13.5px', color: '#64748B', lineHeight: '1.5', fontWeight: 400 }}>
+                {selectedProductModal.description || selectedProductModal.desc || 'Freshly packaged dairy & grocery item with high quality standards.'}
+              </p>
+
+              {/* Price & Stepper Row */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #F1F5F9', paddingTop: '16px', marginTop: '12px' }}>
+                <div>
+                  <div style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 500 }}>Price</div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                    <div style={{ fontSize: '22px', fontWeight: 800, color: '#0F172A' }}>₹{selectedProductModal.price}</div>
+                    {selectedProductModal.showDiscountTag !== false && Number(selectedProductModal.originalPrice) > Number(selectedProductModal.price) && (
+                      <>
+                        <div style={{ fontSize: '14px', color: '#94A3B8', textDecoration: 'line-through', fontWeight: 600 }}>
+                          ₹{selectedProductModal.originalPrice}
+                        </div>
+                        <div style={{ fontSize: '12px', fontWeight: 800, color: '#059669', backgroundColor: '#ECFDF5', border: '1px solid #A7F3D0', padding: '2px 8px', borderRadius: '6px' }}>
+                          {Math.round(((Number(selectedProductModal.originalPrice) - Number(selectedProductModal.price)) / Number(selectedProductModal.originalPrice)) * 100)}% OFF
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {cart[selectedProductModal.id] ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#FF5E14', borderRadius: '12px', padding: '8px 16px', boxShadow: '0 4px 12px rgba(255,94,20,0.3)' }}>
+                    <button
+                      onClick={() => updateCartQty(selectedProductModal.id, -1)}
+                      style={{ background: 'none', border: 'none', color: '#FFF', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Minus size={18} />
+                    </button>
+                    <span style={{ color: '#FFF', fontWeight: 800, fontSize: '16px', minWidth: '20px', textAlign: 'center' }}>
+                      {cart[selectedProductModal.id]}
+                    </span>
+                    <button
+                      onClick={() => updateCartQty(selectedProductModal.id, 1)}
+                      style={{ background: 'none', border: 'none', color: '#FFF', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <Plus size={18} />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => updateCartQty(selectedProductModal.id, 1)}
+                    style={{
+                      backgroundColor: '#FF5E14',
+                      color: '#FFF',
+                      border: 'none',
+                      borderRadius: '12px',
+                      padding: '12px 24px',
+                      fontSize: '14px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 14px rgba(255,94,20,0.35)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <Plus size={16} /> Add to Cart
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Close footer button */}
+            <div style={{ padding: '12px 20px 16px', borderTop: '1px solid #F1F5F9', backgroundColor: '#F8FAFC' }}>
+              <button
+                onClick={() => setSelectedProductModal(null)}
+                style={{
+                  width: '100%',
+                  backgroundColor: '#FFFFFF',
+                  color: '#475569',
+                  border: '1px solid #CBD5E1',
+                  borderRadius: '12px',
+                  padding: '11px',
+                  fontWeight: 600,
+                  fontSize: '13.5px',
+                  cursor: 'pointer'
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PWA Web App Installation Instructions & Prompt Modal */}
+      {showPwaInstallModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '16px'
+        }}>
+          <div style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: '20px',
+            maxWidth: '420px',
+            width: '100%',
+            padding: '24px',
+            position: 'relative',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            maxHeight: '90vh',
+            overflowY: 'auto'
+          }}>
+            <button
+              onClick={() => setShowPwaInstallModal(false)}
+              style={{
+                position: 'absolute',
+                top: '16px',
+                right: '16px',
+                background: '#F1F5F9',
+                border: 'none',
+                borderRadius: '50%',
+                width: '32px',
+                height: '32px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer'
+              }}
+            >
+              <X size={18} color="#475569" />
+            </button>
+
+            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+              <div style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '16px',
+                backgroundColor: '#FFF',
+                padding: '6px',
+                border: '2px solid #FF5E14',
+                margin: '0 auto 12px',
+                boxShadow: '0 4px 12px rgba(255, 94, 20, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                {storeInfo.logoUrl ? (
+                  <img src={storeInfo.logoUrl} alt={storeInfo.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                ) : (
+                  <img src="/Logo.png" alt="FoodyPay Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                )}
+              </div>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0F172A' }}>
+                Install {storeInfo.name || 'FoodyPay'} Web App
+              </h3>
+              <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#64748B', lineHeight: '1.4' }}>
+                Add to your home screen for fast 1-tap food ordering, instant access & app experience.
+              </p>
+            </div>
+
+            {deferredPrompt ? (
+              <div style={{ marginBottom: '18px' }}>
+                <button
+                  onClick={handleTriggerAppInstall}
+                  style={{
+                    width: '100%',
+                    backgroundColor: '#FF5E14',
+                    color: '#FFF',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '14px',
+                    fontWeight: 700,
+                    fontSize: '15px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 14px rgba(255, 94, 20, 0.35)'
+                  }}
+                >
+                  <Download size={18} /> ⚡ Click to Install App Now
+                </button>
+              </div>
+            ) : null}
+
+            {/* Quick 1-tap browser guide */}
+            <div style={{ backgroundColor: '#F8FAFC', borderRadius: '14px', padding: '16px', border: '1px solid #E2E8F0', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', color: '#0F172A', fontWeight: 600, fontSize: '14px' }}>
+                <Smartphone size={18} color="#FF5E14" /> How to Install on your Device:
+              </div>
+
+              {/* Android Chrome */}
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#334155', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>📱 For Android (Chrome / Brave / Edge):</span>
+                </div>
+                <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '12px', color: '#64748B', lineHeight: '1.5' }}>
+                  <li>Tap the <strong>3 vertical dots (⋮)</strong> in browser top right menu.</li>
+                  <li>Select <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>.</li>
+                  <li>Tap <strong>"Install"</strong> to place app icon on your screen!</li>
+                </ol>
+              </div>
+
+              {/* iOS Safari */}
+              <div>
+                <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#334155', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>🍏 For iPhone (Safari):</span>
+                </div>
+                <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '12px', color: '#64748B', lineHeight: '1.5' }}>
+                  <li>Tap the <strong>Share button ( ⎕↑ )</strong> at bottom of Safari screen.</li>
+                  <li>Scroll down and tap <strong>"Add to Home Screen"</strong>.</li>
+                  <li>Tap <strong>"Add"</strong> in top right corner.</li>
+                </ol>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowPwaInstallModal(false)}
+              style={{
+                width: '100%',
+                backgroundColor: '#F1F5F9',
+                color: '#475569',
+                border: 'none',
+                borderRadius: '10px',
+                padding: '11px',
+                fontWeight: 600,
+                fontSize: '13.5px',
+                cursor: 'pointer'
+              }}
+            >
+              Got It, Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* HAMBURGER PLATFORM NAVIGATION DRAWER MODAL */}
+      {isNavMenuOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(8px)',
+            zIndex: 99999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+          onClick={() => setIsNavMenuOpen(false)}
+        >
+          <div
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: '24px',
+              maxWidth: '480px',
+              width: '100%',
+              padding: '24px',
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.4)',
+              border: '1px solid #E2E8F0',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #F1F5F9', paddingBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <img src="/Logo.png" alt="FoodyPay Logo" style={{ height: '32px', objectFit: 'contain' }} />
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900, color: '#0F172A' }}>FoodyPay Platform</h3>
+                  <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 600 }}>Quick Navigation &amp; CRM Console</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsNavMenuOpen(false)}
+                style={{ background: '#F1F5F9', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748B' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <Link
+                to="/"
+                onClick={() => setIsNavMenuOpen(false)}
+                style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '12px', background: '#FFF0EB', color: '#FF5E14', textDecoration: 'none', fontWeight: 800, fontSize: '14px' }}
+              >
+                <Utensils size={18} />
+                <span>Food Marketplace Home</span>
+              </Link>
+
+              <Link
+                to="/crm"
+                onClick={() => setIsNavMenuOpen(false)}
+                style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '12px', background: '#F8FAFC', color: '#0F172A', textDecoration: 'none', fontWeight: 700, fontSize: '14px', border: '1px solid #E2E8F0' }}
+              >
+                <Laptop size={18} color="#FF5E14" />
+                <span>Restaurant &amp; Cafe CRM Console (`/crm`)</span>
+              </Link>
+
+              <Link
+                to="/register"
+                onClick={() => setIsNavMenuOpen(false)}
+                style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '12px', background: '#F8FAFC', color: '#0F172A', textDecoration: 'none', fontWeight: 700, fontSize: '14px', border: '1px solid #E2E8F0' }}
+              >
+                <Store size={18} color="#16A34A" />
+                <span>Build Your Store Website in 30 Seconds</span>
+              </Link>
+
+              <Link
+                to="/delivery-partner"
+                onClick={() => setIsNavMenuOpen(false)}
+                style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '12px', background: '#F8FAFC', color: '#0F172A', textDecoration: 'none', fontWeight: 700, fontSize: '14px', border: '1px solid #E2E8F0' }}
+              >
+                <Truck size={18} color="#2563EB" />
+                <span>Driver &amp; Delivery Partner Login</span>
+              </Link>
+
+              <Link
+                to="/admin"
+                onClick={() => setIsNavMenuOpen(false)}
+                style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '12px', background: '#F8FAFC', color: '#0F172A', textDecoration: 'none', fontWeight: 700, fontSize: '14px', border: '1px solid #E2E8F0' }}
+              >
+                <ShieldCheck size={18} color="#D97706" />
+                <span>Master Admin Control Panel (`/admin`)</span>
+              </Link>
+
+              <div style={{ borderTop: '1px solid #F1F5F9', marginTop: '6px', paddingTop: '12px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <Link
+                  to="/terms-and-conditions"
+                  onClick={() => setIsNavMenuOpen(false)}
+                  style={{ fontSize: '12.5px', color: '#64748B', textDecoration: 'none', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <FileText size={14} /> Terms &amp; Policies
+                </Link>
+
+                <Link
+                  to="/blog"
+                  onClick={() => setIsNavMenuOpen(false)}
+                  style={{ fontSize: '12.5px', color: '#64748B', textDecoration: 'none', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <BookOpen size={14} /> E-Commerce Blogs
+                </Link>
+              </div>
+            </div>
           </div>
         </div>
       )}

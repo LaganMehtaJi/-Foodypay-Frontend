@@ -5,6 +5,7 @@ import FourParts from '../components/FourParts';
 import GuestExperience from '../components/GuestExperience';
 import ControlGrid from '../components/ControlGrid';
 import PricingCalculator from '../components/PricingCalculator';
+import GoogleSearchSitelinksShowcase from '../components/GoogleSearchSitelinksShowcase';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 // Main Landing Page with High Velocity Live Counter
@@ -203,6 +204,7 @@ export default function HomePage({ onOpenSignup, onShowToast }) {
           </div>
         </div>
       </section>
+      <GoogleSearchSitelinksShowcase />
       <Footer />
     </main>
   );

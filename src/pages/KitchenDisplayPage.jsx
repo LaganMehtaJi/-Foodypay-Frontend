@@ -20,7 +20,7 @@ import {
   RotateCcw
 } from 'lucide-react';
 import { playFoodPreparing, playFoodReady } from '../utils/soundEffects';
-import { fetchOrdersApi, fetchPublicOrdersApi } from '../utils/api';
+import { fetchOrdersApi, fetchPublicOrdersApi, updateOrderStatusApi } from '../utils/api';
 
 export default function KitchenDisplayPage({ onShowToast }) {
   const { restaurantSlug, merchantId } = useParams();
@@ -41,6 +41,27 @@ export default function KitchenDisplayPage({ onShowToast }) {
   const [kitchenTabFilter, setKitchenTabFilter] = useState('active'); // 'active' | 'completed' | 'all'
   const [currentTime, setCurrentTime] = useState('');
   const [isCounterOrderModalOpen, setIsCounterOrderModalOpen] = useState(false);
+
+  // KDS Enabled toggle setting check
+  const [isKdsEnabled, setIsKdsEnabled] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_kds_enabled');
+      return saved === null ? true : JSON.parse(saved);
+    } catch (e) {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    const checkKds = () => {
+      try {
+        const saved = localStorage.getItem('foodypay_kds_enabled');
+        if (saved !== null) setIsKdsEnabled(JSON.parse(saved));
+      } catch (e) {}
+    };
+    window.addEventListener('storage', checkKds);
+    return () => window.removeEventListener('storage', checkKds);
+  }, []);
 
   // Per-item cooking status map: { `${orderId}_${itemIdx}`: 'idle' | 'cooking' | 'done' }
   const [itemCookingState, setItemCookingState] = useState(() => {
@@ -196,6 +217,13 @@ export default function KitchenDisplayPage({ onShowToast }) {
       } catch (e) {}
       if (onShowToast) onShowToast(`️ Order ${orderId} marked Ready to Serve!`);
     }
+
+    const token = localStorage.getItem('foodypay_token');
+    if (token && orderId) {
+      const targetObj = orders.find((o) => (o._id || o.id || o.orderId) === orderId || String(o._id || o.id || o.orderId) === String(orderId));
+      const targetId = (targetObj && targetObj._id) || orderId;
+      updateOrderStatusApi(token, targetId, newStatus).catch(() => {});
+    }
   };
 
   // Add Counter POS Order directly to kitchen
@@ -249,6 +277,72 @@ export default function KitchenDisplayPage({ onShowToast }) {
       : kitchenTabFilter === 'completed'
       ? completedOrders
       : orders;
+
+  if (!isKdsEnabled) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        backgroundColor: '#0F172A',
+        color: '#F8FAFC',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px',
+        textAlign: 'center',
+        fontFamily: 'system-ui, -apple-system, sans-serif'
+      }}>
+        <div style={{
+          backgroundColor: '#1E293B',
+          padding: '36px 28px',
+          borderRadius: '24px',
+          border: '1.5px solid #334155',
+          maxWidth: '460px',
+          width: '100%',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.5)'
+        }}>
+          <div style={{
+            width: '64px',
+            height: '64px',
+            borderRadius: '50%',
+            backgroundColor: '#FEF2F2',
+            color: '#EF4444',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 20px'
+          }}>
+            <ChefHat size={32} />
+          </div>
+          <h2 style={{ fontSize: '22px', fontWeight: 800, marginBottom: '10px', color: '#FFF' }}>
+            Kitchen Display System is OFF
+          </h2>
+          <p style={{ fontSize: '13.5px', color: '#94A3B8', lineHeight: 1.6, marginBottom: '24px' }}>
+            The Kitchen Display System (KDS) for <b>{storeName}</b> is currently turned <b>OFF</b> in Restaurant Settings.
+          </p>
+          <Link
+            to="/dashboard"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              backgroundColor: '#FF5E14',
+              color: '#FFF',
+              padding: '12px 24px',
+              borderRadius: '12px',
+              fontWeight: 700,
+              textDecoration: 'none',
+              fontSize: '14px',
+              width: '100%'
+            }}
+          >
+            <ArrowLeft size={16} /> Open Dashboard Settings
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#0F172A', color: '#F8FAFC', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
@@ -413,6 +507,11 @@ export default function KitchenDisplayPage({ onShowToast }) {
                         <span style={{ fontSize: '11px', backgroundColor: '#FFEDD5', color: '#C2410C', fontWeight: 600, padding: '2px 8px', borderRadius: '6px' }}>
                            {order.table || 'Table'}
                         </span>
+                        {(order.paymentStatus === 'paid-razorpay' || order.paymentStatus === 'paid-upi' || order.paymentStatus === 'paid-cash' || order.paymentStatus === 'paid' || (order.paymentLabel && order.paymentLabel.toLowerCase().includes('paid')) || order.status === 'completed') && (
+                          <span style={{ fontSize: '10.5px', backgroundColor: '#DCFCE7', color: '#15803D', fontWeight: 800, padding: '2px 8px', borderRadius: '6px', border: '1px solid #86EFAC' }}>
+                            ✓ PAID
+                          </span>
+                        )}
                       </div>
                       <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px', fontWeight: 400 }}>
                         Customer: <strong style={{ color: '#E2E8F0', fontWeight: 500 }}>{order.customer || 'Diner'}</strong> • {order.time || 'Today'}

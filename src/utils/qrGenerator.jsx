@@ -154,12 +154,14 @@ export function generateQrSvgString(text, options = {}) {
   const safeText = ensureValidUrl(text);
   const cleanColor = (color || '#1E293B').replace('#', '');
   const cleanBg = (bgColor || '#FFFFFF').replace('#', '');
-  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(safeText)}&color=${cleanColor}&bgcolor=${cleanBg}`;
+  // ecc=H (High error correction: 30% recovery) allows central logo overlay without rendering the QR unscannable
+  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&ecc=H&margin=1&data=${encodeURIComponent(safeText)}&color=${cleanColor}&bgcolor=${cleanBg}`;
   
   const cx = size / 2;
   const cy = size / 2;
-  const logoRadius = size * 0.13;
-  const iconBoxSize = size * 0.18;
+  // Reduced logo diameter to 20% to leave ample QR code data intact for fast scanning
+  const logoRadius = size * 0.10;
+  const iconBoxSize = size * 0.14;
 
   let logoElement = '';
   if (showLogo) {
@@ -175,7 +177,7 @@ export function generateQrSvgString(text, options = {}) {
     }
 
     logoElement = `
-      <circle cx="${cx}" cy="${cy}" r="${logoRadius}" fill="${logoBgColor}" stroke="${cornerColor}" stroke-width="2.5" />
+      <rect x="${cx - logoRadius}" y="${cy - logoRadius}" width="${logoRadius * 2}" height="${logoRadius * 2}" rx="6" fill="${logoBgColor}" stroke="${cornerColor}" stroke-width="2" />
       ${innerGraphic}
     `;
   }
@@ -202,7 +204,9 @@ export function QrCodeComponent({
   const safeText = ensureValidUrl(text);
   const cleanColor = (qrColor || '#1E293B').replace('#', '');
   const cleanBg = (bgColor || '#FFFFFF').replace('#', '');
-  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(safeText)}&color=${cleanColor}&bgcolor=${cleanBg}`;
+  // ecc=H (High Error Correction - 30%) + margin=1 for 100% camera scannability
+  const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&ecc=H&margin=1&data=${encodeURIComponent(safeText)}&color=${cleanColor}&bgcolor=${cleanBg}`;
+  const logoBoxSize = Math.round(size * 0.20);
 
   return (
     <div
@@ -223,30 +227,32 @@ export function QrCodeComponent({
       <img
         src={qrApiUrl}
         alt={`QR Code for ${text}`}
-        style={{ width: '100%', height: '100%', display: 'block', borderRadius: '8px' }}
+        style={{ width: '100%', height: '100%', display: 'block', borderRadius: '8px', imageRendering: 'pixelated' }}
       />
 
       {showLogo && (
         <div
           style={{
             position: 'absolute',
-            width: `${Math.round(size * 0.26)}px`,
-            height: `${Math.round(size * 0.26)}px`,
+            width: `${logoBoxSize}px`,
+            height: `${logoBoxSize}px`,
             backgroundColor: logoBgColor,
-            borderRadius: '50%',
-            boxShadow: '0 2px 10px rgba(0, 0, 0, 0.2)',
+            borderRadius: '10px',
+            padding: '2px',
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.25)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            border: `2.5px solid ${cornerColor}`,
+            border: `2px solid ${cornerColor}`,
             overflow: 'hidden',
+            pointerEvents: 'none',
           }}
         >
           {logoUrl ? (
             <img
               src={logoUrl}
               alt="Custom Brand Logo"
-              style={{ width: '78%', height: '78%', objectFit: 'contain' }}
+              style={{ width: '75%', height: '75%', objectFit: 'contain' }}
               onError={(e) => {
                 e.target.style.display = 'none';
               }}
@@ -255,7 +261,7 @@ export function QrCodeComponent({
             <img
               src="/Logo.png"
               alt="FoodyPay"
-              style={{ width: '78%', height: '78%', objectFit: 'contain' }}
+              style={{ width: '75%', height: '75%', objectFit: 'contain' }}
               onError={(e) => {
                 e.target.style.display = 'none';
               }}
@@ -277,7 +283,7 @@ export function QrCodeComponent({
             <img
               src="/Logo.png"
               alt="Logo"
-              style={{ width: '78%', height: '78%', objectFit: 'contain' }}
+              style={{ width: '75%', height: '75%', objectFit: 'contain' }}
             />
           )}
         </div>

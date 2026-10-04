@@ -107,7 +107,6 @@ export default function PricingCalculator({ onOpenSignup, onShowToast }) {
               <li><strong>Own Online Ordering Website</strong> (Live for 1 week — let customers order from home)</li>
               <li>Counter &amp; walk-in billing ₹0</li>
               <li>Full visual QR menu &amp; ordering</li>
-              <li>Live Kitchen KDS &amp; waiter calls</li>
               <li>Pay-as-you-grow prepaid wallet</li>
             </ul>
             <button

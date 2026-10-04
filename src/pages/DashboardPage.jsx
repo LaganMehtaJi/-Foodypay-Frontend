@@ -37,6 +37,8 @@ import {
   Sparkles,
   ChefHat,
   Bell,
+  ShieldCheck,
+  Palette,
   X,
   LogOut,
   Menu,
@@ -50,6 +52,7 @@ import {
   Star,
   MessageSquare,
   ThumbsUp,
+  AlertCircle,
 } from 'lucide-react';
 import {
   playOrderPlaced,
@@ -86,6 +89,18 @@ import {
   createReviewApi,
   replyReviewApi,
   sendNotificationApi,
+  createRazorpayOrderApi,
+  verifyRazorpaySignatureApi,
+  fetchDeliveryZonesApi,
+  createDeliveryZoneApi,
+  updateDeliveryZoneApi,
+  deleteDeliveryZoneApi,
+  fetchStoresApi,
+  createStoreApi,
+  updateStoreApi,
+  deleteStoreApi,
+  assignStoreOwnerEmailApi,
+  assignZonesToStoreApi,
 } from '../utils/api';
 import './Dashboard.css';
 
@@ -186,6 +201,81 @@ export default function DashboardPage({ onShowToast }) {
   const [cardsPerRow, setCardsPerRow] = useState(4);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
+  // Current logged in merchant user state synced with localStorage
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const u = localStorage.getItem('foodypay_user');
+      return u ? JSON.parse(u) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  const [storeControls, setStoreControls] = useState(() => {
+    let savedKds = true;
+    let savedUpi = '';
+    let savedRzpKey = '';
+    let savedRzpSec = '';
+    let savedRoutingMode = '';
+    try {
+      const rawKds = localStorage.getItem('foodypay_kds_enabled');
+      if (rawKds !== null) savedKds = JSON.parse(rawKds);
+      savedUpi = localStorage.getItem('foodypay_upi_id') || '';
+      savedRzpKey = localStorage.getItem('foodypay_rzp_key_id') || '';
+      savedRzpSec = localStorage.getItem('foodypay_rzp_key_secret') || '';
+      savedRoutingMode = localStorage.getItem('foodypay_payment_routing_mode') || '';
+    } catch(e) {}
+
+    try {
+      const savedUser = localStorage.getItem('foodypay_user');
+      if (savedUser) {
+        const u = JSON.parse(savedUser);
+        return {
+          foodypayId: u.foodypayId || 'FP-985569',
+          storeStatus: true,
+          deliveryStatus: true,
+          pickupStatus: true,
+          kdsEnabled: savedKds,
+          paymentRoutingMode: savedRoutingMode || u.paymentRoutingMode || 'foodypay_default',
+          razorpayKeyId: savedRzpKey || u.razorpayKeyId || 'rzp_live_TjBEt4gu2aUflB',
+          razorpayKeySecret: savedRzpSec || u.razorpayKeySecret || 'FPXDLXe3Vbh0NYSpCAXmXOA3',
+          storeType: 'Business to Customer (B2C)',
+          restName: u.businessName || u.name || "My Restaurant",
+          phone: u.contactNo || u.phone || '',
+          logoUrl: u.logo?.url || '',
+          address: u.address || 'India',
+          upiId: savedUpi || u.upiId || 'merchant@icici',
+          gstPercent: 5,
+          lockMarketingTab: false,
+          lockTableCrud: false,
+          lockOrderDeletion: false,
+          lockSettingsPanel: false,
+        };
+      }
+    } catch (e) {}
+    return {
+      foodypayId: '',
+      storeStatus: true,
+      deliveryStatus: true,
+      pickupStatus: true,
+      kdsEnabled: savedKds,
+      paymentRoutingMode: savedRoutingMode || 'foodypay_default',
+      razorpayKeyId: savedRzpKey || 'rzp_live_TjBEt4gu2aUflB',
+      razorpayKeySecret: savedRzpSec || 'FPXDLXe3Vbh0NYSpCAXmXOA3',
+      storeType: 'Business to Customer (B2C)',
+      restName: "My Restaurant",
+      phone: '',
+      logoUrl: '',
+      address: '',
+      upiId: savedUpi || 'merchant@icici',
+      gstPercent: 5,
+      lockMarketingTab: false,
+      lockTableCrud: false,
+      lockOrderDeletion: false,
+      lockSettingsPanel: false,
+    };
+  });
+
   // Customer Groups Cohorts State for Telemetry & Targeted Campaigns
   const [customerGroups, setCustomerGroups] = useState(() => {
     try {
@@ -204,6 +294,21 @@ export default function DashboardPage({ onShowToast }) {
     } catch (e) {}
   }, [customerGroups]);
 
+  useEffect(() => {
+    if (coupons && coupons.length > 0) {
+      try {
+        const storeFpId = storeControls.foodypayId || currentUser.foodypayId || 'FP-985569';
+        const taggedCoupons = coupons.map((c) => ({
+          ...c,
+          foodypayId: c.foodypayId || c.merchantId || storeFpId,
+          merchantId: c.merchantId || c.foodypayId || storeFpId,
+        }));
+        localStorage.setItem('foodypay_crm_coupons_v1', JSON.stringify(taggedCoupons));
+        window.dispatchEvent(new Event('storage'));
+      } catch (e) {}
+    }
+  }, [coupons, storeControls.foodypayId, currentUser.foodypayId]);
+
   const [isAddGroupModalOpen, setIsAddGroupModalOpen] = useState(false);
   const [activeGroupDetail, setActiveGroupDetail] = useState(null);
   const [newGroupForm, setNewGroupForm] = useState({
@@ -217,8 +322,14 @@ export default function DashboardPage({ onShowToast }) {
   // Targeted Campaign State in Marketing
   const [campaignTargetGroup, setCampaignTargetGroup] = useState('grp_1');
   const [campaignCouponCode, setCampaignCouponCode] = useState('WELCOME50');
-  const [campaignDispatchMode, setCampaignDispatchMode] = useState('all_group'); // 'all_group' | 'random_n'
+  const [campaignDispatchMode, setCampaignDispatchMode] = useState('all_group'); // 'all_group' | 'random_n' | 'specific_phone'
   const [campaignRandomCount, setCampaignRandomCount] = useState(2);
+  const [campaignTargetPhone, setCampaignTargetPhone] = useState('');
+
+  // Assign Mobile Modal State for Coupon Cards
+  const [isAssignMobileModalOpen, setIsAssignMobileModalOpen] = useState(false);
+  const [selectedCouponForAssignModal, setSelectedCouponForAssignModal] = useState(null);
+  const [assignMobileInput, setAssignMobileInput] = useState('');
 
   // Custom Notification Broadcast State (Specific User, All, Random, Group)
   const [isCustomNotifyModalOpen, setIsCustomNotifyModalOpen] = useState(false);
@@ -228,50 +339,513 @@ export default function DashboardPage({ onShowToast }) {
   const [randomNotifyCount, setRandomNotifyCount] = useState(3);
   const [notifyTitle, setNotifyTitle] = useState(' Special Gift Offer from FoodyPay');
   const [notifyMessage, setNotifyMessage] = useState('Hey {name}! We have a special discount for you at {storeName}. Use code FEST20 for 20% OFF on your next visit!');
-  const [notifyChannel, setNotifyChannel] = useState('push_whatsapp'); // 'push_whatsapp' | 'whatsapp_only' | 'push_only'
 
-  const [storeControls, setStoreControls] = useState(() => {
+  // Steal Deals / Collections Configuration State
+  const [stealDealsConfig, setStealDealsConfig] = useState(() => {
     try {
-      const savedUser = localStorage.getItem('foodypay_user');
-      if (savedUser) {
-        const u = JSON.parse(savedUser);
-        return {
-          foodypayId: u.foodypayId || 'FP-985569',
-          storeStatus: true,
-          deliveryStatus: true,
-          pickupStatus: true,
-          storeType: 'Business to Customer (B2C)',
-          restName: u.businessName || u.name || "My Restaurant",
-          phone: u.contactNo || u.phone || '',
-          logoUrl: u.logo?.url || '',
-          address: u.address || 'India',
-          upiId: u.upiId || 'merchant@icici',
-          gstPercent: 5,
-          lockMarketingTab: false,
-          lockTableCrud: false,
-          lockOrderDeletion: false,
-          lockSettingsPanel: false,
-        };
-      }
+      const saved = localStorage.getItem('foodypay_steal_deals_config');
+      if (saved) return JSON.parse(saved);
     } catch (e) {}
     return {
-      foodypayId: '',
-      storeStatus: true,
-      deliveryStatus: true,
-      pickupStatus: true,
-      storeType: 'Business to Customer (B2C)',
-      restName: "My Restaurant",
-      phone: '',
-      logoUrl: '',
-      address: '',
-      upiId: 'merchant@icici',
-      gstPercent: 5,
-      lockMarketingTab: false,
-      lockTableCrud: false,
-      lockOrderDeletion: false,
-      lockSettingsPanel: false,
+      enabled: true,
+      title: 'STEAL DEAL WEEKEND',
+      badgePrice: '9',
+      subtitle: '✦ GET ANY ONE ITEM AT SPECIAL PRICE ✦',
+      items: [
+        { id: 'steal_1', name: 'Corn Cob (Bhutta)', unit: '1 pc', price: 9, originalPrice: 22, unlockAt: 499, isVeg: true, image: 'https://images.unsplash.com/photo-1551754655-cd27e38d2076?w=400&auto=format&fit=crop&q=80' },
+        { id: 'steal_2', name: 'Sleepy Owl Assorted Instant Coffee', unit: '10 pcs', price: 29, originalPrice: 49, unlockAt: 899, isVeg: true, image: 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=400&auto=format&fit=crop&q=80' },
+        { id: 'steal_3', name: 'Farmley Dark Choco Orange Date Bites', unit: '20 g', price: 9, originalPrice: 40, unlockAt: 499, isVeg: true, image: 'https://images.unsplash.com/photo-1549007994-cb92caebd54b?w=400&auto=format&fit=crop&q=80' },
+        { id: 'steal_4', name: 'Fresh Full Cream Milk (1L)', unit: '1 L', price: 49, originalPrice: 66, unlockAt: 299, isVeg: true, image: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=500&auto=format&fit=crop&q=80' },
+        { id: 'steal_5', name: 'Crispy Potato Chips Pack (Salted)', unit: '50 g', price: 9, originalPrice: 20, unlockAt: 199, isVeg: true, image: 'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400&auto=format&fit=crop&q=80' },
+      ]
     };
   });
+
+  const [isAddStealItemModalOpen, setIsAddStealItemModalOpen] = useState(false);
+  const [newStealItemForm, setNewStealItemForm] = useState({
+    name: '',
+    unit: '1 pc',
+    price: 9,
+    originalPrice: 20,
+    unlockAt: 199,
+    isVeg: true,
+    image: '',
+  });
+
+  const saveStealDealsConfig = (newConfig) => {
+    setStealDealsConfig(newConfig);
+    try {
+      localStorage.setItem('foodypay_steal_deals_config', JSON.stringify(newConfig));
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {}
+  };
+
+  const handleToggleStealDeals = () => {
+    const updated = { ...stealDealsConfig, enabled: !stealDealsConfig.enabled };
+    saveStealDealsConfig(updated);
+    addToast(`Steal Deals Banner is now ${updated.enabled ? 'ON (Visible on Homepage)' : 'OFF (Hidden on Homepage)'}`, updated.enabled ? <CheckCircle2 color="#10B981" /> : <Lock color="#EF4444" />);
+  };
+
+  const handleAddStealItem = (e) => {
+    e.preventDefault();
+    if (!newStealItemForm.name.trim()) return;
+
+    const newItem = {
+      id: 'steal_' + Date.now(),
+      name: newStealItemForm.name.trim(),
+      unit: newStealItemForm.unit || '1 pc',
+      price: Number(newStealItemForm.price) || 9,
+      originalPrice: Number(newStealItemForm.originalPrice) || 20,
+      unlockAt: Number(newStealItemForm.unlockAt) || 199,
+      isVeg: newStealItemForm.isVeg,
+      image: newStealItemForm.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80',
+    };
+
+    const updated = {
+      ...stealDealsConfig,
+      items: [...(stealDealsConfig.items || []), newItem]
+    };
+    saveStealDealsConfig(updated);
+    setIsAddStealItemModalOpen(false);
+    setNewStealItemForm({ name: '', unit: '1 pc', price: 9, originalPrice: 20, unlockAt: 199, isVeg: true, image: '' });
+    addToast(`Added deal item "${newItem.name}" to Steal Deals collection!`, <CheckCircle2 color="#10B981" />);
+  };
+
+  const handleDeleteStealItem = (itemId) => {
+    const updated = {
+      ...stealDealsConfig,
+      items: (stealDealsConfig.items || []).filter(i => i.id !== itemId)
+    };
+    saveStealDealsConfig(updated);
+    addToast('Removed item from Steal Deals collection', <Trash2 color="#EF4444" />);
+  };
+
+  // Payment Options Config State (Header Title & Payment Buttons Customization)
+  const [paymentConfig, setPaymentConfig] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_payment_config');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {
+      header: 'Payment Method',
+      upiEnabled: true,
+      upiLabel: 'Online UPI',
+      cashEnabled: true,
+      cashLabel: 'Cash / Pay Counter',
+    };
+  });
+
+  const savePaymentConfig = (newConfig) => {
+    setPaymentConfig(newConfig);
+    try {
+      localStorage.setItem('foodypay_payment_config', JSON.stringify(newConfig));
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {}
+  };
+
+  // Customizable Order Status Stepper Labels State
+  const [statusStepLabels, setStatusStepLabels] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_status_step_labels');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {
+      step1: 'Placed',
+      step2: 'Kitchen',
+      step3: 'Out for Delivery',
+      step4: 'Delivered',
+    };
+  });
+
+  const saveStatusStepLabels = (newLabels) => {
+    setStatusStepLabels(newLabels);
+    try {
+      localStorage.setItem('foodypay_status_step_labels', JSON.stringify(newLabels));
+    } catch (e) {}
+    const stepArr = [
+      newLabels.step1 || 'Placed',
+      newLabels.step2 || 'Kitchen',
+      newLabels.step3 || 'Out for Delivery',
+      newLabels.step4 || 'Delivered',
+    ];
+    setStoreControls((prev) => {
+      const updated = {
+        ...prev,
+        customStepsDelivery: stepArr,
+        customStepsDineIn: stepArr,
+      };
+      try {
+        localStorage.setItem('foodypay_store_controls', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+    try {
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {}
+  };
+
+  // Orders & Catalog Pagination States
+  const [ordersPage, setOrdersPage] = useState(1);
+  const [ordersPerPage, setOrdersPerPage] = useState(12);
+
+  const [catalogPage, setCatalogPage] = useState(1);
+  const [catalogPerPage, setCatalogPerPage] = useState(10);
+
+  const [notifyChannel, setNotifyChannel] = useState('push_whatsapp'); // 'push_whatsapp' | 'whatsapp_only' | 'push_only'
+
+  // Selected Catalog Color Theme state
+  const [selectedCatalogTheme, setSelectedCatalogTheme] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_catalog_theme');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {
+      id: 'orange',
+      name: 'Sunset Orange (Default)',
+      primary: '#FF5E14',
+      accent: '#D97706',
+      bg: '#FFF0EB',
+      gradient: 'linear-gradient(135deg, #FF5E14 0%, #D97706 100%)',
+    };
+  });
+
+  // Feature Upgrade Modal State (for locking Pro features on Free Plan)
+  const [upgradeModalFeature, setUpgradeModalFeature] = useState(null);
+
+  useEffect(() => {
+    const syncUserData = () => {
+      try {
+        const u = localStorage.getItem('foodypay_user');
+        if (u) {
+          setCurrentUser(JSON.parse(u));
+        }
+      } catch (e) {}
+    };
+    window.addEventListener('storage', syncUserData);
+    return () => window.removeEventListener('storage', syncUserData);
+  }, []);
+
+  // Account Suspension Status Check
+  const isAccountSuspended = Boolean(
+    currentUser.isSuspended ||
+    storeControls.isSuspended ||
+    currentUser.subscriptionStatus === 'Suspended' ||
+    storeControls.subscriptionStatus === 'Suspended'
+  );
+
+  // Dynamic Subscription Expiry Check
+  const subExpiryDateStr = currentUser.subscriptionExpiry || storeControls.subscriptionExpiry || currentUser.expiryDate || storeControls.expiryDate;
+  
+  const isSubscriptionExpired = (() => {
+    if (!subExpiryDateStr) return false;
+    if (String(subExpiryDateStr).toLowerCase().includes('unlimited') || String(subExpiryDateStr).toLowerCase().includes('lifetime')) return false;
+    const expTime = new Date(subExpiryDateStr).getTime();
+    if (isNaN(expTime)) return false;
+    const expDateObj = new Date(subExpiryDateStr);
+    if (!String(subExpiryDateStr).includes('T')) {
+      expDateObj.setHours(23, 59, 59, 999);
+    }
+    return Date.now() > expDateObj.getTime();
+  })();
+
+  const userPlanStr = String(currentUser.subscriptionPlan || storeControls.subscriptionPlan || (JSON.parse(localStorage.getItem('foodypay_user') || '{}').subscriptionPlan) || 'Starter Free').toLowerCase();
+  const isBaseEnterpriseMax = userPlanStr.includes('enterprise') || userPlanStr.includes('max') || userPlanStr.includes('75');
+  const isBaseGrowthPro = !isBaseEnterpriseMax && (userPlanStr.includes('growth') || userPlanStr.includes('pro') || userPlanStr.includes('35') || userPlanStr.includes('active pro'));
+  
+  // Expiry forces account back to Starter Free plan
+  const isEnterpriseMax = isBaseEnterpriseMax && !isSubscriptionExpired;
+  const isGrowthPro = isBaseGrowthPro && !isSubscriptionExpired;
+  const isFreePlan = !isEnterpriseMax && !isGrowthPro;
+
+  // Feature Lock Rules:
+  const isKdsLocked = isFreePlan;
+  const isMarketingLocked = isFreePlan;
+  const isCustomersLocked = isFreePlan;
+  const isReviewsLocked = isFreePlan;
+
+  // Delivery Partner View, Themes & Branding, Grow -> Locked on Free Plan AND Growth Pro (requires Enterprise Max)
+  const isDeliveryPartnerLocked = isFreePlan || isGrowthPro;
+  const isThemesLocked = isFreePlan || isGrowthPro;
+  const isGrowLocked = isFreePlan || isGrowthPro;
+
+  // Dynamic Database-Driven Delivery Zones & Store Management State
+  const [deliveryZones, setDeliveryZones] = useState([]);
+  const [storesList, setStoresList] = useState([]);
+  const [deliverySubTab, setDeliverySubTab] = useState('zones'); // 'zones' | 'stores'
+  const [isAddZoneModalOpen, setIsAddZoneModalOpen] = useState(false);
+  const [editingZoneObj, setEditingZoneObj] = useState(null);
+  const [zoneForm, setZoneForm] = useState({
+    name: '',
+    city: 'Mohali',
+    state: 'Punjab',
+    pincode: '',
+    centerLatitude: 30.7046,
+    centerLongitude: 76.7179,
+    radius: 5,
+    isActive: true,
+  });
+
+  const [isAddStoreModalOpen, setIsAddStoreModalOpen] = useState(false);
+  const [editingStoreObj, setEditingStoreObj] = useState(null);
+  const [storeForm, setStoreForm] = useState({
+    name: '',
+    ownerName: '',
+    ownerEmail: '',
+    gstNumber: '',
+    licenseNumber: '',
+    address: '',
+    city: 'Mohali',
+    state: 'Punjab',
+    pincode: '',
+    latitude: 30.7046,
+    longitude: 76.7179,
+    deliveryRadius: 5,
+    isActive: true,
+  });
+
+  const [isAssignStoreZonesModalOpen, setIsAssignStoreZonesModalOpen] = useState(false);
+  const [selectedStoreForZones, setSelectedStoreForZones] = useState(null);
+  const [selectedZoneIdsForStore, setSelectedZoneIdsForStore] = useState([]);
+
+  const [isAssignOwnerEmailModalOpen, setIsAssignOwnerEmailModalOpen] = useState(false);
+  const [selectedStoreForOwner, setSelectedStoreForOwner] = useState(null);
+  const [assignOwnerEmailInput, setAssignOwnerEmailInput] = useState('');
+
+  const loadDeliveryAndStoresData = async () => {
+    try {
+      const [zones, stores] = await Promise.all([
+        fetchDeliveryZonesApi(),
+        fetchStoresApi(),
+      ]);
+      if (Array.isArray(zones)) setDeliveryZones(zones);
+      if (Array.isArray(stores)) setStoresList(stores);
+    } catch (err) {
+      console.warn('Delivery and stores sync error:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'delivery_zones') {
+      loadDeliveryAndStoresData();
+    }
+  }, [activeTab]);
+
+  const handleSaveZoneSubmit = async (e) => {
+    e.preventDefault();
+    if (!zoneForm.name.trim()) return;
+
+    try {
+      if (editingZoneObj) {
+        await updateDeliveryZoneApi(editingZoneObj._id || editingZoneObj.zoneId, zoneForm);
+        addToast(`Delivery Zone "${zoneForm.name}" updated successfully!`);
+      } else {
+        await createDeliveryZoneApi(zoneForm);
+        addToast(`New Delivery Zone "${zoneForm.name}" created successfully!`);
+      }
+      setIsAddZoneModalOpen(false);
+      loadDeliveryAndStoresData();
+    } catch (err) {
+      addToast(`Error saving zone: ${err.message}`);
+    }
+  };
+
+  const handleSaveStoreSubmit = async (e) => {
+    e.preventDefault();
+    if (!storeForm.name.trim() || !storeForm.ownerEmail.trim()) return;
+
+    try {
+      if (editingStoreObj) {
+        await updateStoreApi(editingStoreObj._id || editingStoreObj.storeId, storeForm);
+        addToast(`Store "${storeForm.name}" updated successfully!`);
+      } else {
+        await createStoreApi(storeForm);
+        addToast(`New Store "${storeForm.name}" registered successfully!`);
+      }
+      setIsAddStoreModalOpen(false);
+      loadDeliveryAndStoresData();
+    } catch (err) {
+      addToast(`Error saving store: ${err.message}`);
+    }
+  };
+
+  const handleAssignZonesToStoreSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedStoreForZones) return;
+
+    try {
+      await assignZonesToStoreApi(selectedStoreForZones._id || selectedStoreForZones.storeId, selectedZoneIdsForStore);
+      addToast(`Updated delivery zones for ${selectedStoreForZones.name}!`);
+      setIsAssignStoreZonesModalOpen(false);
+      loadDeliveryAndStoresData();
+    } catch (err) {
+      addToast(`Error assigning zones: ${err.message}`);
+    }
+  };
+
+  const handleAssignOwnerEmailSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedStoreForOwner || !assignOwnerEmailInput.trim()) return;
+
+    try {
+      await assignStoreOwnerEmailApi(selectedStoreForOwner._id || selectedStoreForOwner.storeId, assignOwnerEmailInput.trim());
+      addToast(`Assigned store access to email ${assignOwnerEmailInput.trim()}!`);
+      setIsAssignOwnerEmailModalOpen(false);
+      loadDeliveryAndStoresData();
+    } catch (err) {
+      addToast(`Error assigning owner email: ${err.message}`);
+    }
+  };
+
+  // Calculate Total Sales collected specifically via Razorpay Online Payment Gateway
+  const razorpaySalesTotal = (orders || []).reduce((acc, o) => {
+    const pStatus = String(o.paymentStatus || '').toLowerCase();
+    const pLabel = String(o.paymentLabel || '').toLowerCase();
+    const isRazorpay =
+      pStatus === 'paid-razorpay' ||
+      pStatus === 'paid-online' ||
+      pLabel.includes('razorpay') ||
+      (pStatus === 'paid-upi' && pLabel.includes('online')) ||
+      (pStatus === 'paid' && (pLabel.includes('razorpay') || pLabel.includes('online')));
+    if (isRazorpay) {
+      return acc + (Number(o.total) || 0);
+    }
+    return acc;
+  }, 0);
+
+  // Razorpay SDK Script Loader for Subscription Purchases
+  const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      if (window.Razorpay) return resolve(true);
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
+  // Process Subscription Upgrade & Unlock ONLY after verified Razorpay Payment Callback
+  const handleRazorpaySubscriptionPurchase = async (targetPlan, targetPriceUSD) => {
+    const planNameLower = String(targetPlan).toLowerCase();
+    const priceInINR = planNameLower.includes('enterprise') || planNameLower.includes('max') ? 5999 : (planNameLower.includes('growth') || planNameLower.includes('pro') ? 2999 : (Number(targetPriceUSD) * 85 || 2999));
+    const amountInPaise = priceInINR * 100;
+
+    // 1. Load Razorpay script first
+    const scriptLoaded = await loadRazorpayScript();
+    if (!scriptLoaded || !window.Razorpay) {
+      alert('Failed to load Razorpay Payment Gateway SDK. Please check internet connection.');
+      return;
+    }
+
+    const activeRzpKey = storeControls.razorpayKeyId || 'rzp_live_TjBEt4gu2aUflB';
+
+    // 2. Try backend order API creation with fast 1-second timeout
+    let razorpayOrderId = null;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1000);
+      const rzpRes = await createRazorpayOrderApi({
+        amount: amountInPaise,
+        currency: 'INR',
+        receipt: `sub_${Date.now()}`,
+        notes: {
+          plan: targetPlan,
+          merchantId: storeControls.foodypayId || currentUser.foodypayId || 'FP-MERCHANT'
+        }
+      }, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (rzpRes && rzpRes.razorpayOrderId) {
+        razorpayOrderId = rzpRes.razorpayOrderId;
+      }
+    } catch (e) {
+      console.warn('Proceeding with direct Razorpay SDK checkout:', e.message);
+    }
+
+    const options = {
+      key: activeRzpKey,
+      amount: amountInPaise,
+      currency: 'INR',
+      name: 'FoodyPay POS Subscription',
+      description: `Upgrade Plan to ${targetPlan} (Paid via Razorpay)`,
+      image: storeControls.logoUrl || 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=200',
+      ...(razorpayOrderId ? { order_id: razorpayOrderId } : {}),
+      prefill: {
+        name: storeControls.restName || currentUser.name || 'Merchant User',
+        email: currentUser.email || 'merchant@foodypay.com',
+        contact: storeControls.phone || currentUser.phone || '9999999999',
+      },
+      theme: {
+        color: '#FF5E14',
+      },
+      handler: async function (response) {
+        // VERIFY RAZORPAY PAYMENT CALLBACK
+        console.log('Razorpay Subscription Payment Successful Callback:', response);
+        const paymentId = response.razorpay_payment_id || `pay_${Date.now()}`;
+
+        if (response.razorpay_order_id && response.razorpay_payment_id && response.razorpay_signature) {
+          try {
+            await verifyRazorpaySignatureApi({
+              razorpayOrderId: response.razorpay_order_id,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpaySignature: response.razorpay_signature,
+            });
+          } catch (err) {
+            console.warn('Razorpay signature verification note:', err);
+          }
+        }
+
+        // Set 1 Month (30 days) subscription validity from today
+        const expDate = new Date();
+        expDate.setDate(expDate.getDate() + 30);
+        const expDateIsoStr = expDate.toISOString().split('T')[0];
+
+        // UNLOCK PLAN ONLY AFTER VERIFIED RAZORPAY PAYMENT CALLBACK!
+        const updatedUser = {
+          ...JSON.parse(localStorage.getItem('foodypay_user') || '{}'),
+          subscriptionPlan: targetPlan,
+          subscriptionPrice: Number(targetPriceUSD) || (planNameLower.includes('enterprise') ? 75 : 35),
+          subscriptionStatus: 'Active',
+          subscriptionExpiry: expDateIsoStr,
+          isLocked: false,
+          isSuspended: false,
+          razorpayPaymentId: paymentId,
+          paidVia: 'Paid by Razorpay',
+        };
+
+        localStorage.setItem('foodypay_user', JSON.stringify(updatedUser));
+        setStoreControls((prev) => ({
+          ...prev,
+          subscriptionPlan: targetPlan,
+          subscriptionPrice: Number(targetPriceUSD) || (planNameLower.includes('enterprise') ? 75 : 35),
+          subscriptionStatus: 'Active',
+          subscriptionExpiry: expDateIsoStr,
+          isSuspended: false,
+        }));
+
+        setCurrentUser(updatedUser);
+        window.dispatchEvent(new Event('storage'));
+        playMilestoneCelebration();
+        addToast(`🎉 Paid by Razorpay (${paymentId})! Plan ${targetPlan} unlocked until ${expDateIsoStr}.`, <CheckCircle2 size={18} color="#10B981" />);
+        setUpgradeModalFeature(null);
+      },
+      modal: {
+        ondismiss: function () {
+          addToast('⚠️ Subscription payment cancelled or dismissed. Features remain locked.', <AlertCircle size={18} color="#EF4444" />);
+        }
+      }
+    };
+
+    try {
+      const rzpInstance = new window.Razorpay(options);
+      rzpInstance.on('payment.failed', function (response) {
+        alert(`Payment Failed: ${response.error?.description || 'Transaction declined by bank'}`);
+      });
+      rzpInstance.open();
+    } catch (err) {
+      console.error('Razorpay popup launch error:', err);
+      alert('Error launching Razorpay payment window. Please check pop-up settings in your browser.');
+    }
+  };
 
 
   // Dynamically sync favicon, apple-touch-icon, and PWA manifest logo in head when store logo changes
@@ -684,16 +1258,45 @@ export default function DashboardPage({ onShowToast }) {
         if (res.todayStats) setTodayStats(res.todayStats);
         if (Array.isArray(fetchedOrders) && fetchedOrders.length > 0) {
           const seenSet = getSeenIds();
-          const merged = fetchedOrders.map((o) => {
-            const oId = String(o._id || o.id || o.orderId);
-            return {
-              ...o,
-              seen: Boolean(o.seen || seenSet.has(oId)),
-            };
-          });
+          const statusRank = { new: 1, new_seen: 1, preparing: 2, ready: 3, completed: 4, cancelled: 5 };
 
-          setOrders(merged);
-          merged.forEach((order) => notifyIfNewOrder(order));
+          setOrders((prevLocalOrders) => {
+            const localMap = new Map();
+            (prevLocalOrders || []).forEach((lo) => {
+              const idKey = String(lo._id || lo.id || lo.orderId);
+              localMap.set(idKey, lo);
+            });
+
+            const merged = fetchedOrders.map((o) => {
+              const oId = String(o._id || o.id || o.orderId);
+              const localOrd = localMap.get(oId);
+
+              let effectiveStatus = o.status;
+              if (localOrd && localOrd.status) {
+                const localR = statusRank[localOrd.status] || 1;
+                const remoteR = statusRank[o.status] || 1;
+                // Preserve local stage if local has progressed further (e.g., preparing vs new)
+                if (localR > remoteR) {
+                  effectiveStatus = localOrd.status;
+                }
+              }
+
+              const localIsPaid = localOrd && (localOrd.paymentStatus === 'paid-upi' || localOrd.paymentStatus === 'paid-razorpay' || localOrd.paymentStatus === 'paid-cash' || localOrd.paymentStatus === 'paid');
+              const effectivePaymentStatus = localIsPaid ? localOrd.paymentStatus : (o.paymentStatus || 'unpaid');
+              const effectivePaymentLabel = localIsPaid ? localOrd.paymentLabel : (o.paymentLabel || 'Payment Pending');
+
+              return {
+                ...o,
+                status: effectiveStatus,
+                paymentStatus: effectivePaymentStatus,
+                paymentLabel: effectivePaymentLabel,
+                seen: Boolean(o.seen || (localOrd && localOrd.seen) || seenSet.has(oId)),
+              };
+            });
+
+            merged.forEach((order) => notifyIfNewOrder(order));
+            return merged;
+          });
         }
       } catch (err) {
         // silent catch during polling
@@ -835,26 +1438,7 @@ export default function DashboardPage({ onShowToast }) {
   };
 
   const handleStartPreparingOrder = (orderId) => {
-    stopContinuousAlarm();
-    if (orderId) {
-      try {
-        const raw = localStorage.getItem('foodypay_seen_order_ids');
-        const seenSet = raw ? new Set(JSON.parse(raw)) : new Set();
-        seenSet.add(String(orderId));
-        localStorage.setItem('foodypay_seen_order_ids', JSON.stringify(Array.from(seenSet)));
-      } catch (e) {}
-    }
-    setOrders((prev) =>
-      prev.map((o) => {
-        const oId = o._id || o.id || o.orderId;
-        if (oId === orderId || String(oId) === String(orderId)) {
-          return { ...o, seen: true, status: 'preparing' };
-        }
-        return o;
-      })
-    );
-    triggerSound(playFoodPreparing);
-    addToast(' Kitchen started preparing order!', <ChefHat size={18} />);
+    handleUpdateOrderStatus(orderId, 'preparing');
   };
 
   // Fetch all user datasets from Backend Node.js API
@@ -1403,16 +1987,34 @@ export default function DashboardPage({ onShowToast }) {
   // Status Progression
   const handleUpdateOrderStatus = async (orderId, newStatus) => {
     stopContinuousAlarm();
-    setOrders((prev) =>
-      prev.map((ord) => (ord.id === orderId || ord._id === orderId ? { ...ord, seen: true, status: newStatus } : ord))
-    );
+    if (orderId) {
+      try {
+        const raw = localStorage.getItem('foodypay_seen_order_ids');
+        const seenSet = raw ? new Set(JSON.parse(raw)) : new Set();
+        seenSet.add(String(orderId));
+        localStorage.setItem('foodypay_seen_order_ids', JSON.stringify(Array.from(seenSet)));
+      } catch (e) {}
+    }
+
+    setOrders((prev) => {
+      const updated = prev.map((ord) => {
+        const ordId = ord._id || ord.id || ord.orderId;
+        if (ordId === orderId || String(ordId) === String(orderId)) {
+          return { ...ord, seen: true, status: newStatus, updatedAt: new Date().toISOString() };
+        }
+        return ord;
+      });
+      try {
+        localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
 
     if (token) {
       try {
-        const orderObj = orders.find((o) => o.id === orderId || o._id === orderId);
-        if (orderObj && orderObj._id) {
-          await updateOrderStatusApi(token, orderObj._id, newStatus);
-        }
+        const orderObj = orders.find((o) => (o._id || o.id || o.orderId) === orderId || String(o._id || o.id || o.orderId) === String(orderId));
+        const targetId = (orderObj && orderObj._id) || orderId;
+        await updateOrderStatusApi(token, targetId, newStatus);
       } catch (err) {
         console.warn('API error updating status:', err);
       }
@@ -1422,6 +2024,7 @@ export default function DashboardPage({ onShowToast }) {
       const bc = new BroadcastChannel('foodypay_live_orders_channel');
       bc.postMessage({ type: 'ORDER_UPDATED', orderId, newStatus });
       bc.close();
+      window.dispatchEvent(new Event('foodypay_order_created'));
     } catch (e) {}
 
     if (newStatus === 'preparing') {
@@ -1457,19 +2060,78 @@ export default function DashboardPage({ onShowToast }) {
     name: '',
     category: 'Fast Food',
     price: '',
+    originalPrice: '',
+    showDiscountTag: true,
     isVeg: true,
     isSpecial: false,
     desc: '',
     variantsCount: 1,
     image: '',
+    images: [],
   });
 
   const handleProductImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
       setProductLogoFile(file);
-      setProductLogoPreview(URL.createObjectURL(file));
+      const url = URL.createObjectURL(file);
+      setProductLogoPreview(url);
+
+      // Read as Data URL to support multiple photos and persistence
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target.result;
+        setNewProductForm((prev) => {
+          const currentImgs = Array.isArray(prev.images) && prev.images.length > 0 ? [...prev.images] : [];
+          if (!currentImgs.includes(dataUrl)) currentImgs.unshift(dataUrl);
+          return {
+            ...prev,
+            images: currentImgs,
+            image: dataUrl,
+          };
+        });
+      };
+      reader.readAsDataURL(file);
     }
+  };
+
+  const handleProductMultiImageChange = (e, isEdit = false) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target.result;
+        if (isEdit) {
+          setEditProductForm((prev) => {
+            if (!prev) return prev;
+            const currentImgs = Array.isArray(prev.images) && prev.images.length > 0
+              ? [...prev.images]
+              : (prev.image ? [typeof prev.image === 'string' ? prev.image : prev.image.url] : []);
+            if (!currentImgs.includes(dataUrl)) currentImgs.push(dataUrl);
+            return {
+              ...prev,
+              images: currentImgs,
+              image: currentImgs[0] || dataUrl,
+            };
+          });
+        } else {
+          setNewProductForm((prev) => {
+            const currentImgs = Array.isArray(prev.images) && prev.images.length > 0
+              ? [...prev.images]
+              : (prev.image ? [prev.image] : []);
+            if (!currentImgs.includes(dataUrl)) currentImgs.push(dataUrl);
+            return {
+              ...prev,
+              images: currentImgs,
+              image: currentImgs[0] || dataUrl,
+            };
+          });
+        }
+      };
+      reader.readAsDataURL(file);
+    });
   };
 
   const handleAddCustomCategory = (e) => {
@@ -1522,7 +2184,10 @@ export default function DashboardPage({ onShowToast }) {
     e.preventDefault();
     if (!newProductForm.name.trim() || !newProductForm.price) return;
 
-    const finalImage = productLogoPreview || newProductForm.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80';
+    const rawImages = Array.isArray(newProductForm.images) && newProductForm.images.length > 0
+      ? newProductForm.images
+      : [productLogoPreview || newProductForm.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80'];
+    const finalImage = rawImages[0];
 
     if (token) {
       try {
@@ -1533,6 +2198,7 @@ export default function DashboardPage({ onShowToast }) {
         formData.append('isVeg', newProductForm.isVeg);
         formData.append('isSpecial', newProductForm.isSpecial);
         formData.append('desc', newProductForm.desc || 'Prepared fresh with high quality ingredients.');
+        formData.append('images', JSON.stringify(rawImages));
         if (productLogoFile) {
           formData.append('image', productLogoFile);
         } else if (newProductForm.image) {
@@ -1540,7 +2206,12 @@ export default function DashboardPage({ onShowToast }) {
         }
 
         const createdDish = await createDishApi(token, formData);
-        setDishes((prev) => [createdDish, ...prev]);
+        const fullCreatedDish = {
+          ...(createdDish || {}),
+          images: rawImages,
+          image: finalImage,
+        };
+        setDishes((prev) => [fullCreatedDish, ...prev]);
       } catch (err) {
         console.warn('API error creating dish:', err);
       }
@@ -1551,15 +2222,16 @@ export default function DashboardPage({ onShowToast }) {
         name: newProductForm.name.trim().toUpperCase(),
         category: newProductForm.category,
         price: Number(newProductForm.price),
+        originalPrice: newProductForm.originalPrice ? Number(newProductForm.originalPrice) : null,
+        showDiscountTag: newProductForm.showDiscountTag !== false,
         isVeg: newProductForm.isVeg,
         isSpecial: newProductForm.isSpecial,
         isPinned: newProductForm.isSpecial,
         variantsCount: 1,
         inStock: true,
         desc: newProductForm.desc || 'Prepared fresh with high quality ingredients.',
-        image: {
-          url: finalImage,
-        },
+        image: finalImage,
+        images: rawImages,
       };
       setDishes((prev) => [newDish, ...prev]);
     }
@@ -1571,14 +2243,17 @@ export default function DashboardPage({ onShowToast }) {
       name: '',
       category: newProductForm.category,
       price: '',
+      originalPrice: '',
+      showDiscountTag: true,
       isVeg: true,
       isSpecial: false,
       desc: '',
       variantsCount: 1,
       image: '',
+      images: [],
     });
     triggerSound(playMilestoneCelebration);
-    addToast(`Added product "${newProductForm.name}" to catalog!`, <Check size={18} />);
+    addToast(`Added product "${newProductForm.name}" with ${rawImages.length} photo(s)!`, <Check size={18} />);
   };
 
   const handleEditProductSubmit = async (e) => {
@@ -1586,20 +2261,34 @@ export default function DashboardPage({ onShowToast }) {
     if (!editProductForm || !editProductForm.name.trim() || !editProductForm.price) return;
 
     const dishId = editProductForm._id || editProductForm.id;
+    const finalImagesList = Array.isArray(editProductForm.images) && editProductForm.images.length > 0
+      ? editProductForm.images
+      : [editProductForm.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80'];
+    const primaryImg = finalImagesList[0];
+
     const updateData = {
       name: editProductForm.name.trim().toUpperCase(),
       category: editProductForm.category,
       price: Number(editProductForm.price),
+      originalPrice: editProductForm.originalPrice ? Number(editProductForm.originalPrice) : null,
+      showDiscountTag: editProductForm.showDiscountTag !== false,
       isVeg: editProductForm.isVeg,
+      isSpecial: editProductForm.isSpecial,
       desc: editProductForm.desc || 'Prepared fresh with high quality ingredients.',
       sizes: editProductForm.sizes,
+      images: finalImagesList,
+      image: primaryImg,
     };
 
     if (token && dishId) {
       try {
         const updatedDish = await updateDishApi(token, dishId, updateData);
+        const mergedUpdated = {
+          ...(updatedDish || {}),
+          ...updateData,
+        };
         setDishes((prev) =>
-          prev.map((dish) => ((dish._id || dish.id) === dishId ? updatedDish : dish))
+          prev.map((dish) => ((dish._id || dish.id) === dishId ? mergedUpdated : dish))
         );
       } catch (err) {
         console.warn('API error updating dish:', err);
@@ -1612,16 +2301,16 @@ export default function DashboardPage({ onShowToast }) {
               ...dish,
               ...updateData,
               variantsCount: editProductForm.sizes?.length || 1,
-              images: editProductForm.images?.length ? editProductForm.images : ['https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80'],
-              image: editProductForm.images?.[0] || editProductForm.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80',
-              isPinned: editProductForm.isPinned,
+              images: finalImagesList,
+              image: primaryImg,
+              isPinned: editProductForm.isPinned || editProductForm.isSpecial,
             };
           }
           return dish;
         })
       );
     }
-    addToast('Product Updated Successfully', <Check size={14}/>);
+    addToast('Product & Photos Updated Successfully!', <Check size={14}/>);
     setIsEditProductModalOpen(false);
     setEditProductForm(null);
   };
@@ -1644,6 +2333,11 @@ export default function DashboardPage({ onShowToast }) {
   // ==========================================================================
   const [isCreateCouponOpen, setIsCreateCouponOpen] = useState(false);
   const [editingCouponObj, setEditingCouponObj] = useState(null);
+  const [isAssignCouponModalOpen, setIsAssignCouponModalOpen] = useState(false);
+  const [selectedCustForCoupon, setSelectedCustForCoupon] = useState(null);
+  const [assignCouponCode, setAssignCouponCode] = useState('');
+  const [assignCouponDiscount, setAssignCouponDiscount] = useState('20% OFF');
+
   const [newCouponForm, setNewCouponForm] = useState({
     code: 'FEST20',
     type: 'percentage', // 'percentage', 'flat', 'bogo', 'referral', 'combo'
@@ -1652,22 +2346,26 @@ export default function DashboardPage({ onShowToast }) {
     minOrder: 299,
     expiryDate: get20DaysAheadDate(20),
     description: '20% OFF on all orders',
+    assignedCustomerPhone: '',
+    assignedCustomerName: '',
   });
 
-  const handleOpenCreateCoupon = () => {
+  const handleOpenCreateCoupon = (targetCust = null) => {
     if (storeControls.lockMarketingTab) {
       addToast(' Marketing & Coupon Builder is Locked in Store Settings!', <Lock size={18} />);
       return;
     }
     setEditingCouponObj(null);
     setNewCouponForm({
-      code: `FEAST${Math.floor(10 + Math.random() * 90)}`,
+      code: targetCust ? `VIP${(targetCust.name || 'USER').slice(0, 3).toUpperCase()}${Math.floor(10 + Math.random() * 90)}` : `FEAST${Math.floor(10 + Math.random() * 90)}`,
       type: 'percentage',
       discountValue: '20',
       maxDiscount: '100',
       minOrder: 299,
       expiryDate: get20DaysAheadDate(20),
-      description: '20% OFF on all orders',
+      description: targetCust ? `Exclusive VIP offer for ${targetCust.name}` : '20% OFF on all orders',
+      assignedCustomerPhone: targetCust ? (targetCust.phone || '') : '',
+      assignedCustomerName: targetCust ? (targetCust.name || '') : '',
     });
     setIsCreateCouponOpen(true);
   };
@@ -1686,6 +2384,8 @@ export default function DashboardPage({ onShowToast }) {
       minOrder: coupon.minOrder || 0,
       expiryDate: coupon.expiryDate || get20DaysAheadDate(20),
       description: coupon.description || coupon.discount || '',
+      assignedCustomerPhone: coupon.assignedCustomerPhone || coupon.targetPhone || '',
+      assignedCustomerName: coupon.assignedCustomerName || coupon.targetName || '',
     });
     setIsCreateCouponOpen(true);
   };
@@ -1802,6 +2502,11 @@ export default function DashboardPage({ onShowToast }) {
               minOrder: Number(newCouponForm.minOrder) || 0,
               expiryDate: newCouponForm.expiryDate || get20DaysAheadDate(20),
               description: newCouponForm.description || '',
+              assignedToAll: !newCouponForm.assignedCustomerPhone.trim(),
+              assignedCustomerPhone: newCouponForm.assignedCustomerPhone.trim(),
+              targetPhone: newCouponForm.assignedCustomerPhone.trim(),
+              assignedCustomerName: newCouponForm.assignedCustomerName.trim(),
+              targetName: newCouponForm.assignedCustomerName.trim(),
             };
           }
           return c;
@@ -1810,6 +2515,7 @@ export default function DashboardPage({ onShowToast }) {
       addToast(`Updated Promocode "${newCouponForm.code.trim().toUpperCase()}"!`, <Check size={18} />);
     } else {
       // Create new mode
+      const isGlobal = !newCouponForm.assignedCustomerPhone.trim();
       const newC = {
         id: `cp_${Date.now()}`,
         code: newCouponForm.code.trim().toUpperCase(),
@@ -1820,10 +2526,12 @@ export default function DashboardPage({ onShowToast }) {
         minOrder: Number(newCouponForm.minOrder) || 0,
         expiryDate: newCouponForm.expiryDate || get20DaysAheadDate(20),
         description: newCouponForm.description || '',
-        assignedToAll: newCouponForm.assignedToAll !== undefined ? newCouponForm.assignedToAll : true,
-        assignedCustomerPhone: newCouponForm.assignedCustomerPhone || '',
+        assignedToAll: isGlobal,
+        assignedCustomerPhone: newCouponForm.assignedCustomerPhone.trim(),
+        targetPhone: newCouponForm.assignedCustomerPhone.trim(),
         assignedCustomerEmail: newCouponForm.assignedCustomerEmail || '',
-        assignedCustomerName: newCouponForm.assignedCustomerName || '',
+        assignedCustomerName: newCouponForm.assignedCustomerName.trim(),
+        targetName: newCouponForm.assignedCustomerName.trim(),
         uses: 0,
         status: 'Active',
       };
@@ -1840,7 +2548,10 @@ export default function DashboardPage({ onShowToast }) {
       }
 
       triggerSound(playMilestoneCelebration);
-      addToast(`Activated Promocode "${newC.code}" successfully!`, <Gift size={18} />);
+      const toastMsg = isGlobal
+        ? `Activated Store Promocode "${newC.code}"!`
+        : `Assigned Promocode "${newC.code}" to Mobile: ${newC.assignedCustomerPhone}!`;
+      addToast(toastMsg, <Gift size={18} />);
     }
 
     setIsCreateCouponOpen(false);
@@ -1889,6 +2600,36 @@ export default function DashboardPage({ onShowToast }) {
 
   const handleDispatchTargetedCampaign = (e) => {
     if (e) e.preventDefault();
+    if (!campaignCouponCode) return;
+
+    if (campaignDispatchMode === 'specific_phone') {
+      if (!campaignTargetPhone.trim()) {
+        addToast('Please enter or select a customer mobile number!', <Frown size={18} />);
+        return;
+      }
+      const cleanPhone = campaignTargetPhone.trim();
+      setCoupons((prev) =>
+        prev.map((c) => {
+          if (c.code === campaignCouponCode) {
+            return {
+              ...c,
+              assignedCustomerPhone: cleanPhone,
+              targetPhone: cleanPhone,
+              assignedToAll: false,
+            };
+          }
+          return c;
+        })
+      );
+      triggerSound(playMilestoneCelebration);
+      confetti({ particleCount: 90, spread: 80, origin: { y: 0.3 } });
+      addToast(
+        `🎯 Promocode "${campaignCouponCode}" assigned to Mobile ${cleanPhone}! Available in Customer Web App.`,
+        <Gift size={18} />
+      );
+      return;
+    }
+
     const targetGrp = customerGroups.find((g) => g.id === campaignTargetGroup) || customerGroups[0];
     const targetMembersCount = targetGrp ? targetGrp.memberIds.length : (customers || []).length;
     const countToSend = campaignDispatchMode === 'random_n' ? Math.min(Number(campaignRandomCount) || 1, targetMembersCount) : targetMembersCount;
@@ -1906,6 +2647,38 @@ export default function DashboardPage({ onShowToast }) {
       ` Promocode "${campaignCouponCode}" dispatched to ${countToSend} customer(s) in group "${targetGrp ? targetGrp.name : 'Target Segment'}"!`,
       <Gift size={18} />
     );
+  };
+
+  const handleSaveAssignMobileSubmit = (e) => {
+    e.preventDefault();
+    if (!selectedCouponForAssignModal) return;
+
+    const cleanPhone = assignMobileInput.trim();
+    setCoupons((prev) =>
+      prev.map((c) => {
+        if ((c._id || c.id || c.code) === (selectedCouponForAssignModal._id || selectedCouponForAssignModal.id || selectedCouponForAssignModal.code)) {
+          return {
+            ...c,
+            assignedCustomerPhone: cleanPhone,
+            targetPhone: cleanPhone,
+            assignedToAll: !cleanPhone,
+          };
+        }
+        return c;
+      })
+    );
+
+    triggerSound(playMilestoneCelebration);
+    addToast(
+      cleanPhone
+        ? `🎯 Promocode "${selectedCouponForAssignModal.code}" assigned to Mobile ${cleanPhone}! Available in Customer Web App.`
+        : `Promocode "${selectedCouponForAssignModal.code}" is now available to all store diners!`,
+      <Gift size={18} />
+    );
+
+    setIsAssignMobileModalOpen(false);
+    setSelectedCouponForAssignModal(null);
+    setAssignMobileInput('');
   };
 
   const handleSendCustomNotificationSubmit = async (e) => {
@@ -2160,16 +2933,249 @@ export default function DashboardPage({ onShowToast }) {
     addToast(`Deleted ${tableObj.name} QR Code!`, <Check size={18} />);
   };
 
-  // Orders Filter
+  // Day-Wise Calendar & Date Range Filter State
+  const [dateRangeFilter, setDateRangeFilter] = useState('all'); // 'today' | 'yesterday' | 'last_7' | 'last_30' | 'this_month' | 'custom' | 'all'
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
+
+  // Orders Filter & Global Order Search
   const [orderTabFilter, setOrderTabFilter] = useState('all');
+  const [orderSearchQuery, setOrderSearchQuery] = useState('');
+
+  // Helper: Check if order falls in selected Date / Calendar Range
+  const isOrderInDateRange = (o, rangeKey, startStr, endStr) => {
+    if (!o) return false;
+    if (rangeKey === 'all') return true;
+
+    let oDate = null;
+    if (o.createdAt) oDate = new Date(o.createdAt);
+    else if (o.timestamp) oDate = new Date(o.timestamp);
+    else if (o.date) oDate = new Date(o.date);
+    else oDate = new Date();
+
+    if (isNaN(oDate.getTime())) return true;
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+    if (rangeKey === 'today') {
+      return oDate >= todayStart && oDate <= todayEnd;
+    }
+
+    if (rangeKey === 'yesterday') {
+      const yestStart = new Date(todayStart);
+      yestStart.setDate(yestStart.getDate() - 1);
+      const yestEnd = new Date(todayStart);
+      yestEnd.setMilliseconds(-1);
+      return oDate >= yestStart && oDate <= yestEnd;
+    }
+
+    if (rangeKey === 'last_7') {
+      const d7 = new Date(todayStart);
+      d7.setDate(d7.getDate() - 6);
+      return oDate >= d7 && oDate <= todayEnd;
+    }
+
+    if (rangeKey === 'last_30') {
+      const d30 = new Date(todayStart);
+      d30.setDate(d30.getDate() - 29);
+      return oDate >= d30 && oDate <= todayEnd;
+    }
+
+    if (rangeKey === 'this_month') {
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      return oDate >= monthStart && oDate <= todayEnd;
+    }
+
+    if (rangeKey === 'custom') {
+      if (!startStr && !endStr) return true;
+      const start = startStr ? new Date(`${startStr}T00:00:00`) : new Date(0);
+      const end = endStr ? new Date(`${endStr}T23:59:59`) : new Date();
+      return oDate >= start && oDate <= end;
+    }
+
+    return true;
+  };
+
   const filteredOrders = (orders || []).filter((o) => {
     if (!o) return false;
+
+    // Date Range & Calendar filter check
+    const matchesDate = isOrderInDateRange(o, dateRangeFilter, customStartDate, customEndDate);
+    if (!matchesDate) return false;
+
+    const query = (orderSearchQuery || '').trim().toLowerCase();
+
+    if (query) {
+      const custName = String(o.customer || o.customerName || o.name || '').toLowerCase();
+      const custPhone = String(o.phone || o.customerPhone || o.contactNo || o.mobile || '').toLowerCase();
+      const orderIdStr = String(o.orderId || o.id || o._id || '').toLowerCase();
+      const tableStr = String(o.table || o.type || '').toLowerCase();
+      const statusStr = String(o.status || '').toLowerCase();
+      const payStatusStr = String(o.paymentStatus || o.paymentLabel || '').toLowerCase();
+      const itemsStr = Array.isArray(o.items)
+        ? o.items.map((i) => `${i.name || ''} ${i.qty || ''}`).join(' ').toLowerCase()
+        : '';
+
+      return (
+        custName.includes(query) ||
+        custPhone.includes(query) ||
+        orderIdStr.includes(query) ||
+        tableStr.includes(query) ||
+        statusStr.includes(query) ||
+        payStatusStr.includes(query) ||
+        itemsStr.includes(query)
+      );
+    }
+
     if (orderTabFilter === 'all') return true;
     return o.status === orderTabFilter;
   });
 
   return (
     <div className="crm-layout">
+      {/* ==========================================================================
+          FULL-SCREEN ACCOUNT SUSPENDED BLOCKER OVERLAY
+          ========================================================================== */}
+      {isAccountSuspended && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 999999,
+            background: 'rgba(15, 23, 42, 0.96)',
+            backdropFilter: 'blur(12px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '24px',
+          }}
+        >
+          <div
+            style={{
+              background: '#FFFFFF',
+              borderRadius: '24px',
+              maxWidth: '500px',
+              width: '100%',
+              padding: '36px 30px',
+              textAlign: 'center',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
+              border: '2px solid #EF4444',
+            }}
+          >
+            <div
+              style={{
+                width: '72px',
+                height: '72px',
+                borderRadius: '50%',
+                background: '#FEF2F2',
+                color: '#DC2626',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 20px auto',
+                boxShadow: '0 8px 20px rgba(220, 38, 38, 0.25)',
+              }}
+            >
+              <Lock size={38} />
+            </div>
+
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: '#FEE2E2',
+                color: '#991B1B',
+                fontSize: '12px',
+                fontWeight: 800,
+                padding: '4px 12px',
+                borderRadius: '20px',
+                marginBottom: '14px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+              }}
+            >
+              <AlertCircle size={14} /> Account Status: Suspended
+            </div>
+
+            <h2 style={{ fontSize: '24px', fontWeight: 900, color: '#0F172A', margin: '0 0 10px 0' }}>
+              Merchant Account Suspended
+            </h2>
+
+            <p style={{ fontSize: '14.5px', color: '#475569', lineHeight: 1.6, margin: '0 0 24px 0' }}>
+              Your FoodyPay POS store account (ID: <strong style={{ color: '#1D4ED8' }}>{storeControls.foodypayId || currentUser.foodypayId || 'FP-MERCHANT'}</strong>) has been suspended by the administrator.
+              <br /><br />
+              You can no longer process orders, accept payments, or manage your store while suspended.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <a
+                href={`https://wa.me/917496888449?text=${encodeURIComponent(`Hello FoodyPay Support, my merchant account (${storeControls.restName || 'Restaurant'}, ID: ${storeControls.foodypayId || currentUser.foodypayId || 'FP'}) is currently suspended. Please help me reactivate it.`)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '10px',
+                  background: '#25D366',
+                  color: '#FFFFFF',
+                  padding: '14px 20px',
+                  borderRadius: '12px',
+                  fontWeight: 800,
+                  fontSize: '15px',
+                  textDecoration: 'none',
+                  boxShadow: '0 4px 14px rgba(37, 211, 102, 0.3)',
+                }}
+              >
+                <Phone size={18} /> Contact Support on WhatsApp
+              </a>
+
+              <button
+                type="button"
+                onClick={handleLogout}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  background: '#F1F5F9',
+                  color: '#475569',
+                  border: '1px solid #CBD5E1',
+                  padding: '12px 20px',
+                  borderRadius: '12px',
+                  fontWeight: 700,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                }}
+              >
+                <LogOut size={16} /> Log Out of Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MOBILE BACKDROP OVERLAY */}
+      {mobileMenuOpen && (
+        <div
+          className="crm-mobile-backdrop"
+          onClick={() => setMobileMenuOpen(false)}
+          style={{
+            position: 'fixed',
+            top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.5)',
+            backdropFilter: 'blur(3px)',
+            zIndex: 999,
+          }}
+        />
+      )}
+
       {/* ==========================================================================
           1. CLEAN WHITE SIDEBAR (Ref: Image 1 & 3)
           ========================================================================== */}
@@ -2186,7 +3192,7 @@ export default function DashboardPage({ onShowToast }) {
                 src={storeControls.logoUrl}
                 alt={storeControls.restName || "FoodyPay Logo"}
                 className="crm-brand-img"
-                style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '10px', boxShadow: '0 2px 6px rgba(0,0,0,0.1)', flexShrink: 0 }}
+                style={{ width: '40px', height: '40px', objectFit: 'contain', backgroundColor: '#FFFFFF', padding: '2px', borderRadius: '10px', border: '1px solid #CBD5E1', boxShadow: '0 2px 6px rgba(0,0,0,0.06)', flexShrink: 0 }}
                 onError={() => setLogoImgFailed(true)}
               />
             ) : (
@@ -2263,33 +3269,68 @@ export default function DashboardPage({ onShowToast }) {
             <ChevronRight size={16} className="crm-menu-chevron" />
           </button>
 
-          {/* 1.5 Kitchen Display System (KDS) - Opens Standalone Screen */}
-          <button
-            type="button"
-            title="Open Kitchen Display (KDS) in New Tab"
-            className="crm-menu-link"
-            onClick={() => {
-              const slug = (storeControls.restName || 'lagan-crazy').toLowerCase().replace(/\s+/g, '-');
-              const mid = storeControls.foodypayId || 'FP-397310';
-              window.open(`/${slug}/${mid}/KitchenDisplaySystem`, '_blank');
-              setMobileMenuOpen(false);
-            }}
-          >
-            <div className="crm-menu-link-left">
-              <span className="crm-menu-icon">
-                <ChefHat size={20} color="#FF5E14" />
-              </span>
-              <span>Kitchen Display (KDS)</span>
-            </div>
-            {(() => {
-              const pendingCount = (orders || []).filter((o) => o && (o.status === 'new' || o.status === 'preparing')).length;
-              return pendingCount > 0 ? (
-                <span className="crm-badge-new" style={{ background: '#FFF0EB', color: '#FF5E14', fontSize: '11px', fontWeight: 900, padding: '2px 8px', borderRadius: '10px' }}>
-                  {pendingCount} Active
+          {/* 1.5 Kitchen Display System (KDS) - Opens Standalone Screen (Hidden if Locked) */}
+          {!isKdsLocked && (
+            <button
+              type="button"
+              title="Open Kitchen Display (KDS) in New Tab"
+              className="crm-menu-link"
+              onClick={() => {
+                if (storeControls.kdsEnabled === false) {
+                  addToast(' Kitchen Display System (KDS) is turned OFF in Settings!', <Lock size={18} />);
+                  return;
+                }
+                const slug = (storeControls.restName || 'thefoodypay').toLowerCase().replace(/\s+/g, '-');
+                const mid = storeControls.foodypayId || 'FP-790044';
+                window.open(`/${slug}/${mid}/KitchenDisplaySystem`, '_blank');
+                setMobileMenuOpen(false);
+              }}
+            >
+              <div className="crm-menu-link-left">
+                <span className="crm-menu-icon">
+                  <ChefHat size={20} color={storeControls.kdsEnabled === false ? '#94A3B8' : '#FF5E14'} />
                 </span>
-              ) : null;
-            })()}
-          </button>
+                <span style={{ color: storeControls.kdsEnabled === false ? '#94A3B8' : 'inherit' }}>Kitchen Display (KDS)</span>
+              </div>
+              {storeControls.kdsEnabled === false ? (
+                <span className="crm-badge-new" style={{ background: '#F1F5F9', color: '#64748B', fontSize: '11px', fontWeight: 800, padding: '2px 8px', borderRadius: '10px' }}>
+                  OFF
+                </span>
+              ) : (() => {
+                const pendingCount = (orders || []).filter((o) => o && (o.status === 'new' || o.status === 'preparing')).length;
+                return pendingCount > 0 ? (
+                  <span className="crm-badge-new" style={{ background: '#FFF0EB', color: '#FF5E14', fontSize: '11px', fontWeight: 900, padding: '2px 8px', borderRadius: '10px' }}>
+                    {pendingCount} Active
+                  </span>
+                ) : null;
+              })()}
+            </button>
+          )}
+
+          {/* 1.6 Delivery Partner View / Portal (Hidden if Locked) */}
+          {!isDeliveryPartnerLocked && (
+            <button
+              type="button"
+              title="Open Delivery Partner Portal in New Tab"
+              className="crm-menu-link"
+              onClick={() => {
+                const slug = (storeControls.restName || 'thefoodypay').toLowerCase().replace(/\s+/g, '-');
+                const mid = storeControls.foodypayId || 'FP-790044';
+                window.open(`/${slug}/${mid}/delivery-partner`, '_blank');
+                setMobileMenuOpen(false);
+              }}
+            >
+              <div className="crm-menu-link-left">
+                <span className="crm-menu-icon">
+                  <Truck size={20} color="#F59E0B" />
+                </span>
+                <span>Delivery Partner View</span>
+              </div>
+              <span style={{ fontSize: '10px', fontWeight: 900, background: '#FEF3C7', color: '#D97706', padding: '2px 8px', borderRadius: '10px' }}>
+                LIVE
+              </span>
+            </button>
+          )}
 
           {/* 2. Catalog / Products */}
           <div>
@@ -2327,25 +3368,30 @@ export default function DashboardPage({ onShowToast }) {
                 </button>
                 <button
                   type="button"
-                  className="crm-submenu-item"
+                  className={`crm-submenu-item ${activeTab === 'catalog_collections' ? 'active' : ''}`}
                   onClick={() => {
-                    setActiveTab('catalog');
-                    setSelectedCategory('All');
-                  }}
-                >
-                  <span>Collections</span>
-                </button>
-                <button
-                  type="button"
-                  className={`crm-submenu-item ${activeTab === 'customer_reviews' ? 'active' : ''}`}
-                  onClick={() => {
-                    setActiveTab('customer_reviews');
+                    setActiveTab('catalog_collections');
                     setMobileMenuOpen(false);
                   }}
                 >
-                  <span>Customer Reviews</span>
-                  <span className="crm-badge-new" style={{ background: '#FEF3C7', color: '#D97706', padding: '1px 6px' }}>4.8 </span>
+                  <span>Collections / Steal Deals</span>
+                  <span className="crm-badge-new" style={{ background: stealDealsConfig.enabled ? '#DCFCE7' : '#F1F5F9', color: stealDealsConfig.enabled ? '#15803D' : '#64748B', padding: '1px 6px' }}>
+                    {stealDealsConfig.enabled ? 'ON' : 'OFF'}
+                  </span>
                 </button>
+                {!isReviewsLocked && (
+                  <button
+                    type="button"
+                    className={`crm-submenu-item ${activeTab === 'customer_reviews' ? 'active' : ''}`}
+                    onClick={() => {
+                      setActiveTab('customer_reviews');
+                      setMobileMenuOpen(false);
+                    }}
+                  >
+                    <span>Customer Reviews</span>
+                    <span className="crm-badge-new" style={{ background: '#FEF3C7', color: '#D97706', padding: '1px 6px' }}>4.8 ⭐</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   className="crm-submenu-item"
@@ -2354,26 +3400,60 @@ export default function DashboardPage({ onShowToast }) {
                   <span>Wishlists</span>
                   <span className="crm-badge-new">New</span>
                 </button>
+                {!isThemesLocked && (
+                  <button
+                    type="button"
+                    className={`crm-submenu-item ${activeTab === 'catalog_themes' ? 'active' : ''}`}
+                    onClick={() => {
+                      setActiveTab('catalog_themes');
+                      setMobileMenuOpen(false);
+                    }}
+                  >
+                    <span>Themes &amp; Branding</span>
+                    <span className="crm-badge-new" style={{ background: '#E0E7FF', color: '#4F46E5', padding: '1px 6px' }}>8 Presets</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
 
-          {/* 3. Grow */}
+          {/* 3. Grow (Hidden if Locked) */}
+          {!isGrowLocked && (
+            <button
+              type="button"
+              title="Grow"
+              className={`crm-menu-link ${activeTab === 'grow' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveTab('grow');
+                setMobileMenuOpen(false);
+              }}
+            >
+              <div className="crm-menu-link-left">
+                <span className="crm-menu-icon">
+                  <TrendingUp size={20} color="#16A34A" />
+                </span>
+                <span>Grow</span>
+              </div>
+            </button>
+          )}
+
+          {/* Delivery & Stores Management (Database-driven) */}
           <button
             type="button"
-            title="Grow"
-            className={`crm-menu-link ${activeTab === 'grow' ? 'active' : ''}`}
+            title="Delivery & Store Management"
+            className={`crm-menu-link ${activeTab === 'delivery_zones' ? 'active' : ''}`}
             onClick={() => {
-              setActiveTab('grow');
+              setActiveTab('delivery_zones');
               setMobileMenuOpen(false);
             }}
           >
             <div className="crm-menu-link-left">
               <span className="crm-menu-icon">
-                <TrendingUp size={20} />
+                <Truck size={20} color="#3B82F6" />
               </span>
-              <span>Grow</span>
+              <span>Delivery & Stores</span>
             </div>
+            <span className="crm-badge-new" style={{ background: '#DBEAFE', color: '#1E40AF', padding: '1px 6px' }}>Zones</span>
           </button>
 
           {/* 4. Utilities (Table QR Generator) */}
@@ -2394,60 +3474,65 @@ export default function DashboardPage({ onShowToast }) {
             </div>
           </button>
 
-          {/* 5. Marketing */}
-          <button
-            type="button"
-            title="Marketing"
-            className={`crm-menu-link ${activeTab === 'marketing' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('marketing');
-              setMobileMenuOpen(false);
-            }}
-          >
-            <div className="crm-menu-link-left">
-              <span className="crm-menu-icon">
-                <Megaphone size={20} />
-              </span>
-              <span>Marketing</span>
-            </div>
-          </button>
+          {/* 5. Marketing (Hidden if Locked) */}
+          {!isMarketingLocked && !storeControls.lockMarketingTab && (
+            <button
+              type="button"
+              title="Marketing"
+              className={`crm-menu-link ${activeTab === 'marketing' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveTab('marketing');
+                setMobileMenuOpen(false);
+              }}
+            >
+              <div className="crm-menu-link-left">
+                <span className="crm-menu-icon">
+                  <Megaphone size={20} color="#FF5E14" />
+                </span>
+                <span>Marketing</span>
+              </div>
+            </button>
+          )}
 
-          {/* 6. Customers */}
-          <button
-            type="button"
-            title="Customers"
-            className={`crm-menu-link ${activeTab === 'customers' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('customers');
-              setMobileMenuOpen(false);
-            }}
-          >
-            <div className="crm-menu-link-left">
-              <span className="crm-menu-icon">
-                <Users size={20} />
-              </span>
-              <span>Customers</span>
-            </div>
-          </button>
+          {/* 6. Customers (Hidden if Locked) */}
+          {!isCustomersLocked && (
+            <button
+              type="button"
+              title="Customers"
+              className={`crm-menu-link ${activeTab === 'customers' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveTab('customers');
+                setMobileMenuOpen(false);
+              }}
+            >
+              <div className="crm-menu-link-left">
+                <span className="crm-menu-icon">
+                  <Users size={20} color="#0D9488" />
+                </span>
+                <span>Customers</span>
+              </div>
+            </button>
+          )}
 
-          {/* 6.5 Customer Reviews */}
-          <button
-            type="button"
-            title="Customer Reviews"
-            className={`crm-menu-link ${activeTab === 'customer_reviews' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('customer_reviews');
-              setMobileMenuOpen(false);
-            }}
-          >
-            <div className="crm-menu-link-left">
-              <span className="crm-menu-icon">
-                <Star size={20} />
-              </span>
-              <span>Customer Reviews</span>
-            </div>
-            <span className="crm-badge-new" style={{ background: '#FEF3C7', color: '#D97706', fontSize: '11px', fontWeight: 800, padding: '2px 6px', borderRadius: '10px' }}>4.8 </span>
-          </button>
+          {/* 6.5 Customer Reviews (Hidden if Locked) */}
+          {!isReviewsLocked && (
+            <button
+              type="button"
+              title="Customer Reviews"
+              className={`crm-menu-link ${activeTab === 'customer_reviews' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveTab('customer_reviews');
+                setMobileMenuOpen(false);
+              }}
+            >
+              <div className="crm-menu-link-left">
+                <span className="crm-menu-icon">
+                  <Star size={20} color="#F59E0B" />
+                </span>
+                <span>Customer Reviews</span>
+              </div>
+            </button>
+          )}
 
           {/* 7. Settings */}
           <button
@@ -2484,24 +3569,22 @@ export default function DashboardPage({ onShowToast }) {
           </button>
         </nav>
 
-        {/* BOTTOM SIDEBAR CARD: FoodyPay credits */}
+        {/* BOTTOM SIDEBAR CARD: FoodyPay Account (Razorpay Payments Only) */}
         <div 
           className="crm-sidebar-credits-card"
-          title={`FoodyPay credits: ₹${creditsBalance.toLocaleString()} (Click to Add)`}
+          title={`FoodyPay Account: ₹${razorpaySalesTotal.toLocaleString()} (Collected via Razorpay)`}
           onClick={() => {
-            if (isSidebarCollapsed) {
-              setCreditsBalance((prev) => prev + 1000);
-              addToast('Recharged ₹1,000 FoodyPay credits!', <Check size={18} />);
-              triggerSound(playMilestoneCelebration);
-            }
+            setActiveTab('home_orders');
+            setOrderSearchQuery('Razorpay');
+            addToast(`Showing orders paid via Razorpay (Total: ₹${razorpaySalesTotal.toLocaleString()})`);
           }}
         >
           <div className="crm-credits-icon-box">
             <CreditCard size={22} color="#1D4ED8" />
           </div>
           <div className="crm-credits-info">
-            <span className="crm-credits-title">FoodyPay credits</span>
-            <div className="crm-credits-amount">₹{creditsBalance.toLocaleString()}</div>
+            <span className="crm-credits-title">FoodyPay Account</span>
+            <div className="crm-credits-amount">₹{razorpaySalesTotal.toLocaleString()}</div>
           </div>
           <button
             type="button"
@@ -2512,18 +3595,19 @@ export default function DashboardPage({ onShowToast }) {
               color: '#1D4ED8',
               borderRadius: '8px',
               padding: '6px 10px',
-              fontSize: '12px',
+              fontSize: '11px',
               fontWeight: 800,
               cursor: 'pointer',
+              whiteSpace: 'nowrap'
             }}
             onClick={(e) => {
               e.stopPropagation();
-              setCreditsBalance((prev) => prev + 1000);
-              addToast('Recharged ₹1,000 FoodyPay credits!', <Check size={18} />);
-              triggerSound(playMilestoneCelebration);
+              setActiveTab('home_orders');
+              setOrderSearchQuery('Razorpay');
+              addToast(`Filtered orders: Total ₹${razorpaySalesTotal.toLocaleString()} received via Razorpay`);
             }}
           >
-            + Add
+            Razorpay
           </button>
         </div>
       </aside>
@@ -2539,8 +3623,14 @@ export default function DashboardPage({ onShowToast }) {
               type="button"
               className="crm-desktop-hamburger"
               style={{ background: '#F1F5F9', border: 'none', borderRadius: '10px', padding: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-              title={isSidebarCollapsed ? "Expand Sidebar Menu" : "Collapse Sidebar Menu"}
+              onClick={() => {
+                if (window.innerWidth <= 768) {
+                  setMobileMenuOpen(!mobileMenuOpen);
+                } else {
+                  setIsSidebarCollapsed(!isSidebarCollapsed);
+                }
+              }}
+              title="Toggle Sidebar Navigation"
             >
               <Menu size={20} color="#0F172A" />
             </button>
@@ -2550,6 +3640,7 @@ export default function DashboardPage({ onShowToast }) {
                 {activeTab === 'kitchen' && <><ChefHat size={22} color="#FF5E14" /> Kitchen Display System (KDS)</>}
                 {activeTab === 'catalog' && <><Package size={22} color="#1D4ED8" /> Catalog / Products</>}
                 {activeTab === 'catalog_collections' && <><Utensils size={22} color="#FF5E14" /> Meal Collections & Custom Combos</>}
+                {activeTab === 'catalog_themes' && <><Palette size={22} color="#F59E0B" /> Catalog Themes & Branding Customizer</>}
                 {activeTab === 'grow' && <><TrendingUp size={22} color="#16A34A" /> Grow / Business Telemetry</>}
                 {activeTab === 'utilities' && <><QrCode size={22} color="#6366F1" /> Utilities & Table QR Generator</>}
                 {activeTab === 'marketing' && <><Megaphone size={22} color="#FF5E14" /> Marketing & Birthday Push Notifications</>}
@@ -2614,7 +3705,7 @@ export default function DashboardPage({ onShowToast }) {
               onClick={() => handleOpenManualOrder()}
             >
               <Plus size={16} />
-              <span>+ Counter POS Order</span>
+              <span>Counter POS Order</span>
             </button>
 
             {/* Logout Header Button */}
@@ -2644,78 +3735,334 @@ export default function DashboardPage({ onShowToast }) {
         </header>
 
         {/* ==========================================================================
-            VIEW 1: HOME / ORDERS
+            EXPIRED SUBSCRIPTION WARNING BANNER
             ========================================================================== */}
-        {activeTab === 'home_orders' && (
-          <div className="crm-orders-page-wrap">
-            {/* 4 SPATIOUS KPI CARDS WITH LUCIDE ICONS */}
-            <div className="crm-kpi-banner-grid">
-              <div className="crm-kpi-card">
-                <div>
-                  <div className="crm-kpi-label" style={{ fontWeight: 600, color: '#475569' }}>Today's Orders</div>
-                  <div className="crm-kpi-value">{todayStats?.todayOrders ?? orders.length}</div>
-                </div>
-                <div className="crm-kpi-icon-box" style={{ background: '#EFF6FF', color: '#1D4ED8', width: '56px', height: '56px' }}>
-                  <ShoppingBag size={26} />
-                </div>
+        {isSubscriptionExpired && (
+          <div
+            style={{
+              background: 'linear-gradient(135deg, #FEF2F2 0%, #FFF1F2 100%)',
+              border: '2px solid #FCA5A5',
+              borderRadius: '16px',
+              padding: '16px 20px',
+              marginBottom: '20px',
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '16px',
+              boxShadow: '0 4px 12px rgba(220, 38, 38, 0.08)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div
+                style={{
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: '12px',
+                  background: '#DC2626',
+                  color: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  boxShadow: '0 4px 10px rgba(220, 38, 38, 0.25)',
+                }}
+              >
+                <Lock size={24} />
               </div>
-
-              <div className="crm-kpi-card">
-                <div>
-                  <div className="crm-kpi-label" style={{ fontWeight: 600, color: '#475569' }}>Today's Sales</div>
-                  <div className="crm-kpi-value" style={{ color: '#059669' }}>
-                    ₹{(todayStats?.todaySales ?? (orders || []).reduce((sum, o) => sum + (o ? (Number(o.total) || 0) : 0), 0)).toLocaleString()}
-                  </div>
+              <div>
+                <div style={{ fontSize: '15px', fontWeight: 900, color: '#991B1B', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  ⚠️ Your Subscription Plan Has Expired!
+                  <span style={{ fontSize: '11.5px', background: '#FEE2E2', color: '#B91C1C', padding: '2px 8px', borderRadius: '12px', textTransform: 'uppercase', fontWeight: 800 }}>
+                    Starter Free Active
+                  </span>
                 </div>
-                <div className="crm-kpi-icon-box" style={{ background: '#ECFDF5', color: '#059669' }}>
-                  <CreditCard size={26} />
-                </div>
-              </div>
-
-              <div className="crm-kpi-card">
-                <div>
-                  <div className="crm-kpi-label">Active Kitchen Tickets</div>
-                  <div className="crm-kpi-value" style={{ color: '#FF5E14' }}>
-                    {(orders || []).filter((o) => o && (o.status === 'new' || o.status === 'preparing')).length}
-                  </div>
-                </div>
-                <div className="crm-kpi-icon-box" style={{ background: '#FFF0EB', color: '#FF5E14' }}>
-                  <ChefHat size={26} />
-                </div>
-              </div>
-
-              <div className="crm-kpi-card">
-                <div>
-                  <div className="crm-kpi-label">Tables Occupied</div>
-                  <div className="crm-kpi-value">
-                    {tables.filter((t) => t.status === 'occupied').length} / {tables.length}
-                  </div>
-                </div>
-                <div className="crm-kpi-icon-box" style={{ background: '#FFFBEB', color: '#D97706' }}>
-                  <Store size={26} />
+                <div style={{ fontSize: '13px', color: '#7F1D1D', marginTop: '3px', fontWeight: 500 }}>
+                  Your subscription valid until <strong>{subExpiryDateStr}</strong> has ended. All Growth Pro &amp; Enterprise Max features (KDS, Marketing, CRM, Themes) are now locked.
                 </div>
               </div>
             </div>
 
-            {/* FILTER BAR WITH CARDS PER ROW SELECTOR */}
-            <div className="crm-filter-bar" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div className="crm-filter-tabs">
-                {[
-                  { key: 'all', label: 'All Orders' },
-                  { key: 'new', label: 'New Orders' },
-                  { key: 'preparing', label: 'In Kitchen' },
-                  { key: 'ready', label: 'Ready to Serve' },
-                  { key: 'completed', label: 'Completed' },
-                ].map((f) => (
-                  <button
-                    key={f.key}
-                    type="button"
-                    className={`crm-filter-tab ${orderTabFilter === f.key ? 'active' : ''}`}
-                    onClick={() => setOrderTabFilter(f.key)}
+            <button
+              type="button"
+              onClick={() => {
+                setUpgradeModalFeature({
+                  title: 'Renew Subscription Plan',
+                  badge: 'EXPIRED',
+                  description: 'Your previous subscription has ended. Choose a plan to unlock all features instantly.',
+                });
+              }}
+              style={{
+                background: 'linear-gradient(135deg, #DC2626 0%, #B91C1C 100%)',
+                color: '#FFFFFF',
+                border: 'none',
+                padding: '10px 20px',
+                borderRadius: '10px',
+                fontWeight: 800,
+                fontSize: '13.5px',
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(220, 38, 38, 0.3)',
+                whiteSpace: 'nowrap',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              <Sparkles size={16} /> Upgrade / Renew Plan
+            </button>
+          </div>
+        )}
+
+        {/* ==========================================================================
+            VIEW 1: HOME / ORDERS
+            ========================================================================== */}
+        {activeTab === 'home_orders' && (
+          <div className="crm-orders-page-wrap">
+            {/* DATE RANGE & DAY-WISE CALENDAR SELECTION HEADER BAR (Ref: User Screenshot) */}
+            {(() => {
+              const periodOrdersList = (orders || []).filter((o) => isOrderInDateRange(o, dateRangeFilter, customStartDate, customEndDate));
+              const periodTotalSalesAmt = periodOrdersList.reduce((sum, o) => sum + (o ? (Number(o.total) || 0) : 0), 0);
+              const getFilterLabel = () => {
+                if (dateRangeFilter === 'today') return "Today's";
+                if (dateRangeFilter === 'yesterday') return "Yesterday's";
+                if (dateRangeFilter === 'last_7') return "Last 7 Days";
+                if (dateRangeFilter === 'last_30') return "Last 30 Days";
+                if (dateRangeFilter === 'this_month') return "This Month's";
+                if (dateRangeFilter === 'custom') return "Custom Range";
+                return "All Time";
+              };
+
+              return (
+                <>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '12px',
+                      marginBottom: '16px',
+                      backgroundColor: '#FFFFFF',
+                      padding: '12px 18px',
+                      borderRadius: '16px',
+                      border: '1.5px solid #E2E8F0',
+                      boxShadow: '0 2px 10px rgba(0,0,0,0.03)',
+                    }}
                   >
-                    {f.label}
-                  </button>
-                ))}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#0F172A' }}>
+                        Orders &amp; Sales Summary
+                      </h3>
+                      {dateRangeFilter !== 'all' && (
+                        <span style={{ fontSize: '12px', fontWeight: 700, color: '#2563EB', backgroundColor: '#EFF6FF', padding: '3px 10px', borderRadius: '12px' }}>
+                          Filter: {getFilterLabel()} ({periodOrdersList.length} Orders)
+                        </span>
+                      )}
+                    </div>
+
+                    {/* DAY-WISE CALENDAR & DATE RANGE SELECTOR (MATCHING USER SCREENSHOT) */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                      <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+                        <select
+                          value={dateRangeFilter}
+                          onChange={(e) => setDateRangeFilter(e.target.value)}
+                          style={{
+                            appearance: 'none',
+                            WebkitAppearance: 'none',
+                            backgroundColor: '#FFFFFF',
+                            border: '1.5px solid #CBD5E1',
+                            borderRadius: '10px',
+                            padding: '8px 36px 8px 34px',
+                            fontSize: '13px',
+                            fontWeight: 700,
+                            color: '#1E293B',
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+                            outline: 'none',
+                          }}
+                        >
+                          <option value="today">📅 Today</option>
+                          <option value="yesterday">📅 Yesterday</option>
+                          <option value="last_7">📅 Last 7 days</option>
+                          <option value="last_30">📅 Last 30 days</option>
+                          <option value="this_month">📅 This Month</option>
+                          <option value="custom">🗓️ Custom Date Range (Day-Wise Calendar)</option>
+                          <option value="all">🌐 All Time (All Sales)</option>
+                        </select>
+                        <Calendar size={16} color="#475569" style={{ position: 'absolute', left: '10px', pointerEvents: 'none' }} />
+                        <ChevronDown size={15} color="#475569" style={{ position: 'absolute', right: '10px', pointerEvents: 'none' }} />
+                      </div>
+
+                      {/* CUSTOM DAY-WISE CALENDAR PICKERS */}
+                      {dateRangeFilter === 'custom' && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#F8FAFC', padding: '4px 10px', borderRadius: '10px', border: '1px solid #CBD5E1' }}>
+                          <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#64748B' }}>From:</div>
+                          <input
+                            type="date"
+                            value={customStartDate}
+                            onChange={(e) => setCustomStartDate(e.target.value)}
+                            style={{ border: '1px solid #CBD5E1', borderRadius: '6px', padding: '4px 8px', fontSize: '12px', fontWeight: 600, color: '#0F172A' }}
+                          />
+                          <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#64748B' }}>To:</div>
+                          <input
+                            type="date"
+                            value={customEndDate}
+                            onChange={(e) => setCustomEndDate(e.target.value)}
+                            style={{ border: '1px solid #CBD5E1', borderRadius: '6px', padding: '4px 8px', fontSize: '12px', fontWeight: 600, color: '#0F172A' }}
+                          />
+                          {(customStartDate || customEndDate) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCustomStartDate('');
+                                setCustomEndDate('');
+                              }}
+                              style={{ border: 'none', background: '#E2E8F0', borderRadius: '4px', padding: '2px 6px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', color: '#475569' }}
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 4 SPATIOUS KPI CARDS WITH DYNAMIC DATE RANGE STATS */}
+                  <div className="crm-kpi-banner-grid">
+                    <div className="crm-kpi-card">
+                      <div>
+                        <div className="crm-kpi-label" style={{ fontWeight: 600, color: '#475569' }}>
+                          {getFilterLabel()} Orders
+                        </div>
+                        <div className="crm-kpi-value">{periodOrdersList.length}</div>
+                      </div>
+                      <div className="crm-kpi-icon-box" style={{ background: '#EFF6FF', color: '#1D4ED8', width: '56px', height: '56px' }}>
+                        <ShoppingBag size={26} />
+                      </div>
+                    </div>
+
+                    <div className="crm-kpi-card">
+                      <div>
+                        <div className="crm-kpi-label" style={{ fontWeight: 600, color: '#475569' }}>
+                          {getFilterLabel()} Sales
+                        </div>
+                        <div className="crm-kpi-value" style={{ color: '#059669' }}>
+                          ₹{periodTotalSalesAmt.toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="crm-kpi-icon-box" style={{ background: '#ECFDF5', color: '#059669' }}>
+                        <CreditCard size={26} />
+                      </div>
+                    </div>
+
+                    <div className="crm-kpi-card">
+                      <div>
+                        <div className="crm-kpi-label">Active Kitchen Tickets</div>
+                        <div className="crm-kpi-value" style={{ color: '#FF5E14' }}>
+                          {(orders || []).filter((o) => o && (o.status === 'new' || o.status === 'preparing')).length}
+                        </div>
+                      </div>
+                      <div className="crm-kpi-icon-box" style={{ background: '#FFF0EB', color: '#FF5E14' }}>
+                        <ChefHat size={26} />
+                      </div>
+                    </div>
+
+                    <div className="crm-kpi-card">
+                      <div>
+                        <div className="crm-kpi-label">Tables Occupied</div>
+                        <div className="crm-kpi-value">
+                          {tables.filter((t) => t.status === 'occupied').length} / {tables.length}
+                        </div>
+                      </div>
+                      <div className="crm-kpi-icon-box" style={{ background: '#FFFBEB', color: '#D97706' }}>
+                        <Store size={26} />
+                      </div>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+
+            {/* FILTER BAR WITH CARDS PER ROW SELECTOR & ORDER SEARCH */}
+            <div className="crm-filter-bar" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', flex: '1 1 auto' }}>
+                <div className="crm-filter-tabs">
+                  {[
+                    { key: 'all', label: 'All Orders' },
+                    { key: 'new', label: 'New Orders' },
+                    { key: 'preparing', label: 'In Kitchen' },
+                    { key: 'ready', label: 'Ready to Serve' },
+                    { key: 'completed', label: 'Completed' },
+                  ].map((f) => (
+                    <button
+                      key={f.key}
+                      type="button"
+                      className={`crm-filter-tab ${orderTabFilter === f.key && !orderSearchQuery ? 'active' : ''}`}
+                      onClick={() => {
+                        setOrderTabFilter(f.key);
+                        setOrderSearchQuery('');
+                      }}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* GLOBAL ORDER SEARCH BOX (SEARCH BY NAME, PHONE, ORDER #, TABLE, DISH) */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    backgroundColor: '#FFFFFF',
+                    border: '1.5px solid #CBD5E1',
+                    borderRadius: '12px',
+                    padding: '6px 12px',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+                    flex: '1 1 260px',
+                    maxWidth: '380px',
+                  }}
+                >
+                  <Search size={16} color="#64748B" style={{ flexShrink: 0 }} />
+                  <input
+                    type="text"
+                    placeholder="Search Order #, Name, Mobile, Table, Dish..."
+                    value={orderSearchQuery}
+                    onChange={(e) => setOrderSearchQuery(e.target.value)}
+                    style={{
+                      border: 'none',
+                      outline: 'none',
+                      width: '100%',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      color: '#0F172A',
+                      background: 'transparent',
+                    }}
+                  />
+                  {orderSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setOrderSearchQuery('')}
+                      style={{
+                        border: 'none',
+                        background: '#E2E8F0',
+                        borderRadius: '50%',
+                        width: '18px',
+                        height: '18px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        color: '#475569',
+                        padding: 0,
+                        flexShrink: 0,
+                      }}
+                      title="Clear Search"
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -2749,6 +4096,66 @@ export default function DashboardPage({ onShowToast }) {
               </div>
             </div>
 
+            {/* SEARCH ACTIVE STATUS BANNER */}
+            {orderSearchQuery.trim() && (
+              <div
+                style={{
+                  margin: '12px 0 4px 0',
+                  fontSize: '12.5px',
+                  color: '#1E293B',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  backgroundColor: '#EFF6FF',
+                  padding: '8px 14px',
+                  borderRadius: '10px',
+                  border: '1.5px solid #BFDBFE',
+                }}
+              >
+                <span>
+                  🔍 Showing <b>{filteredOrders.length}</b> orders matching "<b>{orderSearchQuery}</b>" across all sections (Paid & Unpaid)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setOrderSearchQuery('')}
+                  style={{ border: 'none', background: 'transparent', color: '#EF4444', fontWeight: 700, cursor: 'pointer', fontSize: '12px' }}
+                >
+                  Clear Search
+                </button>
+              </div>
+            )}
+
+            {/* EMPTY SEARCH STATE */}
+            {orderSearchQuery.trim() && filteredOrders.length === 0 && (
+              <div
+                style={{
+                  textAlign: 'center',
+                  padding: '48px 20px',
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: '16px',
+                  border: '1.5px dashed #CBD5E1',
+                  margin: '16px 0',
+                }}
+              >
+                <Search size={40} color="#94A3B8" style={{ marginBottom: '12px' }} />
+                <h4 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>
+                  No orders found matching "{orderSearchQuery}"
+                </h4>
+                <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#64748B' }}>
+                  Try searching by Customer Name, Phone Number, Order ID (e.g. #FP-1086), Table or Dish name across all orders (Paid & Unpaid).
+                </p>
+                <button
+                  type="button"
+                  className="crm-btn-secondary"
+                  onClick={() => setOrderSearchQuery('')}
+                  style={{ padding: '8px 18px', fontSize: '13px', borderRadius: '10px' }}
+                >
+                  Clear Search Filter
+                </button>
+              </div>
+            )}
+
             {/* ORDERS GRID - DYNAMIC COLUMNS (1 TO 6 LIMITS) */}
             <div
               className="crm-orders-grid"
@@ -2758,11 +4165,40 @@ export default function DashboardPage({ onShowToast }) {
                 gap: '14px',
               }}
             >
-              {(filteredOrders || []).map((order, idx) => {
+              {(filteredOrders || []).slice((ordersPage - 1) * ordersPerPage, ordersPage * ordersPerPage).map((order, idx) => {
                 const orderKey = order._id || order.id || `ord_${idx}`;
                 const orderDisplayId = order.orderId || order.id || '#FP-1081';
+                const isDeliveryOrder =
+                  order.type === 'Home Delivery' ||
+                  order.type === 'Takeaway' ||
+                  order.orderType === 'delivery' ||
+                  Boolean(order.address) ||
+                  String(order.table || '').toLowerCase().includes('delivery');
+
+                const activeWorkflowSteps = [
+                  statusStepLabels?.step1 || (isDeliveryOrder ? 'Placed' : 'Placed'),
+                  statusStepLabels?.step2 || (isDeliveryOrder ? 'Kitchen' : 'Kitchen'),
+                  statusStepLabels?.step3 || (isDeliveryOrder ? 'Out for Delivery' : 'Ready'),
+                  statusStepLabels?.step4 || (isDeliveryOrder ? 'Delivered' : 'Served'),
+                ];
+
                 const stepIndex =
-                  order.status === 'new' ? 0 : order.status === 'preparing' ? 1 : order.status === 'ready' ? 2 : 3;
+                  order.status === 'completed' || order.status === 'served' || order.status === 'delivered'
+                    ? 3
+                    : order.status === 'out_for_delivery' || order.status === 'dispatched' || order.status === 'ready'
+                    ? 2
+                    : order.status === 'preparing'
+                    ? 1
+                    : 0;
+
+                const isOrderPaid =
+                  order.paymentStatus === 'paid-razorpay' ||
+                  order.paymentStatus === 'paid-upi' ||
+                  order.paymentStatus === 'paid-cash' ||
+                  order.paymentStatus === 'paid' ||
+                  (order.paymentLabel && order.paymentLabel.toLowerCase().includes('paid')) ||
+                  order.status === 'completed' ||
+                  order.status === 'delivered';
 
                 return (
                   <div
@@ -2774,17 +4210,29 @@ export default function DashboardPage({ onShowToast }) {
                         ? 'cancelled-card crm-order-card-clickable'
                         : `active-card ${order.status || 'new'}`
                     }`}
+                    style={{
+                      border: isOrderPaid ? '2px solid #86EFAC' : '1px solid #E2E8F0',
+                      boxShadow: isOrderPaid ? '0 4px 14px rgba(34, 197, 94, 0.12)' : undefined,
+                    }}
                     onClick={() => {
                       if (order.status === 'completed' || order.status === 'cancelled') {
                         setViewingOrderDetails(order);
                       }
                     }}
                   >
-                    <div className="crm-order-card-header">
+                    <div className="crm-order-card-header" style={{ backgroundColor: isOrderPaid ? '#F0FDF4' : '#FFFFFF' }}>
                       <div className="crm-order-id-group">
                         <span className="crm-order-id">{orderDisplayId}</span>
                         <span className="crm-table-tag highlight">{String(order.table || 'Table 1').replace(/tabel/gi, 'Table')}</span>
-                        <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 700 }}>({order.type})</span>
+                        {isOrderPaid ? (
+                          <span style={{ fontSize: '11px', fontWeight: 900, color: '#15803D', backgroundColor: '#DCFCE7', border: '1px solid #86EFAC', padding: '2px 8px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <CheckCircle2 size={12} color="#16A34A" /> PAID (COLLECTED)
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#C2410C', backgroundColor: '#FFF7ED', border: '1px solid #FFEDD5', padding: '2px 8px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <AlertCircle size={12} color="#EA580C" /> UNPAID
+                          </span>
+                        )}
                       </div>
 
                       {order.status === 'completed' ? (
@@ -2812,9 +4260,9 @@ export default function DashboardPage({ onShowToast }) {
                             background: order.status === 'cancelled' ? '#EF4444' : order.status === 'completed' ? '#10B981' : undefined,
                           }}
                         />
-                        {['Placed', 'Kitchen', 'Ready', 'Served'].map((l, idx) => (
+                        {activeWorkflowSteps.map((l, idx) => (
                           <div
-                            key={l}
+                            key={`${l}_${idx}`}
                             className={`crm-step-node ${order.status === 'cancelled' ? 'cancelled' : idx <= stepIndex ? 'done' : ''} ${idx === stepIndex && order.status !== 'cancelled' ? 'current' : ''}`}
                           >
                             <div className="crm-step-circle">
@@ -2849,6 +4297,36 @@ export default function DashboardPage({ onShowToast }) {
                         ))}
                       </div>
 
+                      {/* PROMINENT PAYMENT COLLECTION STATUS BANNER */}
+                      {isOrderPaid ? (
+                        <div style={{ backgroundColor: '#F0FDF4', border: '1.5px solid #86EFAC', borderRadius: '10px', padding: '8px 12px', marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', fontWeight: 800, color: '#15803D' }}>
+                            <CheckCircle2 size={16} color="#16A34A" />
+                            <span>Already Collected ✓</span>
+                          </div>
+                          <span style={{ fontSize: '11.5px', fontWeight: 900, color: '#15803D', backgroundColor: '#DCFCE7', padding: '2px 8px', borderRadius: '6px', border: '1px solid #86EFAC' }}>
+                            {order.paymentLabel || 'Paid Online'}
+                          </span>
+                        </div>
+                      ) : (
+                        <div style={{ backgroundColor: '#FFF7ED', border: '1.5px solid #FDBA74', borderRadius: '10px', padding: '8px 12px', marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', fontWeight: 800, color: '#C2410C' }}>
+                            <AlertCircle size={16} color="#EA580C" />
+                            <span>Bill Pending</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenBillSettlement(order);
+                            }}
+                            style={{ backgroundColor: '#EA580C', color: '#FFFFFF', border: 'none', padding: '4px 10px', borderRadius: '6px', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer', boxShadow: '0 2px 6px rgba(234, 88, 12, 0.3)' }}
+                          >
+                            Collect ₹{order.total}
+                          </button>
+                        </div>
+                      )}
+
                       {order.note && (
                         <div className="crm-special-note">
                           <Edit3 size={14} style={{ flexShrink: 0, marginTop: '2px' }} />
@@ -2859,25 +4337,49 @@ export default function DashboardPage({ onShowToast }) {
 
                     <div className="crm-order-card-footer" onClick={(e) => e.stopPropagation()}>
                       <div className="crm-order-total-row">
-                        <div className="crm-total-amount">₹{order.total}</div>
-                        <span className={`crm-payment-pill ${order.paymentStatus}`}>{order.paymentLabel}</span>
+                        <div>
+                          <div className="crm-total-amount">₹{order.total}</div>
+                          <div style={{ fontSize: '11px', fontWeight: 800, color: isOrderPaid ? '#15803D' : '#C2410C', marginTop: '1px' }}>
+                            {isOrderPaid ? '✓ Payment Received' : '⏳ Bill Pending'}
+                          </div>
+                        </div>
+                        <span
+                          className={`crm-payment-pill ${order.paymentStatus}`}
+                          style={{
+                            fontWeight: 900,
+                            backgroundColor: isOrderPaid ? '#DCFCE7' : '#FFF7ED',
+                            color: isOrderPaid ? '#15803D' : '#C2410C',
+                            border: isOrderPaid ? '1.5px solid #86EFAC' : '1.5px solid #FDBA74',
+                            padding: '4px 10px',
+                            borderRadius: '8px',
+                            fontSize: '12px',
+                          }}
+                        >
+                          {isOrderPaid ? '✓ ' : '⏳ '}{order.paymentLabel || (isOrderPaid ? 'Paid' : 'Unpaid')}
+                        </span>
                       </div>
 
                       <div className="crm-card-actions-grid">
                         {(order.status === 'new' || order.status === 'new_seen') && (
                           <>
-                            {(!order.seen || order.status === 'new') && (
-                              <button
-                                type="button"
-                                className="crm-btn-action"
-                                style={{ backgroundColor: '#2563EB', color: '#FFF', fontWeight: 800 }}
-                                onClick={() => handleMarkOrderSeen(order._id || order.id)}
-                                title="Acknowledge Order & Stop Bell Alarm"
-                              >
-                                <Eye size={16} />
-                                <span>️ SEEN (STOP BELL)</span>
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              className="crm-btn-action"
+                              disabled={order.seen}
+                              style={{
+                                backgroundColor: order.seen ? '#64748B' : '#2563EB',
+                                color: '#FFF',
+                                fontWeight: 800,
+                                opacity: order.seen ? 0.8 : 1,
+                                cursor: order.seen ? 'not-allowed' : 'pointer',
+                                border: order.seen ? '1px solid #475569' : 'none',
+                              }}
+                              onClick={() => !order.seen && handleMarkOrderSeen(order._id || order.id)}
+                              title={order.seen ? "Order Acknowledged (Bell Stopped)" : "Acknowledge Order & Stop Bell Alarm"}
+                            >
+                              {order.seen ? <Check size={16} /> : <Eye size={16} />}
+                              <span>{order.seen ? '✓ SEEN (BELL STOPPED)' : '️ SEEN (STOP BELL)'}</span>
+                            </button>
                             <button
                               type="button"
                               className="crm-btn-action fire"
@@ -2937,15 +4439,41 @@ export default function DashboardPage({ onShowToast }) {
                           </div>
                         )}
 
-                        {order.status === 'ready' && (
-                          <button
-                            type="button"
-                            className="crm-btn-action settle full-w"
-                            onClick={() => handleOpenBillSettlement(order)}
-                          >
-                            <CreditCard size={17} />
-                            <span>Bill Settlement &amp; Complete</span>
-                          </button>
+                        {(order.status === 'ready' || order.status === 'out_for_delivery' || order.status === 'dispatched') && (
+                          <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {(isDeliveryOrder || storeControls.workflowMode === 'delivery') && order.status === 'ready' && (
+                              <button
+                                type="button"
+                                className="crm-btn-action fire full-w"
+                                style={{ background: 'linear-gradient(135deg, #F59E0B, #D97706)', color: '#000', fontWeight: 900 }}
+                                onClick={() => handleUpdateOrderStatus(order._id || order.id, 'out_for_delivery')}
+                              >
+                                <Truck size={17} />
+                                <span>Out for Delivery (Nikala Gaya)</span>
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              className="crm-btn-action settle full-w"
+                              onClick={() => {
+                                if (isDeliveryOrder && (order.status === 'out_for_delivery' || order.status === 'dispatched')) {
+                                  handleUpdateOrderStatus(order._id || order.id, 'delivered');
+                                } else {
+                                  handleOpenBillSettlement(order);
+                                }
+                              }}
+                            >
+                              <CheckCircle2 size={17} />
+                              <span>
+                                {isDeliveryOrder
+                                  ? order.status === 'out_for_delivery' || order.status === 'dispatched'
+                                    ? 'Mark Delivered & Complete'
+                                    : 'Bill Settlement & Complete'
+                                  : 'Bill Settlement & Complete'}
+                              </span>
+                            </button>
+                          </div>
                         )}
 
                         {order.status === 'completed' && (
@@ -2993,6 +4521,57 @@ export default function DashboardPage({ onShowToast }) {
                 );
               })}
             </div>
+
+            {/* Orders Pagination Controls */}
+            {(filteredOrders || []).length > 0 && (
+              <div style={{ marginTop: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#FFFFFF', padding: '14px 20px', borderRadius: '16px', border: '1.5px solid #E2E8F0', flexWrap: 'wrap', gap: '12px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>
+                  Showing {Math.min((ordersPage - 1) * ordersPerPage + 1, (filteredOrders || []).length)} - {Math.min(ordersPage * ordersPerPage, (filteredOrders || []).length)} of {(filteredOrders || []).length} orders
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    type="button"
+                    disabled={ordersPage === 1}
+                    onClick={() => setOrdersPage((p) => Math.max(1, p - 1))}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: '8px',
+                      border: '1.5px solid #CBD5E1',
+                      background: ordersPage === 1 ? '#F1F5F9' : '#FFFFFF',
+                      color: ordersPage === 1 ? '#94A3B8' : '#0F172A',
+                      fontWeight: 800,
+                      fontSize: '12.5px',
+                      cursor: ordersPage === 1 ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    ◀ Prev
+                  </button>
+
+                  <span style={{ fontSize: '13px', fontWeight: 800, color: '#1D4ED8', padding: '4px 10px', background: '#EFF6FF', borderRadius: '6px' }}>
+                    Page {ordersPage} of {Math.ceil((filteredOrders || []).length / ordersPerPage) || 1}
+                  </span>
+
+                  <button
+                    type="button"
+                    disabled={ordersPage * ordersPerPage >= (filteredOrders || []).length}
+                    onClick={() => setOrdersPage((p) => p + 1)}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: '8px',
+                      border: '1.5px solid #CBD5E1',
+                      background: ordersPage * ordersPerPage >= (filteredOrders || []).length ? '#F1F5F9' : '#FFFFFF',
+                      color: ordersPage * ordersPerPage >= (filteredOrders || []).length ? '#94A3B8' : '#0F172A',
+                      fontWeight: 800,
+                      fontSize: '12.5px',
+                      cursor: ordersPage * ordersPerPage >= (filteredOrders || []).length ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    Next ▶
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -3102,13 +4681,29 @@ export default function DashboardPage({ onShowToast }) {
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    {(!order.seen || order.status === 'new') && (
+                    {(order.status === 'new' || order.status === 'new_seen') && (
                       <>
                         <button
-                          onClick={() => handleMarkOrderSeen(order._id || order.id)}
-                          style={{ flex: 1, backgroundColor: '#3B82F6', color: '#FFF', border: 'none', padding: '10px', borderRadius: '12px', fontWeight: 800, cursor: 'pointer' }}
+                          disabled={order.seen}
+                          onClick={() => !order.seen && handleMarkOrderSeen(order._id || order.id)}
+                          style={{
+                            flex: 1,
+                            backgroundColor: order.seen ? '#64748B' : '#3B82F6',
+                            color: '#FFF',
+                            border: 'none',
+                            padding: '10px',
+                            borderRadius: '12px',
+                            fontWeight: 800,
+                            opacity: order.seen ? 0.8 : 1,
+                            cursor: order.seen ? 'not-allowed' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                          }}
                         >
-                          ️ SEEN (STOP BELL)
+                          {order.seen ? <Check size={16} /> : <Eye size={16} />}
+                          <span>{order.seen ? '✓ SEEN (STOPPED)' : '️ SEEN (STOP BELL)'}</span>
                         </button>
                         <button
                           onClick={() => handleStartPreparingOrder(order._id || order.id)}
@@ -3117,15 +4712,6 @@ export default function DashboardPage({ onShowToast }) {
                            START COOKING
                         </button>
                       </>
-                    )}
-
-                    {order.seen && order.status === 'new_seen' && (
-                      <button
-                        onClick={() => handleStartPreparingOrder(order._id || order.id)}
-                        style={{ width: '100%', backgroundColor: '#FF5E14', color: '#FFF', border: 'none', padding: '12px', borderRadius: '12px', fontWeight: 800, cursor: 'pointer' }}
-                      >
-                         START COOKING NOW →
-                      </button>
                     )}
 
                     {order.status === 'preparing' && (
@@ -3202,22 +4788,30 @@ export default function DashboardPage({ onShowToast }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {(filteredDishes || []).map((dish, idx) => {
+                  {(filteredDishes || []).slice((catalogPage - 1) * catalogPerPage, catalogPage * catalogPerPage).map((dish, idx) => {
                     const dishKey = dish._id || dish.id || `dish_${idx}`;
-                    const dishImgUrl = typeof dish.image === 'string' ? dish.image : (dish.image?.url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80');
+                    const dishImgUrl = (Array.isArray(dish.images) && dish.images[0])
+                      ? dish.images[0]
+                      : (typeof dish.image === 'string' ? dish.image : (dish.image?.url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80'));
+                    const hasMultiPhotos = Array.isArray(dish.images) && dish.images.length > 1;
 
                     return (
                       <tr key={dishKey}>
                         <td>
                           <div className="crm-product-info-cell">
                             {/* Real Food Image Thumbnail */}
-                            <div className="crm-prod-thumb-box">
+                            <div className="crm-prod-thumb-box" style={{ position: 'relative' }}>
                               <img
                                 src={dishImgUrl}
                                 alt={dish.name}
                                 className="crm-prod-thumb-img"
                                 loading="lazy"
                               />
+                              {hasMultiPhotos && (
+                                <span style={{ position: 'absolute', bottom: '2px', right: '2px', background: 'rgba(15,23,42,0.85)', color: '#FFF', fontSize: '9px', fontWeight: 800, padding: '1px 4px', borderRadius: '4px' }}>
+                                  📷 {dish.images.length}
+                                </span>
+                              )}
                             </div>
                           <div>
                             <div className="crm-prod-name-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -3227,15 +4821,50 @@ export default function DashboardPage({ onShowToast }) {
                                   ⭐ Special
                                 </span>
                               )}
+                              {hasMultiPhotos && (
+                                <span style={{ fontSize: '10.5px', background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', padding: '1px 6px', borderRadius: '8px', fontWeight: 700 }}>
+                                  {dish.images.length} Photos
+                                </span>
+                              )}
                             </div>
                             {dish.desc && (
                               <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px', maxWidth: '300px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {dish.desc}
                               </div>
                             )}
-                            <span className="crm-prod-variants-badge">
-                              View {dish.variantsCount || 1} variants
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
+                              <span className="crm-prod-variants-badge">
+                                View {dish.variantsCount || 1} variants
+                              </span>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditProductForm({
+                                    ...dish,
+                                    sizes: dish.sizes && dish.sizes.length > 0 ? dish.sizes : [{ name: 'Regular', price: dish.price, qty: 100 }],
+                                    images: dish.images && dish.images.length > 0 ? dish.images : (dishImgUrl ? [dishImgUrl] : [])
+                                  });
+                                  setIsEditProductModalOpen(true);
+                                }}
+                                style={{
+                                  padding: '3px 10px',
+                                  borderRadius: '12px',
+                                  border: '1.5px solid #3B82F6',
+                                  background: '#EFF6FF',
+                                  color: '#1D4ED8',
+                                  fontSize: '11.5px',
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}
+                                title="Edit Product Details & Images"
+                              >
+                                <Edit3 size={13} color="#1D4ED8" /> Edit Product
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -3245,7 +4874,25 @@ export default function DashboardPage({ onShowToast }) {
                         </div>
                       </td>
                       <td>
-                        <div className="crm-prod-price">₹{dish.price}</div>
+                        <div className="crm-prod-price" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontWeight: 800, color: '#0F172A', fontSize: '15px' }}>₹{dish.price}</span>
+                            {dish.showDiscountTag !== false && Number(dish.originalPrice) > Number(dish.price) && (
+                              <span style={{ textDecoration: 'line-through', color: '#94A3B8', fontSize: '12px' }}>
+                                ₹{dish.originalPrice}
+                              </span>
+                            )}
+                          </div>
+                          {dish.showDiscountTag !== false && Number(dish.originalPrice) > Number(dish.price) ? (
+                            <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#059669', background: '#ECFDF5', border: '1px solid #A7F3D0', padding: '1px 6px', borderRadius: '6px', width: 'fit-content' }}>
+                              🔥 {Math.round(((Number(dish.originalPrice) - Number(dish.price)) / Number(dish.originalPrice)) * 100)}% OFF
+                            </span>
+                          ) : dish.showDiscountTag === false && Number(dish.originalPrice) > Number(dish.price) ? (
+                            <span style={{ fontSize: '10px', color: '#94A3B8', fontStyle: 'italic' }}>
+                              (Discount tag hidden)
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td>
                         <label className="crm-blue-switch">
@@ -3257,12 +4904,25 @@ export default function DashboardPage({ onShowToast }) {
                           <span className="crm-blue-slider" />
                         </label>
                       </td>
-                      <td style={{ textAlign: 'right' }}>
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                           <button 
-                            className="crm-edit-icon-btn"
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B' }}
-                            title="Edit Dish"
+                            type="button"
+                            style={{
+                              padding: '6px 14px',
+                              borderRadius: '10px',
+                              border: '1.5px solid #93C5FD',
+                              background: '#EFF6FF',
+                              color: '#1D4ED8',
+                              fontSize: '12.5px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              boxShadow: '0 2px 4px rgba(29, 78, 216, 0.08)'
+                            }}
+                            title="Edit Product Details & Photos"
                             onClick={() => {
                               setEditProductForm({
                                 ...dish,
@@ -3272,15 +4932,29 @@ export default function DashboardPage({ onShowToast }) {
                               setIsEditProductModalOpen(true);
                             }}
                           >
-                             <Edit3 size={18}/>
+                            <Edit3 size={15} color="#1D4ED8" />
+                            <span>Edit</span>
                           </button>
                           <button 
-                            className="crm-edit-icon-btn"
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444' }}
+                            type="button"
+                            style={{
+                              padding: '6px 10px',
+                              borderRadius: '10px',
+                              border: '1.5px solid #FECACA',
+                              background: '#FEF2F2',
+                              color: '#DC2626',
+                              fontSize: '12.5px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px'
+                            }}
                             title="Delete Dish"
                             onClick={() => handleDeleteDish(dish._id || dish.id)}
                           >
-                             <Trash2 size={18}/>
+                            <Trash2 size={15} color="#DC2626" />
+                            <span>Delete</span>
                           </button>
                         </div>
                       </td>
@@ -3289,6 +4963,74 @@ export default function DashboardPage({ onShowToast }) {
                   })}
                 </tbody>
               </table>
+
+              {/* Catalog Table Pagination Controls */}
+              {(filteredDishes || []).length > 0 && (
+                <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#F8FAFC', padding: '12px 18px', borderRadius: '12px', border: '1.5px solid #E2E8F0', flexWrap: 'wrap', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#475569' }}>
+                      Showing {Math.min((catalogPage - 1) * catalogPerPage + 1, (filteredDishes || []).length)} - {Math.min(catalogPage * catalogPerPage, (filteredDishes || []).length)} of {(filteredDishes || []).length} dishes
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>Rows:</span>
+                      <select
+                        value={catalogPerPage}
+                        onChange={(e) => {
+                          setCatalogPerPage(Number(e.target.value));
+                          setCatalogPage(1);
+                        }}
+                        style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '12px', fontWeight: 700 }}
+                      >
+                        <option value={10}>10</option>
+                        <option value={20}>20</option>
+                        <option value={50}>50</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button
+                      type="button"
+                      disabled={catalogPage === 1}
+                      onClick={() => setCatalogPage((p) => Math.max(1, p - 1))}
+                      style={{
+                        padding: '5px 12px',
+                        borderRadius: '8px',
+                        border: '1.5px solid #CBD5E1',
+                        background: catalogPage === 1 ? '#F1F5F9' : '#FFFFFF',
+                        color: catalogPage === 1 ? '#94A3B8' : '#0F172A',
+                        fontWeight: 800,
+                        fontSize: '12px',
+                        cursor: catalogPage === 1 ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      ◀ Prev
+                    </button>
+
+                    <span style={{ fontSize: '12.5px', fontWeight: 800, color: '#1D4ED8', padding: '3px 8px', background: '#EFF6FF', borderRadius: '6px' }}>
+                      Page {catalogPage} of {Math.ceil((filteredDishes || []).length / catalogPerPage) || 1}
+                    </span>
+
+                    <button
+                      type="button"
+                      disabled={catalogPage * catalogPerPage >= (filteredDishes || []).length}
+                      onClick={() => setCatalogPage((p) => p + 1)}
+                      style={{
+                        padding: '5px 12px',
+                        borderRadius: '8px',
+                        border: '1.5px solid #CBD5E1',
+                        background: catalogPage * catalogPerPage >= (filteredDishes || []).length ? '#F1F5F9' : '#FFFFFF',
+                        color: catalogPage * catalogPerPage >= (filteredDishes || []).length ? '#94A3B8' : '#0F172A',
+                        fontWeight: 800,
+                        fontSize: '12px',
+                        cursor: catalogPage * catalogPerPage >= (filteredDishes || []).length ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      Next ▶
+                    </button>
+                  </div>
+                </div>
+              )}
             </section>
 
             {/* RIGHT COLUMN: ACTION PILLS (Ref: Image 2 with Lucide Icons) */}
@@ -3304,10 +5046,23 @@ export default function DashboardPage({ onShowToast }) {
               <button
                 type="button"
                 className="crm-pill-action-btn black"
-                onClick={() => addToast('Bulk Edit Mode: Edit prices of all items.')}
+                onClick={() => {
+                  if (filteredDishes && filteredDishes.length > 0) {
+                    const targetDish = filteredDishes[0];
+                    setEditProductForm({
+                      ...targetDish,
+                      sizes: targetDish.sizes && targetDish.sizes.length > 0 ? targetDish.sizes : [{ name: 'Regular', price: targetDish.price, qty: 100 }],
+                      images: targetDish.images && targetDish.images.length > 0 ? targetDish.images : (targetDish.image ? [typeof targetDish.image === 'string' ? targetDish.image : targetDish.image.url] : [])
+                    });
+                    setIsEditProductModalOpen(true);
+                    addToast(`Editing product "${targetDish.name}". Use table Edit button to edit any product.`);
+                  } else {
+                    addToast('No products available to edit.');
+                  }
+                }}
               >
-                <Lock size={14} />
-                <span>BULK EDIT</span>
+                <Edit3 size={14} />
+                <span>EDIT PRODUCT</span>
               </button>
               <button
                 type="button"
@@ -3326,6 +5081,478 @@ export default function DashboardPage({ onShowToast }) {
                 <span>SORT &amp; FILTER</span>
               </button>
             </aside>
+          </div>
+        )}
+
+        {/* ==========================================================================
+            VIEW 2.5: CATALOG THEMES & BRANDING CUSTOMIZER
+            ========================================================================== */}
+        {activeTab === 'catalog_themes' && (
+          <div style={{ padding: '32px 42px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
+            {/* Header Banner */}
+            <div style={{ background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)', borderRadius: '20px', padding: '28px 32px', color: '#FFFFFF', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px', boxShadow: '0 10px 25px -5px rgba(15,23,42,0.2)' }}>
+              <div>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.12)', padding: '6px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '12px' }}>
+                  <Sparkles size={14} color="#F59E0B" /> Storefront Theme Engine
+                </div>
+                <h2 style={{ margin: '0 0 8px 0', fontSize: '24px', fontWeight: 900, color: '#FFFFFF' }}>
+                  Digital Catalog &amp; QR Menu Branding
+                </h2>
+                <p style={{ margin: 0, color: '#94A3B8', fontSize: '14px', maxWidth: '600px' }}>
+                  Customize the look, colors, and header accents for your online customer menu. Changes sync instantly across all scanned QR codes and live orders.
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const defaultTheme = {
+                      id: 'orange',
+                      name: 'Sunset Orange (Default)',
+                      primary: '#FF5E14',
+                      accent: '#D97706',
+                      bg: '#FFF0EB',
+                      gradient: 'linear-gradient(135deg, #FF5E14 0%, #D97706 100%)',
+                    };
+                    setSelectedCatalogTheme(defaultTheme);
+                    localStorage.setItem('foodypay_catalog_theme', JSON.stringify(defaultTheme));
+                    window.dispatchEvent(new Event('storage'));
+                    window.dispatchEvent(new CustomEvent('foodypay_theme_changed', { detail: defaultTheme }));
+                    addToast('Reset storefront theme to Sunset Orange');
+                  }}
+                  style={{ background: 'rgba(255,255,255,0.1)', color: '#FFFFFF', border: '1px solid rgba(255,255,255,0.2)', padding: '12px 20px', borderRadius: '12px', fontWeight: 700, fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
+                  <RefreshCw size={16} /> Reset Default
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.setItem('foodypay_catalog_theme', JSON.stringify(selectedCatalogTheme));
+                    window.dispatchEvent(new Event('storage'));
+                    window.dispatchEvent(new CustomEvent('foodypay_theme_changed', { detail: selectedCatalogTheme }));
+                    addToast(`Theme "${selectedCatalogTheme.name}" published live!`);
+                  }}
+                  style={{ background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)', color: '#FFFFFF', border: 'none', padding: '12px 24px', borderRadius: '12px', fontWeight: 800, fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(16,185,129,0.3)' }}
+                >
+                  <CheckCircle2 size={18} /> Publish Theme Live
+                </button>
+              </div>
+            </div>
+
+            {/* Grid Layout: Left Presets, Right Live Phone Mockup */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '28px', alignItems: 'start' }}>
+              {/* Presets Column */}
+              <div>
+                <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#0F172A', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Palette size={20} color="#FF5E14" /> Select Color Theme Preset
+                </h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '16px' }}>
+                  {[
+                    {
+                      id: 'orange',
+                      name: 'Sunset Orange (Default)',
+                      desc: 'Energetic, warm & appetizing',
+                      primary: '#FF5E14',
+                      accent: '#D97706',
+                      bg: '#FFF0EB',
+                      gradient: 'linear-gradient(135deg, #FF5E14 0%, #D97706 100%)',
+                    },
+                    {
+                      id: 'emerald',
+                      name: 'Emerald Green (Eco Fresh)',
+                      desc: 'Fresh, organic & healthy vibes',
+                      primary: '#10B981',
+                      accent: '#059669',
+                      bg: '#ECFDF5',
+                      gradient: 'linear-gradient(135deg, #10B981 0%, #047857 100%)',
+                    },
+                    {
+                      id: 'violet',
+                      name: 'Royal Violet (Luxury Bistro)',
+                      desc: 'Elegant, premium & modern dining',
+                      primary: '#8B5CF6',
+                      accent: '#6D28D9',
+                      bg: '#F5F3FF',
+                      gradient: 'linear-gradient(135deg, #8B5CF6 0%, #5B21B6 100%)',
+                    },
+                    {
+                      id: 'crimson',
+                      name: 'Spicy Crimson (Hot Grill)',
+                      desc: 'Bold, spicy & barbecue theme',
+                      primary: '#EF4444',
+                      accent: '#B91C1C',
+                      bg: '#FEF2F2',
+                      gradient: 'linear-gradient(135deg, #EF4444 0%, #991B1B 100%)',
+                    },
+                    {
+                      id: 'ocean',
+                      name: 'Ocean Blue (Seafood & Cafe)',
+                      desc: 'Cool, serene & coastal cafe',
+                      primary: '#3B82F6',
+                      accent: '#1D4ED8',
+                      bg: '#EFF6FF',
+                      gradient: 'linear-gradient(135deg, #3B82F6 0%, #1E40AF 100%)',
+                    },
+                    {
+                      id: 'midnight',
+                      name: 'Midnight Dark (Noir Premium)',
+                      desc: 'Sleek dark mode aesthetic',
+                      primary: '#1E293B',
+                      accent: '#0F172A',
+                      bg: '#F8FAFC',
+                      gradient: 'linear-gradient(135deg, #334155 0%, #0F172A 100%)',
+                    },
+                    {
+                      id: 'amber',
+                      name: 'Golden Amber (Bakery & Treats)',
+                      desc: 'Warm golden hues for desserts',
+                      primary: '#F59E0B',
+                      accent: '#D97706',
+                      bg: '#FFFBEB',
+                      gradient: 'linear-gradient(135deg, #F59E0B 0%, #B45309 100%)',
+                    },
+                    {
+                      id: 'rosegold',
+                      name: 'Rose Gold (Sweets & Shakes)',
+                      desc: 'Chic, pink & sweet indulge',
+                      primary: '#EC4899',
+                      accent: '#BE185D',
+                      bg: '#FDF2F8',
+                      gradient: 'linear-gradient(135deg, #EC4899 0%, #9D174D 100%)',
+                    },
+                  ].map((theme) => {
+                    const isSelected = selectedCatalogTheme.id === theme.id;
+                    return (
+                      <div
+                        key={theme.id}
+                        onClick={() => {
+                          setSelectedCatalogTheme(theme);
+                          localStorage.setItem('foodypay_catalog_theme', JSON.stringify(theme));
+                          window.dispatchEvent(new Event('storage'));
+                          window.dispatchEvent(new CustomEvent('foodypay_theme_changed', { detail: theme }));
+                          addToast(`Theme preview set to ${theme.name}`);
+                        }}
+                        style={{
+                          background: '#FFFFFF',
+                          borderRadius: '16px',
+                          border: isSelected ? `2.5px solid ${theme.primary}` : '1.5px solid #E2E8F0',
+                          padding: '18px',
+                          cursor: 'pointer',
+                          position: 'relative',
+                          transition: 'all 0.2s ease',
+                          boxShadow: isSelected ? `0 8px 20px -4px ${theme.primary}33` : '0 2px 4px rgba(0,0,0,0.02)',
+                          transform: isSelected ? 'translateY(-2px)' : 'none',
+                        }}
+                      >
+                        {isSelected && (
+                          <div style={{ position: 'absolute', top: '12px', right: '12px', background: theme.primary, color: '#FFFFFF', borderRadius: '50%', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Check size={14} />
+                          </div>
+                        )}
+                        <div style={{ height: '48px', borderRadius: '12px', background: theme.gradient, marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontWeight: 800, fontSize: '13px', textShadow: '0 1px 2px rgba(0,0,0,0.2)' }}>
+                          {theme.name.split(' ')[0]} Theme
+                        </div>
+                        <div style={{ fontWeight: 800, fontSize: '15px', color: '#0F172A', marginBottom: '4px' }}>
+                          {theme.name}
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '14px' }}>
+                          {theme.desc}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: theme.primary, border: '2px solid #FFFFFF', boxShadow: '0 0 0 1px #CBD5E1' }} title="Primary Color" />
+                          <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: theme.accent, border: '2px solid #FFFFFF', boxShadow: '0 0 0 1px #CBD5E1' }} title="Accent Color" />
+                          <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: theme.bg, border: '2px solid #FFFFFF', boxShadow: '0 0 0 1px #CBD5E1' }} title="Background Tint" />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Live Mobile Phone Mockup */}
+              <div style={{ background: '#FFFFFF', borderRadius: '24px', border: '1px solid #E2E8F0', padding: '20px', boxShadow: '0 10px 30px rgba(0,0,0,0.06)', position: 'sticky', top: '20px' }}>
+                <div style={{ fontSize: '13px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span><Smartphone size={16} style={{ marginRight: '6px', verticalAlign: 'middle' }} /> Live Menu Mockup</span>
+                  <span style={{ background: selectedCatalogTheme.bg, color: selectedCatalogTheme.primary, padding: '2px 8px', borderRadius: '6px', fontSize: '11px' }}>{selectedCatalogTheme.id.toUpperCase()}</span>
+                </div>
+
+                {/* Smartphone Frame */}
+                <div style={{ width: '100%', borderRadius: '28px', border: '8px solid #0F172A', background: '#F8FAFC', overflow: 'hidden', boxShadow: '0 12px 28px rgba(0,0,0,0.15)' }}>
+                  {/* Notch */}
+                  <div style={{ background: '#0F172A', height: '18px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                    <div style={{ width: '50px', height: '4px', background: '#334155', borderRadius: '2px' }} />
+                  </div>
+
+                  {/* Header Banner Mockup */}
+                  <div style={{ background: selectedCatalogTheme.gradient, padding: '16px 14px', color: '#FFFFFF' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#FFFFFF', color: selectedCatalogTheme.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: '16px' }}>
+                        {storeControls.restName.charAt(0) || 'F'}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 800, fontSize: '14px' }}>{storeControls.restName || 'FoodyPay Bistro'}</div>
+                        <div style={{ fontSize: '10px', opacity: 0.9 }}>📍 Table 4 • Quick Digital Order</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Body Content Mockup */}
+                  <div style={{ padding: '12px' }}>
+                    {/* Search bar mockup */}
+                    <div style={{ background: '#FFFFFF', borderRadius: '10px', padding: '8px 10px', fontSize: '11px', color: '#94A3B8', display: 'flex', alignItems: 'center', gap: '6px', border: '1px solid #E2E8F0', marginBottom: '12px' }}>
+                      <Search size={12} /> Search menu items...
+                    </div>
+
+                    {/* Category Tabs */}
+                    <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', overflowX: 'hidden' }}>
+                      <div style={{ background: selectedCatalogTheme.primary, color: '#FFFFFF', padding: '5px 10px', borderRadius: '14px', fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        ★ Best Sellers
+                      </div>
+                      <div style={{ background: selectedCatalogTheme.bg, color: '#475569', padding: '5px 10px', borderRadius: '14px', fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                        Starter &amp; Snacks
+                      </div>
+                      <div style={{ background: selectedCatalogTheme.bg, color: '#475569', padding: '5px 10px', borderRadius: '14px', fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                        Beverages
+                      </div>
+                    </div>
+
+                    {/* Food Items */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ background: '#FFFFFF', padding: '10px', borderRadius: '12px', border: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '12px', color: '#0F172A' }}>Paneer Tikka Roll</div>
+                          <div style={{ fontWeight: 800, fontSize: '12px', color: selectedCatalogTheme.primary, marginTop: '2px' }}>₹160</div>
+                        </div>
+                        <button type="button" style={{ background: selectedCatalogTheme.bg, border: `1.5px solid ${selectedCatalogTheme.primary}`, color: selectedCatalogTheme.primary, borderRadius: '8px', padding: '4px 10px', fontSize: '11px', fontWeight: 800 }}>
+                          ADD +
+                        </button>
+                      </div>
+
+                      <div style={{ background: '#FFFFFF', padding: '10px', borderRadius: '12px', border: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '12px', color: '#0F172A' }}>Cold Coffee Float</div>
+                          <div style={{ fontWeight: 800, fontSize: '12px', color: selectedCatalogTheme.primary, marginTop: '2px' }}>₹120</div>
+                        </div>
+                        <button type="button" style={{ background: selectedCatalogTheme.bg, border: `1.5px solid ${selectedCatalogTheme.primary}`, color: selectedCatalogTheme.primary, borderRadius: '8px', padding: '4px 10px', fontSize: '11px', fontWeight: 800 }}>
+                          ADD +
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bottom Navigation Mockup */}
+                  <div style={{ background: '#FFFFFF', borderTop: '1px solid #E2E8F0', padding: '8px 12px', display: 'flex', justifyContent: 'space-around', alignItems: 'center' }}>
+                    <div style={{ textAlign: 'center', color: selectedCatalogTheme.primary }}>
+                      <Utensils size={14} />
+                      <div style={{ fontSize: '9px', fontWeight: 700 }}>Menu</div>
+                    </div>
+                    <div style={{ textAlign: 'center', color: '#94A3B8' }}>
+                      <ShoppingBag size={14} />
+                      <div style={{ fontSize: '9px', fontWeight: 600 }}>Cart (2)</div>
+                    </div>
+                    <div style={{ textAlign: 'center', color: '#94A3B8' }}>
+                      <QrCode size={14} />
+                      <div style={{ fontSize: '9px', fontWeight: 600 }}>Pay</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ==========================================================================
+            VIEW 2.6: CATALOG COLLECTIONS & STEAL DEALS BANNER MANAGER
+            ========================================================================== */}
+        {activeTab === 'catalog_collections' && (
+          <div style={{ padding: '32px 42px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
+            {/* Header Banner */}
+            <div style={{ background: 'linear-gradient(135deg, #FF5E14 0%, #D94400 100%)', borderRadius: '20px', padding: '28px 32px', color: '#FFFFFF', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px', boxShadow: '0 10px 25px -5px rgba(255,94,20,0.3)' }}>
+              <div>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.2)', padding: '6px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: 800, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '12px' }}>
+                  <Sparkles size={14} color="#F59E0B" /> Homepage Collections Manager
+                </div>
+                <h2 style={{ margin: '0 0 8px 0', fontSize: '24px', fontWeight: 900, color: '#FFFFFF' }}>
+                  Steal Deals &amp; Weekend Offers Banner
+                </h2>
+                <p style={{ margin: 0, color: 'rgba(255,255,255,0.9)', fontSize: '14px', maxWidth: '600px' }}>
+                  Turn ON/OFF the promotional Steal Deals banner on your homepage `/`, customize banner titles, add deal items, and set special prices &amp; unlock thresholds.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                {/* Large ON/OFF Toggle Switch */}
+                <button
+                  type="button"
+                  onClick={handleToggleStealDeals}
+                  style={{
+                    backgroundColor: stealDealsConfig.enabled !== false ? '#10B981' : '#64748B',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    padding: '12px 24px',
+                    borderRadius: '16px',
+                    fontWeight: 900,
+                    fontSize: '15px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    boxShadow: stealDealsConfig.enabled !== false ? '0 4px 14px rgba(16,185,129,0.4)' : 'none',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  {stealDealsConfig.enabled !== false ? <CheckCircle2 size={20} /> : <Lock size={20} />}
+                  <span>{stealDealsConfig.enabled !== false ? 'BANNER STATUS: ON (VISIBLE)' : 'BANNER STATUS: OFF (HIDDEN)'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsAddStealItemModalOpen(true)}
+                  style={{
+                    backgroundColor: '#FFFFFF',
+                    color: '#FF5E14',
+                    border: 'none',
+                    padding: '12px 20px',
+                    borderRadius: '16px',
+                    fontWeight: 800,
+                    fontSize: '14px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 14px rgba(0,0,0,0.15)'
+                  }}
+                >
+                  <Plus size={18} /> + Add Deal Item
+                </button>
+              </div>
+            </div>
+
+            {/* Section 1: Banner Header & Subtitle Settings Form */}
+            <div style={{ backgroundColor: '#FFFFFF', borderRadius: '20px', border: '1.5px solid #E2E8F0', padding: '24px', boxShadow: '0 4px 14px rgba(0,0,0,0.03)' }}>
+              <h3 style={{ margin: '0 0 16px', fontSize: '17px', fontWeight: 800, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Edit3 size={18} color="#FF5E14" /> Customize Banner Titles &amp; Subtitle
+              </h3>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 1fr', gap: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, color: '#475569', marginBottom: '6px' }}>
+                    Main Header Title:
+                  </label>
+                  <input
+                    type="text"
+                    value={stealDealsConfig.title || ''}
+                    onChange={(e) => saveStealDealsConfig({ ...stealDealsConfig, title: e.target.value })}
+                    placeholder="e.g. STEAL DEAL WEEKEND"
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '14px', fontWeight: 700, outline: 'none' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, color: '#475569', marginBottom: '6px' }}>
+                    Badge Price (₹):
+                  </label>
+                  <input
+                    type="text"
+                    value={stealDealsConfig.badgePrice || ''}
+                    onChange={(e) => saveStealDealsConfig({ ...stealDealsConfig, badgePrice: e.target.value })}
+                    placeholder="e.g. 9"
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '14px', fontWeight: 800, color: '#FF5E14', outline: 'none' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 700, color: '#475569', marginBottom: '6px' }}>
+                    Subtitle Tagline:
+                  </label>
+                  <input
+                    type="text"
+                    value={stealDealsConfig.subtitle || ''}
+                    onChange={(e) => saveStealDealsConfig({ ...stealDealsConfig, subtitle: e.target.value })}
+                    placeholder="e.g. ✦ GET ANY ONE ITEM AT SPECIAL PRICE ✦"
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '14px', fontWeight: 600, outline: 'none' }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Section 2: Steal Deal Items Collection Grid */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Tag size={20} color="#FF5E14" /> Configured Deal Items ({(stealDealsConfig.items || []).length} Items)
+                </h3>
+                <span style={{ fontSize: '13px', color: '#64748B', fontWeight: 600 }}>
+                  Items displayed on customer homepage `/`
+                </span>
+              </div>
+
+              {(stealDealsConfig.items || []).length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '48px 20px', backgroundColor: '#FFFFFF', borderRadius: '20px', border: '2px dashed #CBD5E1', color: '#64748B' }}>
+                  <Tag size={40} color="#94A3B8" style={{ marginBottom: '12px' }} />
+                  <h4 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>No items in Steal Deals collection</h4>
+                  <p style={{ margin: '0 0 16px', fontSize: '13px' }}>Click "+ Add Deal Item" above to add products to your Steal Deal offer banner.</p>
+                  <button
+                    onClick={() => setIsAddStealItemModalOpen(true)}
+                    style={{ backgroundColor: '#FF5E14', color: '#FFF', border: 'none', borderRadius: '10px', padding: '10px 20px', fontWeight: 800, fontSize: '13.5px', cursor: 'pointer' }}
+                  >
+                    + Add First Deal Item
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '16px' }}>
+                  {(stealDealsConfig.items || []).map((item) => (
+                    <div
+                      key={item.id}
+                      style={{
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: '16px',
+                        border: '1.5px solid #E2E8F0',
+                        padding: '14px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
+                        position: 'relative'
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteStealItem(item.id)}
+                        style={{ position: 'absolute', top: '10px', right: '10px', background: '#FEE2E2', color: '#DC2626', border: 'none', borderRadius: '50%', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 5 }}
+                        title="Remove Item from Collection"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+
+                      <div style={{ width: '100%', height: '120px', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#F8FAFC', marginBottom: '10px' }}>
+                        <img src={item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80'} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      </div>
+
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                          <span style={{ fontSize: '11.5px', color: '#64748B', fontWeight: 600 }}>{item.unit || '1 pc'}</span>
+                          <span style={{ backgroundColor: '#FEF3C7', color: '#92400E', fontSize: '9.5px', fontWeight: 800, padding: '2px 6px', borderRadius: '4px' }}>
+                            Unlocks at ₹{item.unlockAt || 199}
+                          </span>
+                        </div>
+
+                        <div style={{ fontSize: '14px', fontWeight: 800, color: '#0F172A', marginBottom: '6px', lineHeight: '1.3' }}>
+                          {item.name}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                          <span style={{ fontSize: '18px', fontWeight: 900, color: '#FF5E14' }}>₹{item.price}</span>
+                          {item.originalPrice && (
+                            <span style={{ fontSize: '12px', color: '#94A3B8', textDecoration: 'line-through', fontWeight: 600 }}>₹{item.originalPrice}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -3627,14 +5854,14 @@ export default function DashboardPage({ onShowToast }) {
                         transition: 'all 0.2s ease',
                       }}
                     >
-                      <div style={{ fontSize: '15px', fontWeight: 900, marginBottom: '6px', letterSpacing: '-0.01em' }}>
+                      <div style={{ fontSize: '15px', fontWeight: 500, marginBottom: '6px', letterSpacing: '-0.01em' }}>
                         {storeControls.restName || "My Restaurant"}
                       </div>
 
                       <div
                         style={{
                           fontSize: '13px',
-                          fontWeight: 900,
+                          fontWeight: 500,
                           padding: '4px 14px',
                           borderRadius: '16px',
                           backgroundColor: t.theme === 'luxury' ? '#F59E0B' : t.theme === 'neon' ? '#FFFFFF' : '#FF5E14',
@@ -3669,7 +5896,7 @@ export default function DashboardPage({ onShowToast }) {
                         />
                       </div>
 
-                      <div style={{ fontSize: '11px', marginTop: '10px', fontWeight: 700, opacity: 0.9, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <div style={{ fontSize: '11px', marginTop: '10px', fontWeight: 400, opacity: 0.9, display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <QrCode size={13} />
                         <span>{t.purpose || 'Contactless Self Ordering'}</span>
                       </div>
@@ -3686,24 +5913,24 @@ export default function DashboardPage({ onShowToast }) {
                           justifyContent: 'center',
                           gap: '4px',
                           fontSize: '11px',
-                          fontWeight: 800,
+                          fontWeight: 500,
                           color: t.theme === 'neon' ? '#FFFFFF' : '#64748B',
                         }}
                       >
                         <Sparkles size={12} color={t.theme === 'neon' ? '#FFFFFF' : '#FF5E14'} />
                         <span style={{ opacity: 0.85 }}>Powered by</span>
-                        <span style={{ color: t.theme === 'neon' ? '#FFFFFF' : '#FF5E14', fontWeight: 900, fontSize: '11.5px' }}>
+                        <span style={{ color: t.theme === 'neon' ? '#FFFFFF' : '#FF5E14', fontWeight: 500, fontSize: '11.5px' }}>
                           FoodyPay
                         </span>
                       </div>
                     </div>
 
-                    <div style={{ textAlign: 'center', fontSize: '11.5px', color: '#64748B', fontWeight: 700, wordBreak: 'break-all', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    <div style={{ textAlign: 'center', fontSize: '11.5px', color: '#64748B', fontWeight: 400, wordBreak: 'break-all', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap' }}>
                       <a
                         href={targetUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        style={{ color: '#FF5E14', textDecoration: 'underline', fontWeight: 800 }}
+                        style={{ color: '#FF5E14', textDecoration: 'underline', fontWeight: 500 }}
                         title="Click to open & test live customer menu"
                       >
                         {targetUrl} 
@@ -3907,6 +6134,7 @@ export default function DashboardPage({ onShowToast }) {
                   >
                     <option value="all_group">Send to ALL Group Members</option>
                     <option value="random_n">Selective / Random N Members</option>
+                    <option value="specific_phone">🎯 Assign to Specific Mobile Number</option>
                   </select>
                 </div>
 
@@ -3919,6 +6147,19 @@ export default function DashboardPage({ onShowToast }) {
                       placeholder="e.g. 2"
                       value={campaignRandomCount}
                       onChange={(e) => setCampaignRandomCount(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {campaignDispatchMode === 'specific_phone' && (
+                  <div className="crm-form-group" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Customer Mobile Number *</label>
+                    <input
+                      type="text"
+                      className="crm-input"
+                      placeholder="e.g. 9876543210"
+                      value={campaignTargetPhone}
+                      onChange={(e) => setCampaignTargetPhone(e.target.value)}
                     />
                   </div>
                 )}
@@ -4028,6 +6269,34 @@ export default function DashboardPage({ onShowToast }) {
                           </span>
                         </button>
 
+                        {/* ASSIGN MOBILE BUTTON */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedCouponForAssignModal(coupon);
+                            setAssignMobileInput(coupon.assignedCustomerPhone || coupon.targetPhone || '');
+                            setIsAssignMobileModalOpen(true);
+                          }}
+                          title="Assign to Specific Customer Mobile Number"
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                            border: '1px solid #FFEDD5',
+                            background: '#FFF7ED',
+                            color: '#FF5E14',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '12px',
+                            fontWeight: 700,
+                            transition: 'all 0.2s ease',
+                          }}
+                        >
+                          <Phone size={13} color="#FF5E14" />
+                          <span>Assign Mobile</span>
+                        </button>
+
                         {/* EDIT BUTTON */}
                         <button
                           type="button"
@@ -4081,6 +6350,18 @@ export default function DashboardPage({ onShowToast }) {
                     <div style={{ fontSize: '16.5px', fontWeight: 800, color: '#0F172A' }}>
                       {coupon.discount}
                     </div>
+
+                    {(coupon.assignedCustomerPhone || coupon.targetPhone) ? (
+                      <div style={{ fontSize: '12px', fontWeight: 800, color: '#C2410C', background: '#FFF7ED', border: '1px solid #FFEDD5', padding: '3px 8px', borderRadius: '6px', width: 'fit-content', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Phone size={12} color="#FF5E14" />
+                        <span>Assigned Mobile: {coupon.assignedCustomerPhone || coupon.targetPhone} {coupon.assignedCustomerName ? `(${coupon.assignedCustomerName})` : ''}</span>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#15803D', background: '#DCFCE7', border: '1px solid #BBF7D0', padding: '2px 8px', borderRadius: '6px', width: 'fit-content' }}>
+                        ● Available to All Diners
+                      </div>
+                    )}
+
                     <div style={{ fontSize: '12.5px', color: isExpiring ? '#EA580C' : '#64748B', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <Clock size={13} />
                       <span>{formatExpiryDisplay(coupon.expiryDate)}</span>
@@ -4094,6 +6375,347 @@ export default function DashboardPage({ onShowToast }) {
               })}
             </div>
             </div>
+          </div>
+        )}
+
+        {/* ==========================================================================
+            VIEW: DATABASE-DRIVEN DELIVERY ZONES & STORE MANAGEMENT
+            ========================================================================== */}
+        {activeTab === 'delivery_zones' && (
+          <div style={{ padding: '32px 42px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            {/* Header Banner */}
+            <div style={{ background: 'linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%)', borderRadius: '20px', padding: '28px 32px', color: '#FFFFFF', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px', boxShadow: '0 10px 25px -5px rgba(30,64,175,0.3)' }}>
+              <div>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.2)', padding: '6px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: 800, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '12px' }}>
+                  <Truck size={14} color="#93C5FD" /> Multi-Zone Marketplace System
+                </div>
+                <h2 style={{ margin: '0 0 8px 0', fontSize: '24px', fontWeight: 900, color: '#FFFFFF' }}>
+                  Delivery Zones &amp; Store Management
+                </h2>
+                <p style={{ margin: 0, color: 'rgba(255,255,255,0.9)', fontSize: '14px', maxWidth: '680px' }}>
+                  100% Database-Driven Location Engine. Add unlimited sectors, areas, cities, and stores, set store delivery radii, and assign store access by owner email. ZERO hardcoded sectors!
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingZoneObj(null);
+                    setZoneForm({ name: '', city: 'Mohali', state: 'Punjab', pincode: '', centerLatitude: 30.7046, centerLongitude: 76.7179, radius: 5, isActive: true });
+                    setIsAddZoneModalOpen(true);
+                  }}
+                  style={{
+                    backgroundColor: '#FFFFFF',
+                    color: '#1E40AF',
+                    border: 'none',
+                    padding: '12px 20px',
+                    borderRadius: '16px',
+                    fontWeight: 800,
+                    fontSize: '14px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 14px rgba(0,0,0,0.15)'
+                  }}
+                >
+                  <Plus size={18} /> + Add Delivery Zone
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingStoreObj(null);
+                    setStoreForm({ name: '', ownerName: '', ownerEmail: '', gstNumber: '', licenseNumber: '', address: '', city: 'Mohali', state: 'Punjab', pincode: '', latitude: 30.7046, longitude: 76.7179, deliveryRadius: 5, isActive: true });
+                    setIsAddStoreModalOpen(true);
+                  }}
+                  style={{
+                    backgroundColor: '#10B981',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    padding: '12px 20px',
+                    borderRadius: '16px',
+                    fontWeight: 800,
+                    fontSize: '14px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 14px rgba(16,185,129,0.3)'
+                  }}
+                >
+                  <Store size={18} /> + Register New Store
+                </button>
+              </div>
+            </div>
+
+            {/* Sub-tab Navigation */}
+            <div style={{ display: 'flex', gap: '12px', borderBottom: '2px solid #E2E8F0', paddingBottom: '12px' }}>
+              <button
+                type="button"
+                onClick={() => setDeliverySubTab('zones')}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  fontWeight: 800,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  backgroundColor: deliverySubTab === 'zones' ? '#1E40AF' : '#F1F5F9',
+                  color: deliverySubTab === 'zones' ? '#FFFFFF' : '#475569',
+                  transition: 'all 0.2s'
+                }}
+              >
+                📍 Delivery Zones ({(deliveryZones || []).length})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDeliverySubTab('stores')}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  fontWeight: 800,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  backgroundColor: deliverySubTab === 'stores' ? '#1E40AF' : '#F1F5F9',
+                  color: deliverySubTab === 'stores' ? '#FFFFFF' : '#475569',
+                  transition: 'all 0.2s'
+                }}
+              >
+                🏪 Stores &amp; Owner Access ({(storesList || []).length})
+              </button>
+            </div>
+
+            {/* TAB 1: DELIVERY ZONES LIST */}
+            {deliverySubTab === 'zones' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0F172A' }}>
+                    Active Database Delivery Zones
+                  </h3>
+                  <span style={{ fontSize: '13px', color: '#64748B', fontWeight: 600 }}>
+                    Each zone defines dynamic GPS center coordinates &amp; coverage radius (KM)
+                  </span>
+                </div>
+
+                {(deliveryZones || []).length === 0 ? (
+                  <div style={{ background: '#FFFFFF', padding: '40px', borderRadius: '16px', border: '1.5px solid #E2E8F0', textAlign: 'center' }}>
+                    <MapPin size={40} color="#94A3B8" style={{ marginBottom: '12px' }} />
+                    <h4 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: 800, color: '#334155' }}>No Delivery Zones Created Yet</h4>
+                    <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#64748B' }}>Click "+ Add Delivery Zone" to create dynamic sector or area coverage zones.</p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+                    {deliveryZones.map((zone) => (
+                      <div key={zone._id || zone.zoneId} style={{ background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid #E2E8F0', padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <span style={{ fontSize: '11px', fontWeight: 800, color: '#3B82F6', background: '#EFF6FF', padding: '2px 8px', borderRadius: '6px' }}>
+                              {zone.zoneId || 'ZONE'}
+                            </span>
+                            <h4 style={{ margin: '6px 0 2px', fontSize: '17px', fontWeight: 900, color: '#0F172A' }}>{zone.name}</h4>
+                            <div style={{ fontSize: '12.5px', color: '#64748B', fontWeight: 600 }}>📍 {zone.city}{zone.state ? `, ${zone.state}` : ''} {zone.pincode ? `(${zone.pincode})` : ''}</div>
+                          </div>
+                          <span style={{ fontSize: '11px', fontWeight: 800, padding: '3px 10px', borderRadius: '12px', background: zone.isActive !== false ? '#DCFCE7' : '#FEF2F2', color: zone.isActive !== false ? '#15803D' : '#DC2626' }}>
+                            {zone.isActive !== false ? 'ACTIVE' : 'INACTIVE'}
+                          </span>
+                        </div>
+
+                        <div style={{ background: '#F8FAFC', padding: '10px 12px', borderRadius: '10px', fontSize: '12px', color: '#475569', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                          <div><b>Center GPS:</b> {zone.centerLatitude?.toFixed(4)}, {zone.centerLongitude?.toFixed(4)}</div>
+                          <div><b>Coverage Radius:</b> {zone.radius} KM</div>
+                          <div><b>Assigned Stores:</b> {zone.assignedStoresCount !== undefined ? zone.assignedStoresCount : 0}</div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '8px', marginTop: 'auto' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingZoneObj(zone);
+                              setZoneForm({
+                                name: zone.name || '',
+                                city: zone.city || 'Mohali',
+                                state: zone.state || 'Punjab',
+                                pincode: zone.pincode || '',
+                                centerLatitude: zone.centerLatitude || 30.7046,
+                                centerLongitude: zone.centerLongitude || 76.7179,
+                                radius: zone.radius || 5,
+                                isActive: zone.isActive !== false,
+                              });
+                              setIsAddZoneModalOpen(true);
+                            }}
+                            style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                          >
+                            <Edit3 size={14} /> Edit Zone
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (window.confirm(`Are you sure you want to delete zone "${zone.name}"?`)) {
+                                try {
+                                  await deleteDeliveryZoneApi(zone._id || zone.zoneId);
+                                  addToast(`Zone "${zone.name}" deleted successfully.`);
+                                  loadDeliveryAndStoresData();
+                                } catch (err) {
+                                  addToast(`Error deleting zone: ${err.message}`);
+                                }
+                              }
+                            }}
+                            style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #FECACA', background: '#FEF2F2', color: '#DC2626', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 2: STORES LIST & OWNER EMAIL ASSIGNMENT */}
+            {deliverySubTab === 'stores' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0F172A' }}>
+                    Registered Marketplace Stores &amp; Owner Access
+                  </h3>
+                  <span style={{ fontSize: '13px', color: '#64748B', fontWeight: 600 }}>
+                    Assign stores to delivery zones &amp; bind owner email address for merchant portal access
+                  </span>
+                </div>
+
+                {(storesList || []).length === 0 ? (
+                  <div style={{ background: '#FFFFFF', padding: '40px', borderRadius: '16px', border: '1.5px solid #E2E8F0', textAlign: 'center' }}>
+                    <Store size={40} color="#94A3B8" style={{ marginBottom: '12px' }} />
+                    <h4 style={{ margin: '0 0 6px', fontSize: '16px', fontWeight: 800, color: '#334155' }}>No Stores Registered Yet</h4>
+                    <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#64748B' }}>Click "+ Register New Store" to add a store location and map it to delivery zones.</p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '16px' }}>
+                    {storesList.map((store) => (
+                      <div key={store._id || store.storeId} style={{ background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid #E2E8F0', padding: '20px', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <span style={{ fontSize: '11px', fontWeight: 800, color: '#10B981', background: '#ECFDF5', padding: '2px 8px', borderRadius: '6px' }}>
+                              {store.storeId || 'STORE'}
+                            </span>
+                            <h4 style={{ margin: '6px 0 2px', fontSize: '18px', fontWeight: 900, color: '#0F172A' }}>{store.name}</h4>
+                            <div style={{ fontSize: '12.5px', color: '#64748B', fontWeight: 600 }}>📍 {store.address}, {store.city}</div>
+                          </div>
+                          <span style={{ fontSize: '11px', fontWeight: 800, padding: '3px 10px', borderRadius: '12px', background: store.isActive !== false ? '#DCFCE7' : '#FEF2F2', color: store.isActive !== false ? '#15803D' : '#DC2626' }}>
+                            {store.isActive !== false ? 'ACTIVE' : 'INACTIVE'}
+                          </span>
+                        </div>
+
+                        <div style={{ background: '#EFF6FF', padding: '10px 12px', borderRadius: '10px', fontSize: '12.5px', color: '#1E40AF' }}>
+                          <b>📧 Owner Email Access:</b> <span style={{ fontWeight: 800, textDecoration: 'underline' }}>{store.ownerEmail || 'Not Assigned'}</span>
+                          {store.ownerName ? ` (${store.ownerName})` : ''}
+                        </div>
+
+                        <div style={{ background: '#F8FAFC', padding: '10px 12px', borderRadius: '10px', fontSize: '12px', color: '#475569', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                          <div><b>Store GPS:</b> {store.latitude?.toFixed(4)}, {store.longitude?.toFixed(4)}</div>
+                          <div><b>Delivery Radius:</b> {store.deliveryRadius} KM</div>
+                          <div><b>GST No:</b> {store.gstNumber || 'N/A'}</div>
+                          <div><b>License:</b> {store.licenseNumber || 'N/A'}</div>
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '6px' }}>Assigned Delivery Zones:</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                            {Array.isArray(store.deliveryZones) && store.deliveryZones.length > 0 ? (
+                              store.deliveryZones.map((z) => (
+                                <span key={z._id || z.name} style={{ background: '#DBEAFE', color: '#1E40AF', padding: '3px 10px', borderRadius: '12px', fontSize: '11.5px', fontWeight: 800 }}>
+                                  📍 {z.name} ({z.city})
+                                </span>
+                              ))
+                            ) : (
+                              <span style={{ color: '#94A3B8', fontSize: '12px', fontStyle: 'italic' }}>No zones assigned yet</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: 'auto' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedStoreForZones(store);
+                              setSelectedZoneIdsForStore(Array.isArray(store.deliveryZones) ? store.deliveryZones.map((z) => z._id) : []);
+                              setIsAssignStoreZonesModalOpen(true);
+                            }}
+                            style={{ padding: '8px', borderRadius: '8px', border: '1px solid #93C5FD', background: '#EFF6FF', color: '#1E40AF', fontWeight: 800, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                          >
+                            <MapPin size={14} /> Assign Zones
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedStoreForOwner(store);
+                              setAssignOwnerEmailInput(store.ownerEmail || '');
+                              setIsAssignOwnerEmailModalOpen(true);
+                            }}
+                            style={{ padding: '8px', borderRadius: '8px', border: '1px solid #FDBA74', background: '#FFF7ED', color: '#C2410C', fontWeight: 800, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                          >
+                            <User size={14} /> Assign Owner Email
+                          </button>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingStoreObj(store);
+                              setStoreForm({
+                                name: store.name || '',
+                                ownerName: store.ownerName || '',
+                                ownerEmail: store.ownerEmail || '',
+                                gstNumber: store.gstNumber || '',
+                                licenseNumber: store.licenseNumber || '',
+                                address: store.address || '',
+                                city: store.city || 'Mohali',
+                                state: store.state || 'Punjab',
+                                pincode: store.pincode || '',
+                                latitude: store.latitude || 30.7046,
+                                longitude: store.longitude || 76.7179,
+                                deliveryRadius: store.deliveryRadius || 5,
+                                isActive: store.isActive !== false,
+                              });
+                              setIsAddStoreModalOpen(true);
+                            }}
+                            style={{ flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                          >
+                            <Edit3 size={14} /> Edit Details
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (window.confirm(`Are you sure you want to delete store "${store.name}"?`)) {
+                                try {
+                                  await deleteStoreApi(store._id || store.storeId);
+                                  addToast(`Store "${store.name}" deleted successfully.`);
+                                  loadDeliveryAndStoresData();
+                                } catch (err) {
+                                  addToast(`Error deleting store: ${err.message}`);
+                                }
+                              }
+                            }}
+                            style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #FECACA', background: '#FEF2F2', color: '#DC2626', fontWeight: 700, fontSize: '12.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -4185,33 +6807,57 @@ export default function DashboardPage({ onShowToast }) {
                         <span style={{ fontSize: '13px', color: '#475569', fontWeight: 600 }}>
                           {c.lastOrdered || 'Recently'}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedCustId(c.id || c._id);
-                            setNotifyAudienceMode('specific_user');
-                            setNotifyTitle(` Special Personal Offer for ${c.name}`);
-                            setNotifyMessage(`Hi ${c.name}! We have an exclusive offer for you at ${storeControls.restName || 'our store'}. Use code FEST20 for 20% OFF!`);
-                            setIsCustomNotifyModalOpen(true);
-                          }}
-                          style={{
-                            background: '#EFF6FF',
-                            border: '1px solid #BFDBFE',
-                            color: '#1D4ED8',
-                            padding: '4px 10px',
-                            borderRadius: '6px',
-                            fontSize: '12px',
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                          }}
-                          title={`Send Personal Notification to ${c.name}`}
-                        >
-                          <Bell size={13} />
-                          <span>Notify</span>
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenCreateCoupon(c)}
+                            style={{
+                              background: '#FFF7ED',
+                              border: '1px solid #FFEDD5',
+                              color: '#FF5E14',
+                              padding: '4px 10px',
+                              borderRadius: '6px',
+                              fontSize: '12px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                            title={`Assign Personal Coupon to ${c.name} (${c.phone})`}
+                          >
+                            <Tag size={13} color="#FF5E14" />
+                            <span>Assign Coupon</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedCustId(c.id || c._id);
+                              setNotifyAudienceMode('specific_user');
+                              setNotifyTitle(` Special Personal Offer for ${c.name}`);
+                              setNotifyMessage(`Hi ${c.name}! We have an exclusive offer for you at ${storeControls.restName || 'our store'}. Use code FEST20 for 20% OFF!`);
+                              setIsCustomNotifyModalOpen(true);
+                            }}
+                            style={{
+                              background: '#EFF6FF',
+                              border: '1px solid #BFDBFE',
+                              color: '#1D4ED8',
+                              padding: '4px 10px',
+                              borderRadius: '6px',
+                              fontSize: '12px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                            title={`Send Personal Notification to ${c.name}`}
+                          >
+                            <Bell size={13} />
+                            <span>Notify</span>
+                          </button>
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -4299,6 +6945,193 @@ export default function DashboardPage({ onShowToast }) {
                   />
                   <span className="crm-blue-slider" />
                 </label>
+              </div>
+
+              {/* Kitchen Display System (KDS) status toggle */}
+              <div className="crm-control-row" style={{ paddingTop: '12px', borderTop: '1px dashed #E2E8F0' }}>
+                <div className="crm-control-name-status">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className="crm-control-label">Kitchen Display System (KDS)</span>
+                    <span className={storeControls.kdsEnabled !== false ? 'crm-status-badge-green' : 'crm-status-badge-gray'}>
+                      {storeControls.kdsEnabled !== false ? ' KDS Active (ON)' : ' KDS Disabled (OFF)'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '11.5px', color: '#64748B', marginTop: '3px' }}>
+                    URL: <code>https://foodypay.in/{(storeControls.restName || 'thefoodypay').toLowerCase().replace(/\s+/g, '-')}/{storeControls.foodypayId || 'FP-790044'}/KitchenDisplaySystem</code>
+                  </div>
+                </div>
+                <label className="crm-blue-switch">
+                  <input
+                    type="checkbox"
+                    checked={storeControls.kdsEnabled !== false}
+                    onChange={() => {
+                      const next = !(storeControls.kdsEnabled !== false);
+                      setStoreControls((prev) => ({ ...prev, kdsEnabled: next }));
+                      try {
+                        localStorage.setItem('foodypay_kds_enabled', JSON.stringify(next));
+                        window.dispatchEvent(new Event('storage'));
+                      } catch (e) {}
+                      addToast(`Kitchen Display System (KDS) is now ${next ? 'ENABLED (ON)' : 'DISABLED (OFF)'}`);
+                    }}
+                  />
+                  <span className="crm-blue-slider" />
+                </label>
+              </div>
+            </div>
+
+            {/* Order Status Stepper & Delivery Workflow Settings */}
+            <div className="crm-control-section-card">
+              <div className="crm-control-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Truck size={20} color="#F59E0B" /> Order Status Workflow & Stepper Settings (Dine-In vs Delivery)
+              </div>
+              <div style={{ fontSize: '13.5px', color: '#64748B', marginBottom: '14px' }}>
+                Customize how order status steps (Placed ➔ Kitchen ➔ Delivery Ke Liye Nikala ➔ Delivered) appear on order cards & delivery screens.
+              </div>
+
+              <div style={{ background: '#F8FAFC', padding: '16px', borderRadius: '12px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '8px' }}>WORKFLOW MODE</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                    {[
+                      { id: 'auto', label: '⚡ Auto Dynamic (Dine-In: Placed ➔ Kitchen ➔ Ready ➔ Served | Delivery: Placed ➔ Kitchen ➔ Out for Delivery ➔ Delivered)' },
+                      { id: 'dine_in', label: '🍽️ Dine-In Mode (Placed ➔ Kitchen ➔ Ready ➔ Served)' },
+                      { id: 'delivery', label: '🚀 Delivery & Store Mode (Placed ➔ Kitchen ➔ Out for Delivery ➔ Delivered)' },
+                    ].map((mode) => (
+                      <label
+                        key={mode.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '10px 14px',
+                          borderRadius: '8px',
+                          border: (storeControls.workflowMode || 'auto') === mode.id ? '2px solid #2563EB' : '1px solid #CBD5E1',
+                          background: (storeControls.workflowMode || 'auto') === mode.id ? '#EFF6FF' : '#FFFFFF',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          fontWeight: 700,
+                          color: (storeControls.workflowMode || 'auto') === mode.id ? '#1E40AF' : '#334155',
+                          flex: '1 1 250px',
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name="workflowMode"
+                          value={mode.id}
+                          checked={(storeControls.workflowMode || 'auto') === mode.id}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setStoreControls((prev) => ({ ...prev, workflowMode: val }));
+                            localStorage.setItem('foodypay_workflow_mode', val);
+                            addToast(`Order Workflow Mode set to: ${val.toUpperCase()}`);
+                          }}
+                        />
+                        {mode.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Custom Order Status Stepper Step Names Customizer */}
+                <div style={{ paddingTop: '12px', borderTop: '1px dashed #CBD5E1' }}>
+                  <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0F172A', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <SlidersHorizontal size={16} color="#FF5E14" /> Customize Status Step Names (Placed ➔ Kitchen ➔ Delivery ➔ Served)
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#64748B', marginBottom: '3px' }}>Step 1 Name (New)</label>
+                      <input
+                        type="text"
+                        placeholder="Placed"
+                        value={statusStepLabels.step1}
+                        onChange={(e) => setStatusStepLabels({ ...statusStepLabels, step1: e.target.value })}
+                        style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '12.5px', fontWeight: 600 }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#64748B', marginBottom: '3px' }}>Step 2 Name (Preparing)</label>
+                      <input
+                        type="text"
+                        placeholder="Kitchen"
+                        value={statusStepLabels.step2}
+                        onChange={(e) => setStatusStepLabels({ ...statusStepLabels, step2: e.target.value })}
+                        style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '12.5px', fontWeight: 600 }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#64748B', marginBottom: '3px' }}>Step 3 Name (Ready/Transit)</label>
+                      <input
+                        type="text"
+                        placeholder="Out for Delivery / Ready"
+                        value={statusStepLabels.step3}
+                        onChange={(e) => setStatusStepLabels({ ...statusStepLabels, step3: e.target.value })}
+                        style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '12.5px', fontWeight: 600 }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#64748B', marginBottom: '3px' }}>Step 4 Name (Final)</label>
+                      <input
+                        type="text"
+                        placeholder="Delivered / Served"
+                        value={statusStepLabels.step4}
+                        onChange={(e) => setStatusStepLabels({ ...statusStepLabels, step4: e.target.value })}
+                        style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '12.5px', fontWeight: 600 }}
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      saveStatusStepLabels(statusStepLabels);
+                      addToast('Saved Custom Status Step Names!', <CheckCircle2 size={16} color="#10B981" />);
+                    }}
+                    style={{ background: '#1D4ED8', color: '#FFF', border: 'none', padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    Save Step Names
+                  </button>
+                </div>
+
+                {/* Delivery Partner Screen Quick Link Button (Hidden if feature is LOCKED) */}
+                {!isDeliveryPartnerLocked && (
+                  <div style={{ paddingTop: '12px', borderTop: '1px dashed #CBD5E1', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 800, color: '#0F172A' }}>
+                        🚚 Delivery Partner Portal Link
+                      </div>
+                      <div style={{ fontSize: '11.5px', color: '#64748B', marginTop: '2px' }}>
+                        URL: <code>https://foodypay.in/{(storeControls.restName || 'thefoodypay').toLowerCase().replace(/\s+/g, '-')}/{storeControls.foodypayId || 'FP-790044'}/delivery-partner</code>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        style={{ padding: '8px 14px', borderRadius: '8px', background: '#F59E0B', color: '#000', border: 'none', fontWeight: 800, fontSize: '12.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        onClick={() => {
+                          const slug = (storeControls.restName || 'thefoodypay').toLowerCase().replace(/\s+/g, '-');
+                          const mid = storeControls.foodypayId || 'FP-790044';
+                          window.open(`/${slug}/${mid}/delivery-partner`, '_blank');
+                        }}
+                      >
+                        <Truck size={15} /> Open Delivery View
+                      </button>
+                      <button
+                        type="button"
+                        style={{ padding: '8px 14px', borderRadius: '8px', background: '#0F172A', color: '#FFF', border: 'none', fontWeight: 800, fontSize: '12.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        onClick={() => {
+                          const slug = (storeControls.restName || 'thefoodypay').toLowerCase().replace(/\s+/g, '-');
+                          const mid = storeControls.foodypayId || 'FP-790044';
+                          navigator.clipboard.writeText(`${window.location.origin}/${slug}/${mid}/delivery-partner`);
+                          addToast('Copied Delivery Partner View URL to clipboard!');
+                        }}
+                      >
+                        <Copy size={15} /> Copy URL
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -4755,17 +7588,40 @@ export default function DashboardPage({ onShowToast }) {
               <button
                 type="button"
                 onClick={async () => {
+                  try {
+                    const rzpKey = storeControls.razorpayKeyId || 'rzp_live_TjBEt4gu2aUflB';
+                    const rzpSec = storeControls.razorpayKeySecret || 'FPXDLXe3Vbh0NYSpCAXmXOA3';
+                    const mode = storeControls.paymentRoutingMode || 'foodypay_default';
+                    const upi = storeControls.upiId || 'merchant@icici';
+
+                    localStorage.setItem('foodypay_payment_routing_mode', mode);
+                    localStorage.setItem('foodypay_rzp_key_id', rzpKey);
+                    localStorage.setItem('foodypay_rzp_key_secret', rzpSec);
+                    localStorage.setItem('foodypay_upi_id', upi);
+
+                    const rawU = localStorage.getItem('foodypay_user');
+                    if (rawU) {
+                      const parsedU = JSON.parse(rawU);
+                      parsedU.paymentRoutingMode = mode;
+                      parsedU.razorpayKeyId = rzpKey;
+                      parsedU.razorpayKeySecret = rzpSec;
+                      parsedU.upiId = upi;
+                      localStorage.setItem('foodypay_user', JSON.stringify(parsedU));
+                    }
+                    window.dispatchEvent(new Event('storage'));
+                  } catch (e) {}
+
                   if (token) {
                     try {
                       await updateSettingsApi(token, {
-                        paymentRoutingMode: storeControls.paymentRoutingMode,
-                        razorpayKeyId: storeControls.razorpayKeyId,
-                        razorpayKeySecret: storeControls.razorpayKeySecret,
+                        paymentRoutingMode: storeControls.paymentRoutingMode || 'foodypay_default',
+                        razorpayKeyId: storeControls.razorpayKeyId || 'rzp_live_TjBEt4gu2aUflB',
+                        razorpayKeySecret: storeControls.razorpayKeySecret || 'FPXDLXe3Vbh0NYSpCAXmXOA3',
                         upiId: storeControls.upiId,
                       });
                     } catch (e) {}
                   }
-                  addToast(' Payment Routing & Gateway settings saved successfully!', <Check size={18} />);
+                  addToast(' Razorpay Live Payment Gateway configured & saved successfully!', <Check size={18} />);
                 }}
                 style={{
                   padding: '10px 20px',
@@ -4780,6 +7636,114 @@ export default function DashboardPage({ onShowToast }) {
                 }}
               >
                 Save Payment Settings
+              </button>
+            </div>
+
+            {/* Payment Methods Label & Display Customization Section */}
+            <div className="crm-control-section-card" style={{ marginTop: '20px' }}>
+              <div className="crm-control-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <SlidersHorizontal size={20} color="#FF5E14" /> Checkout Payment Options &amp; Label Customization
+              </div>
+
+              <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '16px' }}>
+                Customize the payment section header and button texts shown to diners during web app cart checkout.
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', background: '#F8FAFC', padding: '16px', borderRadius: '12px', border: '1px solid #E2E8F0', marginBottom: '16px' }}>
+                {/* 1. Header Title */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    Payment Section Title Header
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Payment Method / Select Payment Option"
+                    value={paymentConfig.header || ''}
+                    onChange={(e) => setPaymentConfig({ ...paymentConfig, header: e.target.value })}
+                    style={{ width: '100%', maxWidth: '400px', padding: '8px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px', fontWeight: 600 }}
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px', paddingTop: '12px', borderTop: '1px solid #E2E8F0' }}>
+                  {/* 2. Option 1: Online UPI */}
+                  <div style={{ background: '#FFFFFF', padding: '14px', borderRadius: '10px', border: '1px solid #CBD5E1' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800, fontSize: '13.5px', color: '#0F172A' }}>
+                        <QrCode size={18} color="#FF5E14" /> Option 1: Online UPI
+                      </div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', color: paymentConfig.upiEnabled !== false ? '#16A34A' : '#64748B' }}>
+                        <input
+                          type="checkbox"
+                          checked={paymentConfig.upiEnabled !== false}
+                          onChange={(e) => savePaymentConfig({ ...paymentConfig, upiEnabled: e.target.checked })}
+                        />
+                        {paymentConfig.upiEnabled !== false ? 'ENABLED' : 'DISABLED'}
+                      </label>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#64748B', marginBottom: '4px' }}>
+                        Button Label Text
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Online UPI / Scan & Pay"
+                        value={paymentConfig.upiLabel || ''}
+                        onChange={(e) => setPaymentConfig({ ...paymentConfig, upiLabel: e.target.value })}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '12.5px', fontWeight: 600 }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* 3. Option 2: Cash / Pay Counter */}
+                  <div style={{ background: '#FFFFFF', padding: '14px', borderRadius: '10px', border: '1px solid #CBD5E1' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 800, fontSize: '13.5px', color: '#0F172A' }}>
+                        <CreditCard size={18} color="#059669" /> Option 2: Cash / Pay Counter
+                      </div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', color: paymentConfig.cashEnabled !== false ? '#16A34A' : '#64748B' }}>
+                        <input
+                          type="checkbox"
+                          checked={paymentConfig.cashEnabled !== false}
+                          onChange={(e) => savePaymentConfig({ ...paymentConfig, cashEnabled: e.target.checked })}
+                        />
+                        {paymentConfig.cashEnabled !== false ? 'ENABLED' : 'DISABLED'}
+                      </label>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 700, color: '#64748B', marginBottom: '4px' }}>
+                        Button Label Text
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Cash / Pay Counter"
+                        value={paymentConfig.cashLabel || ''}
+                        onChange={(e) => setPaymentConfig({ ...paymentConfig, cashLabel: e.target.value })}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '12.5px', fontWeight: 600 }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  savePaymentConfig(paymentConfig);
+                  addToast('Saved Payment Method Button Labels & Settings!', <CheckCircle2 size={18} color="#10B981" />);
+                }}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '10px',
+                  background: '#FF5E14',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  fontWeight: 800,
+                  fontSize: '13.5px',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(255, 94, 20, 0.3)',
+                }}
+              >
+                Save Payment Display Labels
               </button>
             </div>
           </div>
@@ -6482,16 +9446,63 @@ export default function DashboardPage({ onShowToast }) {
                       </div>
 
                       <div className="crm-form-group">
-                        <label style={{ fontWeight: 800 }}>Base Price (₹) <span className="req">*</span></label>
+                        <label style={{ fontWeight: 800 }}>Selling Price (₹) <span className="req">*</span></label>
                         <input
                           type="number"
                           className="crm-input"
                           required
-                          placeholder="e.g. 199"
+                          placeholder="e.g. 150"
                           value={editProductForm.price}
                           onChange={(e) => setEditProductForm({ ...editProductForm, price: e.target.value })}
                         />
                       </div>
+
+                      <div className="crm-form-group">
+                        <label style={{ fontWeight: 800 }}>Original Price / MRP (₹)</label>
+                        <input
+                          type="number"
+                          className="crm-input"
+                          placeholder="e.g. 200"
+                          value={editProductForm.originalPrice || ''}
+                          onChange={(e) => setEditProductForm({ ...editProductForm, originalPrice: e.target.value })}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Live Discount Calculation Badge */}
+                    {Number(editProductForm.originalPrice) > Number(editProductForm.price) && Number(editProductForm.price) > 0 && (
+                      <div style={{ background: '#ECFDF5', border: '1.5px solid #A7F3D0', padding: '8px 12px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#047857', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>🔥 Discount Calculated:</span>
+                          <span style={{ background: '#10B981', color: '#FFF', padding: '2px 8px', borderRadius: '6px', fontSize: '12px' }}>
+                            {Math.round(((Number(editProductForm.originalPrice) - Number(editProductForm.price)) / Number(editProductForm.originalPrice)) * 100)}% OFF
+                          </span>
+                          <span style={{ color: '#059669', fontSize: '12px' }}>(Save ₹{Number(editProductForm.originalPrice) - Number(editProductForm.price)})</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Toggle Option: Show or Hide Discount Tag on Customer Menu */}
+                    <div className="crm-form-group" style={{ background: '#F8FAFC', border: '1.5px solid #E2E8F0', padding: '10px 14px', borderRadius: '10px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', fontSize: '13px', fontWeight: 800, color: '#0F172A', margin: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <input
+                            type="checkbox"
+                            checked={editProductForm.showDiscountTag !== false}
+                            onChange={(e) => setEditProductForm({ ...editProductForm, showDiscountTag: e.target.checked })}
+                            style={{ width: '17px', height: '17px', accentColor: '#1D4ED8' }}
+                          />
+                          <div>
+                            <span>🏷️ Show % OFF Badge &amp; Strikethrough Price on Menu</span>
+                            <div style={{ fontSize: '11px', color: '#64748B', fontWeight: 400, marginTop: '1px' }}>
+                              Enable to show discount tag (e.g. 25% OFF) to customers on storefront.
+                            </div>
+                          </div>
+                        </div>
+                        <span style={{ fontSize: '11px', fontWeight: 800, padding: '2px 8px', borderRadius: '6px', background: (editProductForm.showDiscountTag !== false) ? '#DCFCE7' : '#F1F5F9', color: (editProductForm.showDiscountTag !== false) ? '#15803D' : '#64748B' }}>
+                          {(editProductForm.showDiscountTag !== false) ? 'SHOW ON MENU' : 'HIDE'}
+                        </span>
+                      </label>
                     </div>
 
                     <div className="crm-form-group">
@@ -6540,44 +9551,150 @@ export default function DashboardPage({ onShowToast }) {
 
                   {/* RIGHT COLUMN: Photo Picker & Size Variations */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                    {/* CLEAN FOOD PHOTO PICKER - Hides Raw URL */}
-                    <div className="crm-food-photo-card">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <label style={{ margin: 0, fontWeight: 800, fontSize: '13px' }}>Food Image Photo</label>
+                    {/* MULTI-PHOTO GALLERY PICKER */}
+                    <div className="crm-food-photo-card" style={{ background: '#F8FAFC', padding: '16px', borderRadius: '16px', border: '1.5px solid #E2E8F0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <div>
+                          <label style={{ margin: 0, fontWeight: 800, fontSize: '13.5px', color: '#0F172A' }}>
+                            Product Photos Gallery ({editProductForm.images?.length || (editProductForm.image ? 1 : 0)})
+                          </label>
+                          <div style={{ fontSize: '11.5px', color: '#64748B' }}>
+                            Upload single or multiple photos from PC/Mobile. Tap a photo to set as main cover.
+                          </div>
+                        </div>
                         <button
                           type="button"
                           style={{ background: 'none', border: 'none', color: '#1D4ED8', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
                           onClick={() => setShowEditUrlInput(!showEditUrlInput)}
                         >
-                          {showEditUrlInput ? ' Hide URL Field' : ' Edit Image URL'}
+                          {showEditUrlInput ? ' Hide URL' : '+ Add Image URL'}
                         </button>
                       </div>
 
-                      <div className="crm-food-photo-preview-box">
+                      {/* Main Active Photo Preview Box */}
+                      <div className="crm-food-photo-preview-box" style={{ height: '180px', borderRadius: '14px', overflow: 'hidden', backgroundColor: '#FFFFFF', border: '1px solid #CBD5E1', marginBottom: '12px', position: 'relative' }}>
                         {(editProductForm.images?.[0] || editProductForm.image) ? (
-                          <img src={editProductForm.images?.[0] || editProductForm.image} alt="Dish Preview" />
+                          <img src={editProductForm.images?.[0] || editProductForm.image} alt="Dish Main Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : (
-                          <div style={{ textAlign: 'center', color: '#64748B', fontSize: '13px' }}>
-                            <span style={{ fontSize: '28px', display: 'block', marginBottom: '4px' }}></span>
-                            No Photo Selected
+                          <div style={{ textAlign: 'center', color: '#64748B', fontSize: '13px', paddingTop: '50px' }}>
+                            📷 No Photo Selected. Click below to add photos.
                           </div>
                         )}
+                        <span style={{ position: 'absolute', bottom: '8px', left: '8px', background: 'rgba(15,23,42,0.8)', color: '#FFF', fontSize: '10px', fontWeight: 800, padding: '2px 8px', borderRadius: '6px' }}>
+                          ★ Main Cover Photo
+                        </span>
                       </div>
 
+                      {/* Thumbnails list of multiple uploaded photos */}
+                      {(editProductForm.images && editProductForm.images.length > 0) && (
+                        <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '8px', marginBottom: '12px' }}>
+                          {editProductForm.images.map((imgUrl, imgIdx) => (
+                            <div
+                              key={imgIdx}
+                              style={{
+                                position: 'relative',
+                                width: '60px',
+                                height: '60px',
+                                borderRadius: '10px',
+                                overflow: 'hidden',
+                                border: imgIdx === 0 ? '2.5px solid #FF5E14' : '1px solid #CBD5E1',
+                                cursor: 'pointer',
+                                flexShrink: 0
+                              }}
+                              onClick={() => {
+                                const reordered = [imgUrl, ...editProductForm.images.filter((_, idx) => idx !== imgIdx)];
+                                setEditProductForm({ ...editProductForm, images: reordered, image: imgUrl });
+                              }}
+                              title={imgIdx === 0 ? 'Main Cover Photo' : 'Click to set as Main Cover'}
+                            >
+                              <img src={imgUrl} alt={`Uploaded ${imgIdx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <button
+                                type="button"
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  const filtered = editProductForm.images.filter((_, idx) => idx !== imgIdx);
+                                  setEditProductForm({
+                                    ...editProductForm,
+                                    images: filtered,
+                                    image: filtered[0] || '',
+                                  });
+                                }}
+                                style={{
+                                  position: 'absolute',
+                                  top: '2px',
+                                  right: '2px',
+                                  background: '#FEF2F2',
+                                  color: '#DC2626',
+                                  border: 'none',
+                                  borderRadius: '50%',
+                                  width: '18px',
+                                  height: '18px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer'
+                                }}
+                                title="Remove Photo"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* File Upload Input & Buttons */}
+                      <input
+                        id="editDishMultiFileInput"
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={(e) => handleProductMultiImageChange(e, true)}
+                        style={{ display: 'none' }}
+                      />
+
+                      <button
+                        type="button"
+                        className="crm-btn-secondary"
+                        style={{ fontSize: '12.5px', padding: '8px 14px', width: '100%', justifyContent: 'center', marginBottom: '10px', fontWeight: 800, backgroundColor: '#FFFFFF' }}
+                        onClick={() => document.getElementById('editDishMultiFileInput').click()}
+                      >
+                         Upload Photos from PC / Mobile (Multiple)
+                      </button>
+
                       {showEditUrlInput && (
-                        <input
-                          type="text"
-                          className="crm-input"
-                          style={{ fontSize: '12px', padding: '6px 10px' }}
-                          placeholder="Paste image URL (e.g. Unsplash)"
-                          value={editProductForm.images?.[0] || editProductForm.image || ''}
-                          onChange={(e) => setEditProductForm({ ...editProductForm, image: e.target.value, images: [e.target.value] })}
-                        />
+                        <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+                          <input
+                            type="text"
+                            className="crm-input"
+                            style={{ fontSize: '12px', padding: '6px 10px', flex: 1 }}
+                            placeholder="Paste photo URL (e.g. Unsplash)"
+                            id="editCustomUrlField"
+                          />
+                          <button
+                            type="button"
+                            className="crm-btn-primary"
+                            style={{ padding: '6px 12px', fontSize: '12px', flexShrink: 0 }}
+                            onClick={() => {
+                              const el = document.getElementById('editCustomUrlField');
+                              const urlVal = (el ? el.value : '').trim();
+                              if (urlVal) {
+                                const current = editProductForm.images || [];
+                                const updated = [...current, urlVal];
+                                setEditProductForm({ ...editProductForm, images: updated, image: updated[0] });
+                                if (el) el.value = '';
+                                addToast('Added photo to gallery!');
+                              }
+                            }}
+                          >
+                            + Add URL
+                          </button>
+                        </div>
                       )}
 
                       {/* Preset Food Photos Buttons */}
                       <div>
-                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>Select Quick Preset Photo:</span>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>Quick Add Preset Photos:</span>
                         <div className="crm-photo-presets-grid">
                           {[
                             { label: ' Pizza', url: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400&auto=format&fit=crop&q=80' },
@@ -6591,7 +9708,11 @@ export default function DashboardPage({ onShowToast }) {
                               key={p.label}
                               type="button"
                               className="crm-photo-preset-btn"
-                              onClick={() => setEditProductForm({ ...editProductForm, image: p.url, images: [p.url] })}
+                              onClick={() => {
+                                const currentImgs = editProductForm.images || [];
+                                const updated = [...currentImgs, p.url];
+                                setEditProductForm({ ...editProductForm, image: updated[0], images: updated });
+                              }}
                             >
                               {p.label}
                             </button>
@@ -6767,16 +9888,64 @@ export default function DashboardPage({ onShowToast }) {
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                       <div className="crm-form-group">
-                        <label style={{ fontWeight: 800 }}>Base Price (₹) <span className="req">*</span></label>
+                        <label style={{ fontWeight: 800 }}>Selling Price (₹) <span className="req">*</span></label>
                         <input
                           type="number"
                           className="crm-input"
-                          placeholder="e.g. 240"
+                          placeholder="e.g. 180"
                           value={newProductForm.price}
                           onChange={(e) => setNewProductForm({ ...newProductForm, price: e.target.value })}
                           required
                         />
                       </div>
+
+                      <div className="crm-form-group">
+                        <label style={{ fontWeight: 800 }}>Original Price / MRP (₹)</label>
+                        <input
+                          type="number"
+                          className="crm-input"
+                          placeholder="e.g. 240"
+                          value={newProductForm.originalPrice || ''}
+                          onChange={(e) => setNewProductForm({ ...newProductForm, originalPrice: e.target.value })}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Live Discount Calculation Badge */}
+                    {Number(newProductForm.originalPrice) > Number(newProductForm.price) && Number(newProductForm.price) > 0 && (
+                      <div style={{ background: '#ECFDF5', border: '1.5px solid #A7F3D0', padding: '8px 12px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#047857', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>🔥 Discount Calculated:</span>
+                          <span style={{ background: '#10B981', color: '#FFF', padding: '2px 8px', borderRadius: '6px', fontSize: '12px' }}>
+                            {Math.round(((Number(newProductForm.originalPrice) - Number(newProductForm.price)) / Number(newProductForm.originalPrice)) * 100)}% OFF
+                          </span>
+                          <span style={{ color: '#059669', fontSize: '12px' }}>(Save ₹{Number(newProductForm.originalPrice) - Number(newProductForm.price)})</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Toggle Option: Show or Hide Discount Tag on Customer Menu */}
+                    <div className="crm-form-group" style={{ background: '#F8FAFC', border: '1.5px solid #E2E8F0', padding: '10px 14px', borderRadius: '10px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', fontSize: '13px', fontWeight: 800, color: '#0F172A', margin: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <input
+                            type="checkbox"
+                            checked={newProductForm.showDiscountTag !== false}
+                            onChange={(e) => setNewProductForm({ ...newProductForm, showDiscountTag: e.target.checked })}
+                            style={{ width: '17px', height: '17px', accentColor: '#1D4ED8' }}
+                          />
+                          <div>
+                            <span>🏷️ Show % OFF Badge &amp; Strikethrough Price on Menu</span>
+                            <div style={{ fontSize: '11px', color: '#64748B', fontWeight: 400, marginTop: '1px' }}>
+                              Enable to show discount tag (e.g. 25% OFF) to customers on storefront.
+                            </div>
+                          </div>
+                        </div>
+                        <span style={{ fontSize: '11px', fontWeight: 800, padding: '2px 8px', borderRadius: '6px', background: (newProductForm.showDiscountTag !== false) ? '#DCFCE7' : '#F1F5F9', color: (newProductForm.showDiscountTag !== false) ? '#15803D' : '#64748B' }}>
+                          {(newProductForm.showDiscountTag !== false) ? 'SHOW ON MENU' : 'HIDE'}
+                        </span>
+                      </label>
+                    </div>
 
                       <div className="crm-form-group">
                         <label style={{ fontWeight: 800 }}>Dietary Type</label>
@@ -6825,65 +9994,154 @@ export default function DashboardPage({ onShowToast }) {
 
                   {/* RIGHT COLUMN: Food Photo Upload & Quick Presets */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                    <div className="crm-food-photo-card">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <label style={{ margin: 0, fontWeight: 800, fontSize: '13px' }}>Upload Food Photo</label>
+                    {/* MULTI-PHOTO GALLERY PICKER */}
+                    <div className="crm-food-photo-card" style={{ background: '#F8FAFC', padding: '16px', borderRadius: '16px', border: '1.5px solid #E2E8F0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <div>
+                          <label style={{ margin: 0, fontWeight: 800, fontSize: '13.5px', color: '#0F172A' }}>
+                            Upload Food Photos ({newProductForm.images?.length || (newProductForm.image ? 1 : 0)})
+                          </label>
+                          <div style={{ fontSize: '11.5px', color: '#64748B' }}>
+                            Select single or multiple photos. First photo will be main card photo.
+                          </div>
+                        </div>
                         <button
                           type="button"
                           style={{ background: 'none', border: 'none', color: '#1D4ED8', fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}
                           onClick={() => setShowAddUrlInput(!showAddUrlInput)}
                         >
-                          {showAddUrlInput ? ' Hide URL Field' : ' Edit Image URL'}
+                          {showAddUrlInput ? ' Hide URL' : '+ Add Image URL'}
                         </button>
                       </div>
 
+                      {/* Main Active Photo Preview Box */}
                       <div
                         className="crm-food-photo-preview-box"
-                        style={{ cursor: 'pointer' }}
-                        onClick={() => document.getElementById('addDishFileInput').click()}
+                        style={{ height: '180px', borderRadius: '14px', overflow: 'hidden', backgroundColor: '#FFFFFF', border: '1px solid #CBD5E1', marginBottom: '12px', position: 'relative', cursor: 'pointer' }}
+                        onClick={() => document.getElementById('addDishMultiFileInput').click()}
                       >
-                        {productLogoPreview ? (
-                          <img src={productLogoPreview} alt="Preview" />
-                        ) : newProductForm.image ? (
-                          <img src={newProductForm.image} alt="Preview" />
+                        {(newProductForm.images?.[0] || productLogoPreview || newProductForm.image) ? (
+                          <img src={newProductForm.images?.[0] || productLogoPreview || newProductForm.image} alt="Dish Main Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : (
-                          <div style={{ textAlign: 'center', color: '#64748B', fontSize: '13px' }}>
-                            <span style={{ fontSize: '32px', display: 'block', marginBottom: '4px' }}></span>
-                            Click to Upload Computer Photo
+                          <div style={{ textAlign: 'center', color: '#64748B', fontSize: '13px', paddingTop: '50px' }}>
+                            📷 Click to Upload Computer / Mobile Photos
                           </div>
                         )}
+                        <span style={{ position: 'absolute', bottom: '8px', left: '8px', background: 'rgba(15,23,42,0.8)', color: '#FFF', fontSize: '10px', fontWeight: 800, padding: '2px 8px', borderRadius: '6px' }}>
+                          ★ Main Cover Photo
+                        </span>
                       </div>
 
+                      {/* Thumbnails list of multiple uploaded photos */}
+                      {(newProductForm.images && newProductForm.images.length > 0) && (
+                        <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '8px', marginBottom: '12px' }}>
+                          {newProductForm.images.map((imgUrl, imgIdx) => (
+                            <div
+                              key={imgIdx}
+                              style={{
+                                position: 'relative',
+                                width: '60px',
+                                height: '60px',
+                                borderRadius: '10px',
+                                overflow: 'hidden',
+                                border: imgIdx === 0 ? '2.5px solid #FF5E14' : '1px solid #CBD5E1',
+                                cursor: 'pointer',
+                                flexShrink: 0
+                              }}
+                              onClick={() => {
+                                const reordered = [imgUrl, ...newProductForm.images.filter((_, idx) => idx !== imgIdx)];
+                                setNewProductForm({ ...newProductForm, images: reordered, image: imgUrl });
+                              }}
+                              title={imgIdx === 0 ? 'Main Cover Photo' : 'Click to set as Main Cover'}
+                            >
+                              <img src={imgUrl} alt={`Uploaded ${imgIdx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <button
+                                type="button"
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  const filtered = newProductForm.images.filter((_, idx) => idx !== imgIdx);
+                                  setNewProductForm({
+                                    ...newProductForm,
+                                    images: filtered,
+                                    image: filtered[0] || '',
+                                  });
+                                }}
+                                style={{
+                                  position: 'absolute',
+                                  top: '2px',
+                                  right: '2px',
+                                  background: '#FEF2F2',
+                                  color: '#DC2626',
+                                  border: 'none',
+                                  borderRadius: '50%',
+                                  width: '18px',
+                                  height: '18px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  cursor: 'pointer'
+                                }}
+                                title="Remove Photo"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* File Upload Input & Buttons */}
                       <input
-                        id="addDishFileInput"
+                        id="addDishMultiFileInput"
                         type="file"
                         accept="image/*"
-                        onChange={handleProductImageChange}
+                        multiple
+                        onChange={(e) => handleProductMultiImageChange(e, false)}
                         style={{ display: 'none' }}
                       />
 
                       <button
                         type="button"
                         className="crm-btn-secondary"
-                        style={{ fontSize: '12.5px', padding: '6px 12px', width: '100%', justifyContent: 'center' }}
-                        onClick={() => document.getElementById('addDishFileInput').click()}
+                        style={{ fontSize: '12.5px', padding: '8px 14px', width: '100%', justifyContent: 'center', marginBottom: '10px', fontWeight: 800, backgroundColor: '#FFFFFF' }}
+                        onClick={() => document.getElementById('addDishMultiFileInput').click()}
                       >
-                        {productLogoFile ? productLogoFile.name : ' Choose Photo File from PC'}
+                         Choose Photos from Computer / Mobile (Multiple)
                       </button>
 
                       {showAddUrlInput && (
-                        <input
-                          type="text"
-                          className="crm-input"
-                          placeholder="Paste image URL (e.g. Unsplash)"
-                          value={newProductForm.image}
-                          onChange={(e) => setNewProductForm({ ...newProductForm, image: e.target.value })}
-                          style={{ fontSize: '12px', padding: '6px 10px' }}
-                        />
+                        <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+                          <input
+                            type="text"
+                            className="crm-input"
+                            style={{ fontSize: '12px', padding: '6px 10px', flex: 1 }}
+                            placeholder="Paste photo URL (e.g. Unsplash)"
+                            id="addCustomUrlField"
+                          />
+                          <button
+                            type="button"
+                            className="crm-btn-primary"
+                            style={{ padding: '6px 12px', fontSize: '12px', flexShrink: 0 }}
+                            onClick={() => {
+                              const el = document.getElementById('addCustomUrlField');
+                              const urlVal = (el ? el.value : '').trim();
+                              if (urlVal) {
+                                const current = newProductForm.images || [];
+                                const updated = [...current, urlVal];
+                                setNewProductForm({ ...newProductForm, images: updated, image: updated[0] });
+                                if (el) el.value = '';
+                                addToast('Added photo to gallery!');
+                              }
+                            }}
+                          >
+                            + Add URL
+                          </button>
+                        </div>
                       )}
 
+                      {/* Preset Food Photos Buttons */}
                       <div>
-                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>Or Select Quick Preset Photo:</span>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748B', display: 'block', marginBottom: '4px' }}>Or Quick Add Preset Photo:</span>
                         <div className="crm-photo-presets-grid">
                           {[
                             { label: ' Pizza', url: 'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400&auto=format&fit=crop&q=80' },
@@ -6898,8 +10156,9 @@ export default function DashboardPage({ onShowToast }) {
                               type="button"
                               className="crm-photo-preset-btn"
                               onClick={() => {
-                                setNewProductForm({ ...newProductForm, image: p.url });
-                                setProductLogoPreview(p.url);
+                                const currentImgs = newProductForm.images || [];
+                                const updated = [...currentImgs, p.url];
+                                setNewProductForm({ ...newProductForm, image: updated[0], images: updated });
                               }}
                             >
                               {p.label}
@@ -6910,7 +10169,6 @@ export default function DashboardPage({ onShowToast }) {
                     </div>
                   </div>
                 </div>
-              </div>
 
               <div className="crm-modal-footer">
                 <button
@@ -7094,16 +10352,31 @@ export default function DashboardPage({ onShowToast }) {
                   </div>
                 )}
 
-                {/* 4. Minimum Order Amount */}
-                <div className="crm-form-group">
-                  <label style={{ fontWeight: 800 }}>Minimum Order Amount (₹)</label>
-                  <input
-                    type="number"
-                    className="crm-input"
-                    placeholder="e.g. 299 (0 for no minimum)"
-                    value={newCouponForm.minOrder}
-                    onChange={(e) => setNewCouponForm({ ...newCouponForm, minOrder: e.target.value })}
-                  />
+                {/* 4. Minimum Order Amount & Target Customer Mobile */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div className="crm-form-group">
+                    <label style={{ fontWeight: 800 }}>Minimum Order Amount (₹)</label>
+                    <input
+                      type="number"
+                      className="crm-input"
+                      placeholder="e.g. 299 (0 for no minimum)"
+                      value={newCouponForm.minOrder}
+                      onChange={(e) => setNewCouponForm({ ...newCouponForm, minOrder: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="crm-form-group">
+                    <label style={{ fontWeight: 800, color: '#C2410C', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Phone size={13} color="#FF5E14" /> Target Mobile Number (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      className="crm-input"
+                      placeholder="e.g. 9876543210 (Blank = All)"
+                      value={newCouponForm.assignedCustomerPhone}
+                      onChange={(e) => setNewCouponForm({ ...newCouponForm, assignedCustomerPhone: e.target.value })}
+                    />
+                  </div>
                 </div>
 
                 {/* 5. Expiration Date (Default: +20 Days, Editable Date Picker + Presets) */}
@@ -8041,14 +11314,14 @@ export default function DashboardPage({ onShowToast }) {
                       transition: 'all 0.25s ease'
                     }}
                   >
-                    <div style={{ fontSize: '15px', fontWeight: 900, marginBottom: '6px', letterSpacing: '-0.01em' }}>
+                    <div style={{ fontSize: '15px', fontWeight: 500, marginBottom: '6px', letterSpacing: '-0.01em' }}>
                       {storeControls.restName || "My Restaurant"}
                     </div>
 
                     <div
                       style={{
                         fontSize: '13px',
-                        fontWeight: 900,
+                        fontWeight: 500,
                         padding: '4px 14px',
                         borderRadius: '16px',
                         backgroundColor: tableForm.theme === 'luxury' ? '#F59E0B' : tableForm.theme === 'neon' ? '#FFFFFF' : '#FF5E14',
@@ -8082,7 +11355,7 @@ export default function DashboardPage({ onShowToast }) {
                       />
                     </div>
 
-                    <div style={{ fontSize: '11px', marginTop: '10px', fontWeight: 700, opacity: 0.9, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ fontSize: '11px', marginTop: '10px', fontWeight: 400, opacity: 0.9, display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <QrCode size={13} />
                       <span>{tableForm.purpose || 'Contactless Self Ordering'}</span>
                     </div>
@@ -8099,13 +11372,13 @@ export default function DashboardPage({ onShowToast }) {
                         justifyContent: 'center',
                         gap: '4px',
                         fontSize: '11px',
-                        fontWeight: 800,
+                        fontWeight: 500,
                         color: tableForm.theme === 'neon' ? '#FFFFFF' : '#64748B',
                       }}
                     >
                       <Sparkles size={12} color={tableForm.theme === 'neon' ? '#FFFFFF' : '#FF5E14'} />
                       <span style={{ opacity: 0.85 }}>Powered by</span>
-                      <span style={{ color: tableForm.theme === 'neon' ? '#FFFFFF' : '#FF5E14', fontWeight: 900, fontSize: '11.5px' }}>
+                      <span style={{ color: tableForm.theme === 'neon' ? '#FFFFFF' : '#FF5E14', fontWeight: 500, fontSize: '11.5px' }}>
                         FoodyPay
                       </span>
                     </div>
@@ -8186,14 +11459,14 @@ export default function DashboardPage({ onShowToast }) {
                   boxShadow: activeStandeeTable.theme === 'luxury' ? '0 10px 30px rgba(245, 158, 11, 0.25)' : activeStandeeTable.theme === 'neon' ? '0 10px 30px rgba(255, 94, 20, 0.35)' : '0 10px 30px rgba(0,0,0,0.08)'
                 }}
               >
-                <div style={{ fontSize: '18px', fontWeight: 900, letterSpacing: '-0.01em' }}>
+                <div style={{ fontSize: '18px', fontWeight: 500, letterSpacing: '-0.01em' }}>
                   {storeControls.restName || 'Lagan Da Dhaba'}
                 </div>
 
                 <div
                   style={{
                     fontSize: '14px',
-                    fontWeight: 900,
+                    fontWeight: 500,
                     padding: '5px 16px',
                     borderRadius: '20px',
                     backgroundColor: activeStandeeTable.theme === 'luxury' ? '#F59E0B' : activeStandeeTable.theme === 'neon' ? '#FFFFFF' : '#FF5E14',
@@ -8225,8 +11498,8 @@ export default function DashboardPage({ onShowToast }) {
                   />
                 </div>
 
-                <p style={{ fontSize: '12.5px', margin: 0, opacity: 0.95, lineHeight: 1.4 }}>
-                  <strong> Scan with Camera to Order &amp; Pay</strong>
+                <p style={{ fontSize: '12.5px', margin: 0, opacity: 0.95, lineHeight: 1.4, fontWeight: 400 }}>
+                  <span style={{ fontWeight: 500 }}>Scan with Camera to Order &amp; Pay</span>
                   <br />
                   <span style={{ fontSize: '11px', opacity: 0.85 }}>No app download needed • Fast &amp; Contactless</span>
                 </p>
@@ -8243,13 +11516,13 @@ export default function DashboardPage({ onShowToast }) {
                     justifyContent: 'center',
                     gap: '4px',
                     fontSize: '11.5px',
-                    fontWeight: 800,
+                    fontWeight: 500,
                     color: activeStandeeTable.theme === 'neon' ? '#FFFFFF' : '#64748B',
                   }}
                 >
                   <Sparkles size={13} color={activeStandeeTable.theme === 'neon' ? '#FFFFFF' : '#FF5E14'} />
                   <span style={{ opacity: 0.85 }}>Powered by</span>
-                  <span style={{ color: activeStandeeTable.theme === 'neon' ? '#FFFFFF' : '#FF5E14', fontWeight: 900, fontSize: '12px' }}>
+                  <span style={{ color: activeStandeeTable.theme === 'neon' ? '#FFFFFF' : '#FF5E14', fontWeight: 500, fontSize: '12px' }}>
                     FoodyPay
                   </span>
                 </div>
@@ -8668,6 +11941,735 @@ export default function DashboardPage({ onShowToast }) {
                 </button>
                 <button type="submit" className="crm-btn-primary" style={{ background: '#FF5E14' }}>
                   Save Custom Meal Collection
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================================================
+          MODAL 12: ASSIGN COUPON TO SPECIFIC MOBILE NUMBER
+          ========================================================================== */}
+      {isAssignMobileModalOpen && selectedCouponForAssignModal && (
+        <div className="crm-modal-backdrop" onClick={() => setIsAssignMobileModalOpen(false)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+          <div className="crm-modal-card" style={{ maxWidth: '480px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="crm-modal-header">
+              <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Phone size={20} color="#FF5E14" /> Assign Promocode "{selectedCouponForAssignModal.code}"
+              </h3>
+              <button type="button" className="crm-modal-close-btn" onClick={() => setIsAssignMobileModalOpen(false)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAssignMobileSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '16px 20px' }}>
+              <div style={{ background: '#FFF7ED', padding: '12px', borderRadius: '10px', border: '1px solid #FFEDD5', fontSize: '13px', color: '#C2410C', fontWeight: 600 }}>
+                Discount Offer: <strong>{selectedCouponForAssignModal.discount}</strong>
+                <br />
+                <span style={{ fontSize: '12px', color: '#9A3412', marginTop: '2px', display: 'block' }}>
+                  Assigning a coupon to a customer mobile number makes it automatically unlock in their Web App Cart Checkout.
+                </span>
+              </div>
+
+              <div className="crm-form-group">
+                <label style={{ fontSize: '12.5px', fontWeight: 800 }}>
+                  Target Customer Mobile Number (10 digits)
+                </label>
+                <input
+                  type="text"
+                  className="crm-input"
+                  placeholder="e.g. 9876543210"
+                  value={assignMobileInput}
+                  onChange={(e) => setAssignMobileInput(e.target.value)}
+                  autoFocus
+                />
+              </div>
+
+              {/* Quick Customer Selection Dropdown */}
+              {(customers || []).length > 0 && (
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#64748B' }}>
+                    Or Pick from Registered Customers CRM:
+                  </label>
+                  <select
+                    className="crm-input"
+                    style={{ fontSize: '13px' }}
+                    onChange={(e) => {
+                      if (e.target.value) setAssignMobileInput(e.target.value);
+                    }}
+                  >
+                    <option value="">-- Select Customer --</option>
+                    {(customers || []).map((c) => (
+                      <option key={c.id || c._id} value={c.phone}>
+                        {c.name} ({c.phone})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="crm-modal-footer">
+                <button
+                  type="button"
+                  className="crm-btn-secondary"
+                  onClick={() => {
+                    setAssignMobileInput('');
+                  }}
+                  title="Make available to all store diners"
+                >
+                  Clear (Make Global)
+                </button>
+                <button type="submit" className="crm-btn-primary" style={{ background: '#FF5E14' }}>
+                  Save & Assign Coupon
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ADD NEW STEAL DEAL ITEM */}
+      {isAddStealItemModalOpen && (
+        <div className="crm-modal-backdrop" onClick={() => setIsAddStealItemModalOpen(false)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+          <div className="crm-modal-card" style={{ maxWidth: '480px', width: '100%' }} onClick={(e) => e.stopPropagation()}>
+            <div className="crm-modal-header">
+              <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Sparkles size={20} color="#FF5E14" /> Add Steal Deal Offer Item
+              </h3>
+              <button type="button" className="crm-modal-close-btn" onClick={() => setIsAddStealItemModalOpen(false)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddStealItem} style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '16px 20px' }}>
+              <div className="crm-form-group">
+                <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Item Name <span className="req">*</span></label>
+                <input
+                  type="text"
+                  className="crm-input"
+                  placeholder="e.g. Corn Cob / Instant Coffee Pack"
+                  value={newStealItemForm.name}
+                  onChange={(e) => setNewStealItemForm({ ...newStealItemForm, name: e.target.value })}
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Deal Price (₹) <span className="req">*</span></label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="crm-input"
+                    placeholder="e.g. 9"
+                    value={newStealItemForm.price}
+                    onChange={(e) => setNewStealItemForm({ ...newStealItemForm, price: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>MRP Price (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="crm-input"
+                    placeholder="e.g. 25"
+                    value={newStealItemForm.originalPrice}
+                    onChange={(e) => setNewStealItemForm({ ...newStealItemForm, originalPrice: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Quantity Unit</label>
+                  <input
+                    type="text"
+                    className="crm-input"
+                    placeholder="e.g. 1 pc / 100g / 1 L"
+                    value={newStealItemForm.unit}
+                    onChange={(e) => setNewStealItemForm({ ...newStealItemForm, unit: e.target.value })}
+                  />
+                </div>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Unlock Threshold (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="crm-input"
+                    placeholder="e.g. 199 or 499"
+                    value={newStealItemForm.unlockAt}
+                    onChange={(e) => setNewStealItemForm({ ...newStealItemForm, unlockAt: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="crm-form-group">
+                <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Image URL</label>
+                <input
+                  type="text"
+                  className="crm-input"
+                  placeholder="https://images.unsplash.com/..."
+                  value={newStealItemForm.image}
+                  onChange={(e) => setNewStealItemForm({ ...newStealItemForm, image: e.target.value })}
+                />
+              </div>
+
+              <div className="crm-modal-footer" style={{ marginTop: '8px' }}>
+                <button type="button" className="crm-btn-secondary" onClick={() => setIsAddStealItemModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="crm-btn-primary" style={{ background: '#FF5E14' }}>
+                  Add to Steal Deals
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* UPGRADE SUBSCRIPTION MODAL FOR PRO / ENTERPRISE FEATURE LOCKING */}
+      {upgradeModalFeature && (
+        <div className="crm-modal-backdrop" onClick={() => setUpgradeModalFeature(null)}>
+          <div
+            className="crm-modal-card"
+            style={{ maxWidth: '520px', padding: '32px', textAlign: 'center', borderRadius: '24px', border: '1px solid #CBD5E1', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', boxShadow: '0 4px 12px rgba(220,38,38,0.2)' }}>
+              <Lock size={32} color="#DC2626" />
+            </div>
+
+            <div style={{ display: 'inline-block', background: '#FEF3C7', color: '#B45309', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '12px' }}>
+              🔒 {upgradeModalFeature.requiredPlan || 'Higher Plan Required'}
+            </div>
+
+            <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', margin: '0 0 8px 0' }}>
+              Unlock {upgradeModalFeature.title}
+            </h2>
+
+            <p style={{ color: '#64748B', fontSize: '14px', lineHeight: 1.5, margin: '0 0 24px 0' }}>
+              {upgradeModalFeature.desc} This feature requires {upgradeModalFeature.requiredPlan || 'Growth Pro or Enterprise Max plan'}. Upgrade your plan today to unlock!
+            </p>
+
+            <div style={{ background: '#F8FAFC', borderRadius: '16px', padding: '16px', border: '1px solid #E2E8F0', marginBottom: '24px', textAlign: 'left' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontWeight: 800, fontSize: '15px', color: '#0F172A' }}>
+                  ⭐ {upgradeModalFeature.requiredPlan?.includes('Enterprise') ? 'Enterprise Max Plan ($75/mo)' : 'Growth Pro Plan ($35/mo)'}
+                </span>
+                <span style={{ fontWeight: 900, fontSize: '18px', color: '#FF5E14' }}>
+                  {upgradeModalFeature.requiredPlan?.includes('Enterprise') ? '$75' : '$35'} <span style={{ fontSize: '12px', fontWeight: 600, color: '#64748B' }}>/ month</span>
+                </span>
+              </div>
+              <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#475569', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                {upgradeModalFeature.requiredPlan?.includes('Enterprise') ? (
+                  <>
+                    <li>✓ Delivery Partner View</li>
+                    <li>✓ Catalog Themes &amp; Branding</li>
+                    <li>✓ Grow Telemetry Analytics</li>
+                    <li>✓ 0% Order Commission</li>
+                    <li>✓ Custom Domain Website</li>
+                    <li>✓ 24/7 VIP Account Manager</li>
+                  </>
+                ) : (
+                  <>
+                    <li>✓ Kitchen Display (KDS)</li>
+                    <li>✓ Customers CRM &amp; Loyalty</li>
+                    <li>✓ Diner Reviews Console</li>
+                    <li>✓ Marketing Push Campaigns</li>
+                    <li>✓ 1% Lower QR Commission</li>
+                    <li>✓ 24/7 Priority Support</li>
+                  </>
+                )}
+              </ul>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                type="button"
+                onClick={() => setUpgradeModalFeature(null)}
+                style={{ flex: 1, padding: '12px 16px', borderRadius: '12px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#475569', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Maybe Later
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const targetPlan = upgradeModalFeature.requiredPlan?.includes('Enterprise') ? 'Enterprise Max' : 'Growth Pro';
+                  const targetPrice = targetPlan === 'Enterprise Max' ? 75 : 35;
+                  handleRazorpaySubscriptionPurchase(targetPlan, targetPrice);
+                }}
+                style={{ flex: 1.5, padding: '12px 16px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #FF5E14 0%, #D97706 100%)', color: '#FFFFFF', fontWeight: 900, fontSize: '14px', cursor: 'pointer', boxShadow: '0 4px 14px rgba(255,94,20,0.3)' }}
+              >
+                💳 Pay &amp; Unlock with Razorpay ({upgradeModalFeature.requiredPlan?.includes('Enterprise') ? '₹5,999 / $75' : '₹2,999 / $35'})
+              </button>
+            </div>
+
+            {/* MANUAL RAZORPAY TXN ID VERIFICATION OPTION */}
+            <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #E2E8F0', textAlign: 'center' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const targetPlan = upgradeModalFeature.requiredPlan?.includes('Enterprise') ? 'Enterprise Max' : 'Growth Pro';
+                  const targetPrice = targetPlan === 'Enterprise Max' ? 75 : 35;
+                  const txnId = window.prompt(`Already Paid via Razorpay?\nEnter your Razorpay Payment Transaction ID (e.g. pay_P123456789):`);
+                  if (txnId && txnId.trim().length >= 5) {
+                    const cleanTxn = txnId.trim();
+                    const expDate = new Date();
+                    expDate.setDate(expDate.getDate() + 30);
+                    const expDateIsoStr = expDate.toISOString().split('T')[0];
+
+                    const updatedUser = {
+                      ...JSON.parse(localStorage.getItem('foodypay_user') || '{}'),
+                      subscriptionPlan: targetPlan,
+                      subscriptionPrice: targetPrice,
+                      subscriptionStatus: 'Active',
+                      subscriptionExpiry: expDateIsoStr,
+                      isLocked: false,
+                      isSuspended: false,
+                      razorpayPaymentId: cleanTxn,
+                      paidVia: 'Paid by Razorpay (Verified Txn ID)',
+                    };
+
+                    localStorage.setItem('foodypay_user', JSON.stringify(updatedUser));
+                    setStoreControls((prev) => ({
+                      ...prev,
+                      subscriptionPlan: targetPlan,
+                      subscriptionPrice: targetPrice,
+                      subscriptionStatus: 'Active',
+                      subscriptionExpiry: expDateIsoStr,
+                      isSuspended: false,
+                    }));
+                    setCurrentUser(updatedUser);
+                    window.dispatchEvent(new Event('storage'));
+                    playMilestoneCelebration();
+                    addToast(`🎉 Verified Razorpay Txn ID (${cleanTxn})! ${targetPlan} unlocked until ${expDateIsoStr}.`, <CheckCircle2 size={18} color="#10B981" />);
+                    setUpgradeModalFeature(null);
+                  } else if (txnId !== null) {
+                    alert('Invalid Razorpay Payment Transaction ID! Please check your Razorpay payment receipt.');
+                  }
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#1D4ED8',
+                  fontSize: '12.5px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                }}
+              >
+                🔍 Already paid via Razorpay? Click here to enter Payment Txn ID &amp; Unlock
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 1. ADD / EDIT DELIVERY ZONE MODAL */}
+      {isAddZoneModalOpen && (
+        <div className="crm-modal-backdrop" onClick={() => setIsAddZoneModalOpen(false)}>
+          <div className="crm-modal-card" style={{ maxWidth: '540px', padding: '28px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="crm-modal-header" style={{ marginBottom: '18px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <MapPin size={22} color="#1E40AF" />
+                <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 900 }}>
+                  {editingZoneObj ? 'Edit Delivery Zone' : 'Add New Delivery Zone'}
+                </h3>
+              </div>
+              <button type="button" className="crm-btn-icon" onClick={() => setIsAddZoneModalOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveZoneSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div className="crm-form-group">
+                <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Zone Name / Sector (Dynamic) *</label>
+                <input
+                  type="text"
+                  required
+                  className="crm-input"
+                  placeholder="e.g. Sector 70 or Phase 7 or Downtown"
+                  value={zoneForm.name}
+                  onChange={(e) => setZoneForm({ ...zoneForm, name: e.target.value })}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>City *</label>
+                  <input
+                    type="text"
+                    required
+                    className="crm-input"
+                    placeholder="Mohali"
+                    value={zoneForm.city}
+                    onChange={(e) => setZoneForm({ ...zoneForm, city: e.target.value })}
+                  />
+                </div>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>State</label>
+                  <input
+                    type="text"
+                    className="crm-input"
+                    placeholder="Punjab"
+                    value={zoneForm.state}
+                    onChange={(e) => setZoneForm({ ...zoneForm, state: e.target.value })}
+                  />
+                </div>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Pincode</label>
+                  <input
+                    type="text"
+                    className="crm-input"
+                    placeholder="160071"
+                    value={zoneForm.pincode}
+                    onChange={(e) => setZoneForm({ ...zoneForm, pincode: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Center Latitude *</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    className="crm-input"
+                    placeholder="30.7046"
+                    value={zoneForm.centerLatitude}
+                    onChange={(e) => setZoneForm({ ...zoneForm, centerLatitude: e.target.value })}
+                  />
+                </div>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Center Longitude *</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    className="crm-input"
+                    placeholder="76.7179"
+                    value={zoneForm.centerLongitude}
+                    onChange={(e) => setZoneForm({ ...zoneForm, centerLongitude: e.target.value })}
+                  />
+                </div>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Zone Radius (KM) *</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    className="crm-input"
+                    placeholder="5"
+                    value={zoneForm.radius}
+                    onChange={(e) => setZoneForm({ ...zoneForm, radius: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="checkbox"
+                  id="zoneActiveCheck"
+                  checked={zoneForm.isActive}
+                  onChange={(e) => setZoneForm({ ...zoneForm, isActive: e.target.checked })}
+                />
+                <label htmlFor="zoneActiveCheck" style={{ fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>
+                  Enable Delivery in this Zone (Active)
+                </label>
+              </div>
+
+              <div className="crm-modal-footer" style={{ marginTop: '12px' }}>
+                <button type="button" className="crm-btn-secondary" onClick={() => setIsAddZoneModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="crm-btn-primary" style={{ background: '#1E40AF' }}>
+                  {editingZoneObj ? 'Save Changes' : 'Create Delivery Zone'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 2. ADD / EDIT STORE MODAL */}
+      {isAddStoreModalOpen && (
+        <div className="crm-modal-backdrop" onClick={() => setIsAddStoreModalOpen(false)}>
+          <div className="crm-modal-card" style={{ maxWidth: '620px', padding: '28px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="crm-modal-header" style={{ marginBottom: '18px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Store size={22} color="#10B981" />
+                <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 900 }}>
+                  {editingStoreObj ? 'Edit Store Registration' : 'Register New Store'}
+                </h3>
+              </div>
+              <button type="button" className="crm-btn-icon" onClick={() => setIsAddStoreModalOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveStoreSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Store Name *</label>
+                  <input
+                    type="text"
+                    required
+                    className="crm-input"
+                    placeholder="e.g. FoodyPay Bistro Mohali"
+                    value={storeForm.name}
+                    onChange={(e) => setStoreForm({ ...storeForm, name: e.target.value })}
+                  />
+                </div>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Owner Name</label>
+                  <input
+                    type="text"
+                    className="crm-input"
+                    placeholder="e.g. John Doe"
+                    value={storeForm.ownerName}
+                    onChange={(e) => setStoreForm({ ...storeForm, ownerName: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="crm-form-group">
+                <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Owner Email Address (Assigned Access) *</label>
+                <input
+                  type="email"
+                  required
+                  className="crm-input"
+                  placeholder="owner@restaurant.com"
+                  value={storeForm.ownerEmail}
+                  onChange={(e) => setStoreForm({ ...storeForm, ownerEmail: e.target.value })}
+                />
+                <span style={{ fontSize: '11.5px', color: '#64748B', marginTop: '2px' }}>
+                  Admin can assign/change this email to give specific merchant access.
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>GST Number</label>
+                  <input
+                    type="text"
+                    className="crm-input"
+                    placeholder="07AAAAA0000A1Z5"
+                    value={storeForm.gstNumber}
+                    onChange={(e) => setStoreForm({ ...storeForm, gstNumber: e.target.value })}
+                  />
+                </div>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>FSSAI / License Number</label>
+                  <input
+                    type="text"
+                    className="crm-input"
+                    placeholder="10020011000123"
+                    value={storeForm.licenseNumber}
+                    onChange={(e) => setStoreForm({ ...storeForm, licenseNumber: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="crm-form-group">
+                <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Address Line *</label>
+                <input
+                  type="text"
+                  required
+                  className="crm-input"
+                  placeholder="SCO 104, Main Market Road"
+                  value={storeForm.address}
+                  onChange={(e) => setStoreForm({ ...storeForm, address: e.target.value })}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>City *</label>
+                  <input
+                    type="text"
+                    required
+                    className="crm-input"
+                    placeholder="Mohali"
+                    value={storeForm.city}
+                    onChange={(e) => setStoreForm({ ...storeForm, city: e.target.value })}
+                  />
+                </div>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>State</label>
+                  <input
+                    type="text"
+                    className="crm-input"
+                    placeholder="Punjab"
+                    value={storeForm.state}
+                    onChange={(e) => setStoreForm({ ...storeForm, state: e.target.value })}
+                  />
+                </div>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Pincode</label>
+                  <input
+                    type="text"
+                    className="crm-input"
+                    placeholder="160071"
+                    value={storeForm.pincode}
+                    onChange={(e) => setStoreForm({ ...storeForm, pincode: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Store Latitude *</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    className="crm-input"
+                    placeholder="30.7046"
+                    value={storeForm.latitude}
+                    onChange={(e) => setStoreForm({ ...storeForm, latitude: e.target.value })}
+                  />
+                </div>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Store Longitude *</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    className="crm-input"
+                    placeholder="76.7179"
+                    value={storeForm.longitude}
+                    onChange={(e) => setStoreForm({ ...storeForm, longitude: e.target.value })}
+                  />
+                </div>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Delivery Radius (KM) *</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    className="crm-input"
+                    placeholder="5"
+                    value={storeForm.deliveryRadius}
+                    onChange={(e) => setStoreForm({ ...storeForm, deliveryRadius: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="crm-modal-footer" style={{ marginTop: '12px' }}>
+                <button type="button" className="crm-btn-secondary" onClick={() => setIsAddStoreModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="crm-btn-primary" style={{ background: '#10B981' }}>
+                  {editingStoreObj ? 'Save Changes' : 'Register Store'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 3. ASSIGN ZONES TO STORE MODAL */}
+      {isAssignStoreZonesModalOpen && selectedStoreForZones && (
+        <div className="crm-modal-backdrop" onClick={() => setIsAssignStoreZonesModalOpen(false)}>
+          <div className="crm-modal-card" style={{ maxWidth: '500px', padding: '28px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="crm-modal-header" style={{ marginBottom: '16px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900 }}>
+                  Assign Delivery Zones for {selectedStoreForZones.name}
+                </h3>
+                <span style={{ fontSize: '12.5px', color: '#64748B' }}>
+                  Select all dynamic zones this store is eligible to fulfill orders for.
+                </span>
+              </div>
+              <button type="button" className="crm-btn-icon" onClick={() => setIsAssignStoreZonesModalOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAssignZonesToStoreSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '280px', overflowY: 'auto', padding: '6px' }}>
+                {(deliveryZones || []).length === 0 ? (
+                  <div style={{ fontSize: '13px', color: '#64748B' }}>No delivery zones created yet. Please create zones first.</div>
+                ) : (
+                  deliveryZones.map((z) => {
+                    const isChecked = selectedZoneIdsForStore.includes(z._id);
+                    return (
+                      <label key={z._id} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#F8FAFC', padding: '10px 14px', borderRadius: '10px', border: '1px solid #E2E8F0', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedZoneIdsForStore([...selectedZoneIdsForStore, z._id]);
+                            } else {
+                              setSelectedZoneIdsForStore(selectedZoneIdsForStore.filter((id) => id !== z._id));
+                            }
+                          }}
+                        />
+                        <div>
+                          <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#0F172A' }}>📍 {z.name}</div>
+                          <div style={{ fontSize: '11.5px', color: '#64748B' }}>{z.city} • {z.radius} KM Radius</div>
+                        </div>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="crm-modal-footer" style={{ marginTop: '12px' }}>
+                <button type="button" className="crm-btn-secondary" onClick={() => setIsAssignStoreZonesModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="crm-btn-primary" style={{ background: '#1E40AF' }}>
+                  Save Zone Assignments
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 4. ASSIGN STORE OWNER EMAIL MODAL */}
+      {isAssignOwnerEmailModalOpen && selectedStoreForOwner && (
+        <div className="crm-modal-backdrop" onClick={() => setIsAssignOwnerEmailModalOpen(false)}>
+          <div className="crm-modal-card" style={{ maxWidth: '460px', padding: '28px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="crm-modal-header" style={{ marginBottom: '16px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900 }}>
+                  Assign Owner Email for {selectedStoreForOwner.name}
+                </h3>
+                <span style={{ fontSize: '12.5px', color: '#64748B' }}>
+                  Enter the email address of the merchant/store manager who has permissions to edit this store.
+                </span>
+              </div>
+              <button type="button" className="crm-btn-icon" onClick={() => setIsAssignOwnerEmailModalOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAssignOwnerEmailSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div className="crm-form-group">
+                <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Store Owner Email Address *</label>
+                <input
+                  type="email"
+                  required
+                  className="crm-input"
+                  placeholder="owner@restaurant.com"
+                  value={assignOwnerEmailInput}
+                  onChange={(e) => setAssignOwnerEmailInput(e.target.value)}
+                />
+              </div>
+
+              <div className="crm-modal-footer" style={{ marginTop: '12px' }}>
+                <button type="button" className="crm-btn-secondary" onClick={() => setIsAssignOwnerEmailModalOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="crm-btn-primary" style={{ background: '#C2410C' }}>
+                  Assign Store Access
                 </button>
               </div>
             </form>

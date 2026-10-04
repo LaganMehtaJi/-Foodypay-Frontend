@@ -1,0 +1,24 @@
+{
+  "short_name": "FoodyPay",
+  "name": "FoodyPay - Instant Food Ordering & Digital Menu",
+  "icons": [
+    {
+      "src": "/Logo.png",
+      "type": "image/png",
+      "sizes": "192x192 512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0F172A",
+  "theme_color": "#FF5E14",
+  "display": "standalone",
+  "orientation": "portrait",
+  "description": "Fast 1-click contactless food ordering and digital menu for restaurants and foodies."
+}

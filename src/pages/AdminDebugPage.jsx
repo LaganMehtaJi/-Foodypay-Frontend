@@ -37,6 +37,7 @@ import {
   Building2,
   Activity,
   Plus,
+  Star,
 } from 'lucide-react';
 import {
   fetchRegisteredUsersApi,
@@ -88,6 +89,37 @@ export default function AdminDebugPage({ onShowToast }) {
   const [confirmEmailInput, setConfirmEmailInput] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Featured Homepage Store State
+  const [featuredMerchantId, setFeaturedMerchantId] = useState(() => {
+    try {
+      return localStorage.getItem('foodypay_featured_merchant_id') || '';
+    } catch (e) {
+      return '';
+    }
+  });
+
+  const handleSetFeaturedStore = (user) => {
+    const targetId = user.foodypayId || user.merchantId || user._id;
+    try {
+      localStorage.setItem('foodypay_featured_merchant_id', targetId);
+      const featuredPayload = {
+        foodypayId: targetId,
+        merchantId: targetId,
+        businessName: user.businessName || user.name,
+        restaurantName: user.businessName || user.name,
+        logoUrl: user.logoUrl || '',
+        upiId: user.upiId || '7496888449@ptsbi',
+        products: user.dishes || [],
+      };
+      localStorage.setItem('foodypay_featured_homepage_merchant', JSON.stringify(featuredPayload));
+      setFeaturedMerchantId(targetId);
+      window.dispatchEvent(new Event('storage'));
+      if (onShowToast) {
+        onShowToast(`⭐ Store "${user.businessName || user.name}" set as DEFAULT Homepage / Store!`);
+      }
+    } catch (e) {}
+  };
+
   // Global Platform Subscription Settings State
   const [globalSubSettings, setGlobalSubSettings] = useState(() => {
     try {
@@ -117,40 +149,101 @@ export default function AdminDebugPage({ onShowToast }) {
   // Fetch Live Real Data from Backend Database
   const loadLiveAdminData = async () => {
     setLoadingData(true);
+    let liveOrdersList = [];
+    try {
+      const ordersRes = await fetchPublicOrdersApi();
+      if (Array.isArray(ordersRes)) liveOrdersList = ordersRes;
+    } catch (e) {}
+
+    try {
+      const localOrders = JSON.parse(localStorage.getItem('foodypay_crm_orders_v3') || '[]');
+      if (Array.isArray(localOrders) && localOrders.length > 0) {
+        liveOrdersList = [...liveOrdersList, ...localOrders];
+      }
+    } catch (e) {}
+
+    setGlobalOrders(liveOrdersList);
+
+    let activeMerchant = null;
+    try {
+      const savedUser = localStorage.getItem('foodypay_user');
+      if (savedUser) activeMerchant = JSON.parse(savedUser);
+    } catch (e) {}
+
     try {
       const usersRes = await fetchRegisteredUsersApi();
-      if (usersRes && usersRes.success && Array.isArray(usersRes.data)) {
-        const normalized = usersRes.data.map((u) => ({
-          _id: u._id,
-          email: u.email || 'merchant@foodypay.in',
-          name: u.name || 'Merchant Owner',
-          businessName: u.businessName || u.name || 'Food Outlet',
-          contactNo: u.contactNo || '+91 98000 00000',
-          foodypayId: u.foodypayId || 'FP-' + Math.floor(100000 + Math.random() * 900000),
+      let rawUsers = (usersRes && usersRes.success && Array.isArray(usersRes.data)) ? usersRes.data : [];
+
+      // Ensure active logged-in merchant is present in rawUsers list if missing
+      if (activeMerchant) {
+        const exists = rawUsers.some(
+          (u) =>
+            (u._id && String(u._id) === String(activeMerchant._id)) ||
+            (u.foodypayId && activeMerchant.foodypayId && String(u.foodypayId) === String(activeMerchant.foodypayId)) ||
+            (u.email && activeMerchant.email && String(u.email).toLowerCase() === String(activeMerchant.email).toLowerCase())
+        );
+        if (!exists) {
+          rawUsers.push(activeMerchant);
+        }
+      }
+
+      const normalized = rawUsers.map((u) => {
+        const isCurrentActive =
+          activeMerchant &&
+          ((u._id && String(u._id) === String(activeMerchant._id)) ||
+            (u.foodypayId && activeMerchant.foodypayId && String(u.foodypayId) === String(activeMerchant.foodypayId)) ||
+            (u.email && activeMerchant.email && String(u.email).toLowerCase() === String(activeMerchant.email).toLowerCase()));
+
+        // Filter matching orders
+        const matchingOrders = liveOrdersList.filter((o) => {
+          if (!o) return false;
+          const oUser = String(o.user || '');
+          const oMerchantId = String(o.merchantId || '');
+          const oFpId = String(o.foodypayId || '');
+          const uId = String(u._id || '');
+          const uFpId = String(u.foodypayId || '');
+
+          if (oUser && uId && oUser === uId) return true;
+          if (oMerchantId && (oMerchantId === uId || oMerchantId === uFpId)) return true;
+          if (oFpId && uFpId && oFpId === uFpId) return true;
+          if (isCurrentActive && (!o.user && !o.merchantId && !o.foodypayId)) return true; // Unassigned local orders belong to current merchant
+          return false;
+        });
+
+        // Compute total sales & orders count
+        const computedSales = matchingOrders.reduce((sum, o) => sum + (Number(o?.total) || 0), 0);
+        const dbSales = Number(u.totalSales) || 0;
+        const totalSalesVal = Math.max(dbSales, computedSales);
+        const totalOrdersVal = Math.max(Number(u.totalOrders) || 0, matchingOrders.length);
+
+        const subPriceVal = u.subscriptionPrice !== undefined && u.subscriptionPrice !== null ? Number(u.subscriptionPrice) : 0;
+        const subPlanVal = u.subscriptionPlan || (subPriceVal > 0 ? 'Pro Business Plan' : 'Free Trial (14 Days)');
+
+        return {
+          _id: u._id || `user_${Math.random()}`,
+          email: u.email || '',
+          name: u.name || '',
+          businessName: u.businessName || u.name || '',
+          contactNo: u.contactNo || u.phone || '',
+          logoUrl: u.logo?.url || u.logoUrl || u.picture || '',
+          foodypayId: u.foodypayId || '',
           isLocked: Boolean(u.isLocked),
           lockReason: u.lockReason || 'Subscription Payment Required',
-          subscriptionPrice: u.subscriptionPrice !== undefined ? Number(u.subscriptionPrice) : globalSubSettings.defaultMonthlyPrice,
-          subscriptionStatus: u.subscriptionStatus || (u.isLocked ? 'Locked' : 'Active'),
-          subscriptionPlan: u.subscriptionPlan || 'Pro Business Plan',
+          subscriptionPrice: subPriceVal,
+          subscriptionStatus: u.subscriptionStatus || (u.isLocked ? 'Locked' : (subPriceVal > 0 ? 'Active' : 'Trial')),
+          subscriptionPlan: subPlanVal,
           subscriptionExpiry: u.subscriptionExpiry || '',
-          totalSales: Number(u.totalSales) || 0,
-          totalOrders: Number(u.totalOrders) || 0,
+          totalSales: totalSalesVal,
+          totalOrders: totalOrdersVal,
+          totalBilled: u.totalBilled !== undefined ? Number(u.totalBilled) : (subPriceVal > 0 ? subPriceVal : 0),
           dishCount: Number(u.dishCount) || (u.dishes ? u.dishes.length : 0),
           dishes: u.dishes || [],
           createdAt: u.createdAt || new Date().toISOString(),
-        }));
-        setRegisteredUsers(normalized);
-      }
+        };
+      });
 
-      // Fetch sample/live public orders feed
-      try {
-        const ordersRes = await fetchPublicOrdersApi();
-        if (Array.isArray(ordersRes)) {
-          setGlobalOrders(ordersRes);
-        }
-      } catch (ordErr) {}
-
-      if (onShowToast) onShowToast(' Live Database Records Reloaded Cleanly!');
+      setRegisteredUsers(normalized);
+      if (onShowToast) onShowToast(' Live Database Records & Sales Reloaded Cleanly!');
     } catch (err) {
       console.warn('Backend load error:', err.message);
     } finally {
@@ -228,10 +321,11 @@ export default function AdminDebugPage({ onShowToast }) {
     e.preventDefault();
     if (!subModalUser) return;
     const targetUserId = subModalUser._id;
+    const isSuspendedVal = subForm.status === 'Suspended' || Boolean(subForm.isSuspended);
 
     try {
       if (targetUserId && !targetUserId.startsWith('user_')) {
-        await updateUserSubscriptionApi(targetUserId, subForm);
+        await updateUserSubscriptionApi(targetUserId, { ...subForm, isSuspended: isSuspendedVal });
       }
     } catch (err) {
       console.warn('Subscription API note:', err.message);
@@ -239,22 +333,48 @@ export default function AdminDebugPage({ onShowToast }) {
 
     setRegisteredUsers((prev) =>
       prev.map((u) => {
-        if (u._id === targetUserId) {
+        if (u._id === targetUserId || u.email === subModalUser.email) {
           return {
             ...u,
             subscriptionPrice: Number(subForm.price) || 0,
             subscriptionPlan: subForm.plan,
-            subscriptionStatus: subForm.status,
+            subscriptionStatus: isSuspendedVal ? 'Suspended' : subForm.status,
             subscriptionExpiry: subForm.expiry,
-            isLocked: subForm.status === 'Locked' || subForm.status === 'Expired',
+            isLocked: subForm.status === 'Locked' || subForm.status === 'Expired' || isSuspendedVal,
+            isSuspended: isSuspendedVal,
           };
         }
         return u;
       })
     );
 
+    // Sync to currently logged in user if email matches
+    try {
+      const rawU = localStorage.getItem('foodypay_user');
+      if (rawU) {
+        const u = JSON.parse(rawU);
+        if (u.email === subModalUser.email || u._id === targetUserId || u.foodypayId === subModalUser.foodypayId) {
+          const updated = {
+            ...u,
+            subscriptionPlan: subForm.plan,
+            subscriptionPrice: Number(subForm.price) || 0,
+            subscriptionStatus: isSuspendedVal ? 'Suspended' : subForm.status,
+            subscriptionExpiry: subForm.expiry,
+            isLocked: subForm.status === 'Locked' || subForm.status === 'Expired' || isSuspendedVal,
+            isSuspended: isSuspendedVal,
+          };
+          localStorage.setItem('foodypay_user', JSON.stringify(updated));
+          window.dispatchEvent(new Event('storage'));
+        }
+      }
+    } catch (err) {}
+
     if (onShowToast) {
-      onShowToast(` Subscription pricing for ${subModalUser.email} updated to ₹${subForm.price}/mo!`);
+      onShowToast(
+        isSuspendedVal
+          ? ` Account ${subModalUser.email} has been SUSPENDED!`
+          : ` Subscription for ${subModalUser.email} updated to ${subForm.plan} (₹${subForm.price}/mo)!`
+      );
     }
 
     setSubModalUser(null);
@@ -688,144 +808,246 @@ export default function AdminDebugPage({ onShowToast }) {
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13.5px' }}>
                     <thead>
                       <tr style={{ backgroundColor: '#161F33', borderBottom: '1px solid #1E293B', color: '#94A3B8', fontSize: '12px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        <th style={{ padding: '14px 18px' }}>Merchant / Business</th>
-                        <th style={{ padding: '14px 18px' }}>Contact Email &amp; Phone</th>
-                        <th style={{ padding: '14px 18px' }}>Subscription Plan &amp; Price</th>
-                        <th style={{ padding: '14px 18px' }}>Lock Status</th>
-                        <th style={{ padding: '14px 18px' }}>Sales / Dishes</th>
+                        <th style={{ padding: '14px 18px' }}>Business Name &amp; Logo</th>
+                        <th style={{ padding: '14px 18px' }}>Email &amp; Contact</th>
+                        <th style={{ padding: '14px 18px' }}>Active Plan Status</th>
+                        <th style={{ padding: '14px 18px' }}>Starting Date</th>
+                        <th style={{ padding: '14px 18px' }}>Total Store Sales</th>
+                        <th style={{ padding: '14px 18px' }}>SaaS Plan Billed</th>
                         <th style={{ padding: '14px 18px', textAlign: 'right' }}>Account Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredUsers.map((user) => (
-                        <tr key={user._id} style={{ borderBottom: '1px solid #1E293B', backgroundColor: user.isLocked ? '#1A0B0E' : 'transparent' }}>
-                          <td style={{ padding: '16px 18px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                              <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: '#1E293B', border: '1px solid #334155', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#FF5E14' }}>
-                                {user.businessName ? user.businessName.charAt(0).toUpperCase() : 'M'}
+                      {filteredUsers.map((user) => {
+                        const createdDateStr = user.createdAt
+                          ? new Date(user.createdAt).toLocaleDateString('en-IN', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                            })
+                          : 'Recent';
+
+                        const isFreeTrial =
+                          user.subscriptionPrice === 0 ||
+                          (user.subscriptionPlan && user.subscriptionPlan.toLowerCase().includes('free'));
+
+                        const saasBilledAmount = user.totalBilled !== undefined ? user.totalBilled : (isFreeTrial ? 0 : user.subscriptionPrice || 499);
+
+                        return (
+                          <tr key={user._id} style={{ borderBottom: '1px solid #1E293B', backgroundColor: user.isLocked ? '#1A0B0E' : 'transparent' }}>
+                            {/* 1. BUSINESS NAME & LOGO */}
+                            <td style={{ padding: '16px 18px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                {user.logoUrl ? (
+                                  <img
+                                    src={user.logoUrl}
+                                    alt={user.businessName}
+                                    style={{
+                                      width: '42px',
+                                      height: '42px',
+                                      borderRadius: '10px',
+                                      objectFit: 'cover',
+                                      backgroundColor: '#1E293B',
+                                      border: '1px solid #334155',
+                                    }}
+                                    onError={(e) => {
+                                      e.target.style.display = 'none';
+                                      if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
+                                    }}
+                                  />
+                                ) : null}
+                                <div
+                                  style={{
+                                    width: '42px',
+                                    height: '42px',
+                                    borderRadius: '10px',
+                                    backgroundColor: '#1E293B',
+                                    border: '1px solid #334155',
+                                    display: user.logoUrl ? 'none' : 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontWeight: 900,
+                                    color: '#FF5E14',
+                                    fontSize: '16px',
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {user.businessName ? user.businessName.charAt(0).toUpperCase() : 'M'}
+                                </div>
+                                <div>
+                                  <div style={{ fontWeight: 800, color: '#FFF', fontSize: '14.5px' }}>{user.businessName || user.name}</div>
+                                  {user.name && user.businessName && user.name !== user.businessName && (
+                                    <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '1px' }}>👤 Owner: {user.name}</div>
+                                  )}
+                                  <div style={{ fontSize: '11.5px', color: '#38BDF8', marginTop: '2px', fontWeight: 600 }}>ID: {user.foodypayId}</div>
+                                </div>
                               </div>
-                              <div>
-                                <div style={{ fontWeight: 800, color: '#FFF', fontSize: '14.5px' }}>{user.businessName || user.name}</div>
-                                <div style={{ fontSize: '12px', color: '#38BDF8', marginTop: '2px', fontWeight: 600 }}>ID: {user.foodypayId}</div>
+                            </td>
+
+                            {/* 2. EMAIL & PHONE */}
+                            <td style={{ padding: '16px 18px' }}>
+                              <div style={{ color: '#38BDF8', fontWeight: 800, fontSize: '13.5px', wordBreak: 'break-all' }}>
+                                📧 {user.email}
                               </div>
-                            </div>
-                          </td>
+                              <div style={{ fontSize: '12.5px', color: '#F1F5F9', marginTop: '4px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                📞 {user.contactNo || 'No Phone Added'}
+                              </div>
+                            </td>
 
-                          <td style={{ padding: '16px 18px' }}>
-                            <div style={{ color: '#F1F5F9', fontWeight: 600 }}>{user.email}</div>
-                            <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>{user.contactNo || 'No Phone Added'}</div>
-                          </td>
-
-                          <td style={{ padding: '16px 18px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ fontSize: '13px', fontWeight: 800, color: '#10B981' }}>₹{user.subscriptionPrice}/mo</span>
-                              <span style={{ fontSize: '10.5px', backgroundColor: '#1E293B', color: '#94A3B8', padding: '2px 6px', borderRadius: '6px', fontWeight: 700 }}>
-                                {user.subscriptionPlan}
-                              </span>
-                            </div>
-                            <button
-                              onClick={() => {
-                                setSubModalUser(user);
-                                setSubForm({
-                                  price: user.subscriptionPrice,
-                                  plan: user.subscriptionPlan,
-                                  status: user.subscriptionStatus,
-                                  expiry: user.subscriptionExpiry ? user.subscriptionExpiry.split('T')[0] : '',
-                                });
-                              }}
-                              style={{ background: 'none', border: 'none', color: '#38BDF8', cursor: 'pointer', padding: 0, fontSize: '11.5px', fontWeight: 700, marginTop: '4px' }}
-                            >
-                              ️ Change Subscription Price
-                            </button>
-                          </td>
-
-                          <td style={{ padding: '16px 18px' }}>
-                            {user.isLocked ? (
-                              <div>
-                                <span style={{ backgroundColor: '#7F1D1D', color: '#FECACA', border: '1px solid #991B1B', fontSize: '11px', fontWeight: 800, padding: '3px 8px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                  <Lock size={12} /> LOCKED
+                            {/* 3. ACTIVE PLAN STATUS (FREE vs SUBSCRIPTION) */}
+                            <td style={{ padding: '16px 18px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span
+                                  style={{
+                                    fontSize: '11px',
+                                    fontWeight: 900,
+                                    padding: '3px 8px',
+                                    borderRadius: '8px',
+                                    backgroundColor: isFreeTrial ? '#FEF3C7' : '#DCFCE7',
+                                    color: isFreeTrial ? '#D97706' : '#15803D',
+                                    border: isFreeTrial ? '1px solid #FCD34D' : '1px solid #86EFAC',
+                                  }}
+                                >
+                                  {isFreeTrial ? '🟡 FREE TRIAL' : '🟢 PRO SUBSCRIPTION'}
                                 </span>
-                                <div style={{ fontSize: '11px', color: '#FCA5A5', marginTop: '4px' }}>{user.lockReason}</div>
+                                <span style={{ fontSize: '13px', fontWeight: 900, color: isFreeTrial ? '#F59E0B' : '#10B981' }}>
+                                  ₹{user.subscriptionPrice}/mo
+                                </span>
                               </div>
-                            ) : (
-                              <span style={{ backgroundColor: '#064E3B', color: '#6EE7B7', border: '1px solid #047857', fontSize: '11px', fontWeight: 800, padding: '3px 8px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                <CheckCircle2 size={12} /> ACTIVE
-                              </span>
-                            )}
-                          </td>
-
-                          <td style={{ padding: '16px 18px' }}>
-                            <div style={{ fontWeight: 800, color: '#F59E0B' }}>₹{user.totalSales.toLocaleString('en-IN')}</div>
-                            <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>{user.totalOrders} Orders • {user.dishCount} Dishes</div>
-                          </td>
-
-                          <td style={{ padding: '16px 18px', textAlign: 'right' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
-                              
-                              {/* Lock / Unlock Toggle Button */}
                               <button
                                 onClick={() => {
-                                  setLockModalUser(user);
-                                  setLockReasonInput(user.lockReason || 'Subscription Payment Required');
+                                  setSubModalUser(user);
+                                  setSubForm({
+                                    price: user.subscriptionPrice,
+                                    plan: user.subscriptionPlan,
+                                    status: user.subscriptionStatus,
+                                    expiry: user.subscriptionExpiry ? user.subscriptionExpiry.split('T')[0] : '',
+                                  });
                                 }}
-                                style={{
-                                  backgroundColor: user.isLocked ? '#064E3B' : '#7F1D1D',
-                                  color: user.isLocked ? '#6EE7B7' : '#FECACA',
-                                  border: 'none',
-                                  padding: '6px 12px',
-                                  borderRadius: '8px',
-                                  fontSize: '12px',
-                                  fontWeight: 800,
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                }}
+                                style={{ background: 'none', border: 'none', color: '#38BDF8', cursor: 'pointer', padding: 0, fontSize: '11.5px', fontWeight: 700, marginTop: '4px', textDecoration: 'underline' }}
                               >
-                                {user.isLocked ? <Unlock size={14} /> : <Lock size={14} />}
-                                <span>{user.isLocked ? 'Unlock Account' : 'Lock Account'}</span>
+                                ✏️ Edit Plan / Pricing
                               </button>
+                            </td>
 
-                              {/* Launch Dashboard Context */}
-                              <button
-                                onClick={() => handleLaunchMerchantDashboard(user)}
-                                style={{
-                                  backgroundColor: '#1E293B',
-                                  color: '#38BDF8',
-                                  border: '1px solid #334155',
-                                  padding: '6px 10px',
-                                  borderRadius: '8px',
-                                  fontSize: '12px',
-                                  fontWeight: 700,
-                                  cursor: 'pointer',
-                                }}
-                                title="Open Merchant POS Dashboard"
-                              >
-                                Open POS 
-                              </button>
+                            {/* 4. STARTING DATE */}
+                            <td style={{ padding: '16px 18px' }}>
+                              <div style={{ fontWeight: 700, color: '#F1F5F9' }}>{createdDateStr}</div>
+                              <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px' }}>Joined Platform</div>
+                            </td>
 
-                              {/* Delete Account Button */}
-                              <button
-                                onClick={() => {
-                                  setDeleteModalUser(user);
-                                  setConfirmEmailInput('');
-                                }}
-                                style={{
-                                  backgroundColor: 'transparent',
-                                  color: '#EF4444',
-                                  border: '1px solid #7F1D1D',
-                                  padding: '6px',
-                                  borderRadius: '8px',
-                                  cursor: 'pointer',
-                                }}
-                                title="Delete Account Permanently"
-                              >
-                                <Trash2 size={15} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                            {/* 5. TOTAL STORE SALES */}
+                            <td style={{ padding: '16px 18px' }}>
+                              <div style={{ fontWeight: 900, color: '#F59E0B', fontSize: '15px' }}>₹{user.totalSales.toLocaleString('en-IN')}</div>
+                              <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>{user.totalOrders} Orders • {user.dishCount} Dishes</div>
+                            </td>
+
+                            {/* 6. SAAS BILLING PAID SO FAR */}
+                            <td style={{ padding: '16px 18px' }}>
+                              <div style={{ fontWeight: 900, color: saasBilledAmount > 0 ? '#10B981' : '#94A3B8', fontSize: '14.5px' }}>
+                                ₹{saasBilledAmount.toLocaleString('en-IN')}
+                              </div>
+                              <div style={{ fontSize: '11px', color: saasBilledAmount > 0 ? '#34D399' : '#64748B', marginTop: '2px', fontWeight: 700 }}>
+                                {isFreeTrial ? 'Free Trial (Unbilled)' : 'Subscription Paid'}
+                              </div>
+                            </td>
+
+                            {/* 7. ACCOUNT ACTIONS & LOCK STATUS */}
+                            <td style={{ padding: '16px 18px', textAlign: 'right' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                                {/* Lock / Unlock Toggle Button */}
+                                <button
+                                  onClick={() => {
+                                    setLockModalUser(user);
+                                    setLockReasonInput(user.lockReason || 'Subscription Payment Required');
+                                  }}
+                                  style={{
+                                    backgroundColor: user.isLocked ? '#064E3B' : '#7F1D1D',
+                                    color: user.isLocked ? '#6EE7B7' : '#FECACA',
+                                    border: 'none',
+                                    padding: '6px 10px',
+                                    borderRadius: '8px',
+                                    fontSize: '12px',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                  }}
+                                >
+                                  {user.isLocked ? <Unlock size={14} /> : <Lock size={14} />}
+                                  <span>{user.isLocked ? 'Unlock' : 'Lock'}</span>
+                                </button>
+
+                                {/* Launch Dashboard Context */}
+                                <button
+                                  onClick={() => handleLaunchMerchantDashboard(user)}
+                                  style={{
+                                    backgroundColor: '#1E293B',
+                                    color: '#38BDF8',
+                                    border: '1px solid #334155',
+                                    padding: '6px 10px',
+                                    borderRadius: '8px',
+                                    fontSize: '12px',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                  }}
+                                  title="Open Merchant POS Dashboard"
+                                >
+                                  Open POS ↗
+                                </button>
+
+                                {/* Set as Default Homepage Store / Button */}
+                                {(() => {
+                                  const userId = user.foodypayId || user.merchantId || user._id;
+                                  const isFeat = String(featuredMerchantId) === String(userId);
+                                  return (
+                                    <button
+                                      onClick={() => handleSetFeaturedStore(user)}
+                                      style={{
+                                        backgroundColor: isFeat ? '#F59E0B' : '#1E293B',
+                                        color: isFeat ? '#0F172A' : '#F59E0B',
+                                        border: '1px solid #F59E0B',
+                                        padding: '6px 10px',
+                                        borderRadius: '8px',
+                                        fontSize: '12px',
+                                        fontWeight: 800,
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                      }}
+                                      title="Show all products from this store directly on Homepage /"
+                                    >
+                                      <Star size={13} fill={isFeat ? '#0F172A' : 'none'} />
+                                      <span>{isFeat ? 'Featured / Store' : 'Set as / Store'}</span>
+                                    </button>
+                                  );
+                                })()}
+
+                                {/* Delete Account Button */}
+                                <button
+                                  onClick={() => {
+                                    setDeleteModalUser(user);
+                                    setConfirmEmailInput('');
+                                  }}
+                                  style={{
+                                    backgroundColor: 'transparent',
+                                    color: '#EF4444',
+                                    border: '1px solid #7F1D1D',
+                                    padding: '6px',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                  }}
+                                  title="Delete Merchant Account"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1084,9 +1306,33 @@ export default function AdminDebugPage({ onShowToast }) {
             </div>
 
             <form onSubmit={handleSaveUserSubscription} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Quick Plan Preset Selector */}
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#94A3B8', marginBottom: '4px' }}>
-                  Monthly Subscription Price (₹/month) *
+                  Select Subscription Plan Tier
+                </label>
+                <select
+                  value={subForm.plan}
+                  onChange={(e) => {
+                    const p = e.target.value;
+                    let pr = subForm.price;
+                    if (p === 'Starter Free') pr = 0;
+                    if (p === 'Growth Pro') pr = 35;
+                    if (p === 'Enterprise Max') pr = 75;
+                    setSubForm({ ...subForm, plan: p, price: pr });
+                  }}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+                >
+                  <option value="Starter Free">Starter Free ($0/mo)</option>
+                  <option value="Growth Pro">Growth Pro ($35/mo)</option>
+                  <option value="Enterprise Max">Enterprise Max ($75/mo)</option>
+                  <option value="Custom Plan">Custom Plan</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#94A3B8', marginBottom: '4px' }}>
+                  Monthly Subscription Price ($ or ₹ / month) *
                 </label>
                 <input
                   type="number"
@@ -1097,16 +1343,48 @@ export default function AdminDebugPage({ onShowToast }) {
                 />
               </div>
 
+              {/* Validity / Expiry Duration Quick Picker */}
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#94A3B8', marginBottom: '6px' }}>
+                  Set Plan Validity Duration
+                </label>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {[
+                    { label: '1 Month', days: 30 },
+                    { label: '3 Months', days: 90 },
+                    { label: '6 Months', days: 180 },
+                    { label: '1 Year', days: 365 },
+                    { label: 'Unlimited / Lifetime', days: 0 },
+                  ].map((dur) => (
+                    <button
+                      key={dur.label}
+                      type="button"
+                      onClick={() => {
+                        if (dur.days === 0) {
+                          setSubForm({ ...subForm, expiry: '' });
+                        } else {
+                          const d = new Date();
+                          d.setDate(d.getDate() + dur.days);
+                          setSubForm({ ...subForm, expiry: d.toISOString().split('T')[0] });
+                        }
+                      }}
+                      style={{ padding: '6px 10px', borderRadius: '6px', background: '#1E293B', border: '1px solid #334155', color: '#38BDF8', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer' }}
+                    >
+                      + {dur.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#94A3B8', marginBottom: '4px' }}>
-                  Subscription Plan Name
+                  Subscription Expiry Date (YYYY-MM-DD)
                 </label>
                 <input
-                  type="text"
-                  value={subForm.plan}
-                  onChange={(e) => setSubForm({ ...subForm, plan: e.target.value })}
+                  type="date"
+                  value={subForm.expiry}
+                  onChange={(e) => setSubForm({ ...subForm, expiry: e.target.value })}
                   style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
-                  required
                 />
               </div>
 
@@ -1121,9 +1399,31 @@ export default function AdminDebugPage({ onShowToast }) {
                 >
                   <option value="Active">Active (Unlocked)</option>
                   <option value="Trial">Trial Period</option>
-                  <option value="Expired">Expired</option>
+                  <option value="Expired">Expired (Locked)</option>
                   <option value="Locked">Locked (Unpaid)</option>
+                  <option value="Suspended">⚠️ Suspended (Block Access)</option>
                 </select>
+              </div>
+
+              {/* Account Suspension Control */}
+              <div style={{ background: '#2C1517', border: '1px solid #7F1D1D', padding: '12px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <input
+                  type="checkbox"
+                  id="chkSuspend"
+                  checked={subForm.status === 'Suspended' || Boolean(subForm.isSuspended)}
+                  onChange={(e) => {
+                    const isS = e.target.checked;
+                    setSubForm({
+                      ...subForm,
+                      isSuspended: isS,
+                      status: isS ? 'Suspended' : 'Active',
+                    });
+                  }}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                />
+                <label htmlFor="chkSuspend" style={{ fontSize: '12.5px', fontWeight: 800, color: '#FCA5A5', cursor: 'pointer' }}>
+                  ⚠️ Suspend Merchant Account (Blocks POS &amp; Customer Menu Access)
+                </label>
               </div>
 
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '14px' }}>

@@ -650,3 +650,109 @@ export async function updateSettingsApi(token, settingsData) {
   if (!response.ok) throw new Error(data.message || 'Failed to update settings');
   return data.data;
 }
+
+// ============================================================================
+// DYNAMIC DELIVERY ZONES & STORE MANAGEMENT APIS
+// ============================================================================
+
+export async function fetchDeliveryZonesApi() {
+  const res = await safeFetch('/delivery/zones');
+  const data = await parseJsonResponse(res);
+  return data.data || [];
+}
+
+export async function createDeliveryZoneApi(zoneData) {
+  const res = await safeFetch('/delivery/zones', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(zoneData),
+  });
+  const data = await parseJsonResponse(res);
+  return data.data;
+}
+
+export async function updateDeliveryZoneApi(id, zoneData) {
+  const res = await safeFetch(`/delivery/zones/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(zoneData),
+  });
+  const data = await parseJsonResponse(res);
+  return data.data;
+}
+
+export async function deleteDeliveryZoneApi(id) {
+  const res = await safeFetch(`/delivery/zones/${id}`, {
+    method: 'DELETE',
+  });
+  return await parseJsonResponse(res);
+}
+
+export async function fetchStoresApi() {
+  const res = await safeFetch('/stores');
+  const data = await parseJsonResponse(res);
+  return data.data || [];
+}
+
+export async function createStoreApi(storeData) {
+  const res = await safeFetch('/stores', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(storeData),
+  });
+  const data = await parseJsonResponse(res);
+  return data.data;
+}
+
+export async function updateStoreApi(id, storeData) {
+  const res = await safeFetch(`/stores/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(storeData),
+  });
+  const data = await parseJsonResponse(res);
+  return data.data;
+}
+
+export async function deleteStoreApi(id) {
+  const res = await safeFetch(`/stores/${id}`, {
+    method: 'DELETE',
+  });
+  return await parseJsonResponse(res);
+}
+
+export async function assignStoreOwnerEmailApi(storeId, ownerEmail) {
+  const res = await safeFetch('/stores/assign-owner', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ storeId, ownerEmail }),
+  });
+  const data = await parseJsonResponse(res);
+  return data;
+}
+
+export async function assignZonesToStoreApi(storeId, zoneIds) {
+  const res = await safeFetch(`/stores/${storeId}/zones`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ zoneIds }),
+  });
+  return await parseJsonResponse(res);
+}
+
+export async function checkDeliveryAvailabilityApi(lat, lng) {
+  const res = await safeFetch(`/customer/delivery-availability?lat=${lat}&lng=${lng}`);
+  return await parseJsonResponse(res);
+}
+
+export async function fetchAvailableProductsApi(lat, lng, category = 'All') {
+  let url = `/customer/available-products`;
+  if (lat && lng) {
+    url += `?lat=${lat}&lng=${lng}&category=${encodeURIComponent(category)}`;
+  } else if (category && category !== 'All') {
+    url += `?category=${encodeURIComponent(category)}`;
+  }
+  const res = await safeFetch(url);
+  return await parseJsonResponse(res);
+}
+
