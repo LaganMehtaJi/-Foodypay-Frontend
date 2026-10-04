@@ -12331,6 +12331,34 @@ export default function DashboardPage({ onShowToast }) {
                 </div>
               </div>
 
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '2px', marginBottom: '-6px' }}>
+                <span style={{ fontSize: '11.5px', color: '#475569', fontWeight: 600 }}>
+                  📍 Google Maps Coordinates & Delivery Radius
+                </span>
+                <button
+                  type="button"
+                  className="crm-btn-secondary"
+                  style={{ padding: '4px 10px', fontSize: '11.5px', background: '#EFF6FF', color: '#1E40AF', border: '1px solid #BFDBFE' }}
+                  onClick={() => {
+                    if (navigator.geolocation) {
+                      navigator.geolocation.getCurrentPosition(
+                        (pos) => {
+                          setZoneForm((prev) => ({
+                            ...prev,
+                            centerLatitude: pos.coords.latitude,
+                            centerLongitude: pos.coords.longitude,
+                          }));
+                          addToast('📍 Current GPS coordinates loaded into form!');
+                        },
+                        () => addToast('⚠️ Could not fetch location. Please enter manually or check permissions.')
+                      );
+                    }
+                  }}
+                >
+                  📍 Fill My Current GPS Coords
+                </button>
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                 <div className="crm-form-group">
                   <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Center Latitude *</label>
@@ -12368,6 +12396,9 @@ export default function DashboardPage({ onShowToast }) {
                     onChange={(e) => setZoneForm({ ...zoneForm, radius: e.target.value })}
                   />
                 </div>
+              </div>
+              <div style={{ fontSize: '11px', color: '#64748B', marginTop: '-8px' }}>
+                💡 Tip: Open <a href="https://maps.google.com" target="_blank" rel="noopener noreferrer" style={{ color: '#2563EB', fontWeight: 700 }}>Google Maps</a>, right-click any location point to copy exact Latitude & Longitude values.
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -12520,6 +12551,34 @@ export default function DashboardPage({ onShowToast }) {
                 </div>
               </div>
 
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '2px', marginBottom: '-6px' }}>
+                <span style={{ fontSize: '11.5px', color: '#475569', fontWeight: 600 }}>
+                  📍 Store GPS Coordinates & Delivery Radius
+                </span>
+                <button
+                  type="button"
+                  className="crm-btn-secondary"
+                  style={{ padding: '4px 10px', fontSize: '11.5px', background: '#ECFDF5', color: '#047857', border: '1px solid #A7F3D0' }}
+                  onClick={() => {
+                    if (navigator.geolocation) {
+                      navigator.geolocation.getCurrentPosition(
+                        (pos) => {
+                          setStoreForm((prev) => ({
+                            ...prev,
+                            latitude: pos.coords.latitude,
+                            longitude: pos.coords.longitude,
+                          }));
+                          addToast('📍 Current GPS coordinates loaded into store form!');
+                        },
+                        () => addToast('⚠️ Could not fetch location. Please enter manually.')
+                      );
+                    }
+                  }}
+                >
+                  📍 Fill My Current GPS Coords
+                </button>
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                 <div className="crm-form-group">
                   <label style={{ fontSize: '12.5px', fontWeight: 800 }}>Store Latitude *</label>
@@ -12557,6 +12616,9 @@ export default function DashboardPage({ onShowToast }) {
                     onChange={(e) => setStoreForm({ ...storeForm, deliveryRadius: e.target.value })}
                   />
                 </div>
+              </div>
+              <div style={{ fontSize: '11px', color: '#64748B', marginTop: '-8px' }}>
+                💡 Tip: Right-click any location on <a href="https://maps.google.com" target="_blank" rel="noopener noreferrer" style={{ color: '#059669', fontWeight: 700 }}>Google Maps</a> to copy Latitude & Longitude.
               </div>
 
               <div className="crm-modal-footer" style={{ marginTop: '12px' }}>
