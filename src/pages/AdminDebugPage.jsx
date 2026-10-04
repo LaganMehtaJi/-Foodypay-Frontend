@@ -2503,5 +2503,6 @@ export default function AdminDebugPage({ onShowToast }) {
           </div>
         </div>
       )}
+    </div>
   );
 }
