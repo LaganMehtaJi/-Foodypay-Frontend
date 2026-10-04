@@ -12399,7 +12399,84 @@ export default function DashboardPage({ onShowToast }) {
                 </div>
               </div>
               <div style={{ fontSize: '11px', color: '#64748B', marginTop: '-8px' }}>
-                💡 Tip: Open <a href="https://maps.google.com" target="_blank" rel="noopener noreferrer" style={{ color: '#2563EB', fontWeight: 700 }}>Google Maps</a>, right-click any location point to copy exact Latitude & Longitude values.
+                💡 Tip: Open <a href={`https://www.google.com/maps/@${zoneForm.centerLatitude || 30.7046},${zoneForm.centerLongitude || 76.7179},15z`} target="_blank" rel="noopener noreferrer" style={{ color: '#2563EB', fontWeight: 700 }}>Google Maps</a>, right-click any sector (e.g. Sector 71, Mattaur) to copy exact Lat & Lng.
+              </div>
+
+              {/* LIVE GOOGLE MAPS VISUALIZATION PREVIEW CARD */}
+              <div style={{
+                borderRadius: '12px',
+                border: '1.5px solid #BFDBFE',
+                background: '#F8FAFC',
+                overflow: 'hidden',
+                marginTop: '4px',
+                boxShadow: '0 2px 8px rgba(30,64,175,0.06)'
+              }}>
+                <div style={{
+                  background: 'linear-gradient(90deg, #1E40AF 0%, #3B82F6 100%)',
+                  padding: '8px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justify: 'space-between',
+                  color: '#FFFFFF'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 800 }}>
+                    <MapPin size={16} color="#93C5FD" />
+                    <span>🗺️ Live Google Maps Delivery Zone Preview</span>
+                  </div>
+                  <span style={{ fontSize: '11px', background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: '12px', fontWeight: 700 }}>
+                    Radius: {zoneForm.radius || 5} KM
+                  </span>
+                </div>
+
+                <div style={{ position: 'relative', height: '220px', width: '100%', background: '#E2E8F0' }}>
+                  {zoneForm.centerLatitude && zoneForm.centerLongitude ? (
+                    <iframe
+                      title="Google Map Preview"
+                      width="100%"
+                      height="220"
+                      style={{ border: 0 }}
+                      loading="lazy"
+                      allowFullScreen
+                      src={`https://maps.google.com/maps?q=${zoneForm.centerLatitude},${zoneForm.centerLongitude}&z=14&output=embed`}
+                    />
+                  ) : (
+                    <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#64748B', fontSize: '13px' }}>
+                      Enter Latitude & Longitude to view live map preview
+                    </div>
+                  )}
+
+                  <div style={{
+                    position: 'absolute',
+                    bottom: '8px',
+                    left: '8px',
+                    right: '8px',
+                    background: 'rgba(15, 23, 42, 0.85)',
+                    backdropFilter: 'blur(4px)',
+                    color: '#FFFFFF',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    fontSize: '11.5px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justify: 'space-between'
+                  }}>
+                    <div>
+                      <span style={{ color: '#60A5FA', fontWeight: 700 }}>📍 Target Zone Center:</span> {Number(zoneForm.centerLatitude || 0).toFixed(4)}, {Number(zoneForm.centerLongitude || 0).toFixed(4)}
+                    </div>
+                    <a
+                      href={`https://www.google.com/maps/@${zoneForm.centerLatitude || 30.7046},${zoneForm.centerLongitude || 76.7179},15z`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: '#93C5FD', fontWeight: 800, textDecoration: 'underline' }}
+                    >
+                      Open Full Map ↗
+                    </a>
+                  </div>
+                </div>
+
+                <div style={{ padding: '10px 14px', background: '#EFF6FF', fontSize: '11.5px', color: '#1E3A8A', borderTop: '1px solid #DBEAFE', lineHeight: '1.4' }}>
+                  <b>🎯 Zone Geofence Coverage:</b> All customers within <b>{zoneForm.radius || 5} KM</b> of center ({zoneForm.centerLatitude || 30.7046}, {zoneForm.centerLongitude || 76.7179}) covering sectors like <i>Sector 70, Sector 71, Mattaur, Sector 61</i> will automatically get product availability & delivery access.
+                </div>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -12619,7 +12696,84 @@ export default function DashboardPage({ onShowToast }) {
                 </div>
               </div>
               <div style={{ fontSize: '11px', color: '#64748B', marginTop: '-8px' }}>
-                💡 Tip: Right-click any location on <a href="https://maps.google.com" target="_blank" rel="noopener noreferrer" style={{ color: '#059669', fontWeight: 700 }}>Google Maps</a> to copy Latitude & Longitude.
+                💡 Tip: Right-click any location on <a href={`https://www.google.com/maps/@${storeForm.latitude || 30.7046},${storeForm.longitude || 76.7179},15z`} target="_blank" rel="noopener noreferrer" style={{ color: '#059669', fontWeight: 700 }}>Google Maps</a> to copy Latitude & Longitude.
+              </div>
+
+              {/* LIVE GOOGLE MAPS VISUALIZATION PREVIEW CARD FOR STORE */}
+              <div style={{
+                borderRadius: '12px',
+                border: '1.5px solid #A7F3D0',
+                background: '#F0FDF4',
+                overflow: 'hidden',
+                marginTop: '4px',
+                boxShadow: '0 2px 8px rgba(16,185,129,0.06)'
+              }}>
+                <div style={{
+                  background: 'linear-gradient(90deg, #059669 0%, #10B981 100%)',
+                  padding: '8px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justify: 'space-between',
+                  color: '#FFFFFF'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 800 }}>
+                    <Store size={16} color="#A7F3D0" />
+                    <span>🗺️ Live Store Location & Delivery Radius Preview</span>
+                  </div>
+                  <span style={{ fontSize: '11px', background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: '12px', fontWeight: 700 }}>
+                    Store Radius: {storeForm.deliveryRadius || 5} KM
+                  </span>
+                </div>
+
+                <div style={{ position: 'relative', height: '220px', width: '100%', background: '#E2E8F0' }}>
+                  {storeForm.latitude && storeForm.longitude ? (
+                    <iframe
+                      title="Store Google Map Preview"
+                      width="100%"
+                      height="220"
+                      style={{ border: 0 }}
+                      loading="lazy"
+                      allowFullScreen
+                      src={`https://maps.google.com/maps?q=${storeForm.latitude},${storeForm.longitude}&z=14&output=embed`}
+                    />
+                  ) : (
+                    <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center', color: '#64748B', fontSize: '13px' }}>
+                      Enter Latitude & Longitude to view live map preview
+                    </div>
+                  )}
+
+                  <div style={{
+                    position: 'absolute',
+                    bottom: '8px',
+                    left: '8px',
+                    right: '8px',
+                    background: 'rgba(15, 23, 42, 0.85)',
+                    backdropFilter: 'blur(4px)',
+                    color: '#FFFFFF',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    fontSize: '11.5px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justify: 'space-between'
+                  }}>
+                    <div>
+                      <span style={{ color: '#34D399', fontWeight: 700 }}>🏪 Store GPS Location:</span> {Number(storeForm.latitude || 0).toFixed(4)}, {Number(storeForm.longitude || 0).toFixed(4)}
+                    </div>
+                    <a
+                      href={`https://www.google.com/maps/@${storeForm.latitude || 30.7046},${storeForm.longitude || 76.7179},15z`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: '#6EE7B7', fontWeight: 800, textDecoration: 'underline' }}
+                    >
+                      Open Full Map ↗
+                    </a>
+                  </div>
+                </div>
+
+                <div style={{ padding: '10px 14px', background: '#ECFDF5', fontSize: '11.5px', color: '#065F46', borderTop: '1px solid #D1FAE5', lineHeight: '1.4' }}>
+                  <b>🎯 Store Delivery Geofence:</b> This store will automatically serve all customers within <b>{storeForm.deliveryRadius || 5} KM</b> (covering Sector 70, Sector 71, Mattaur, etc.).
+                </div>
               </div>
 
               <div className="crm-modal-footer" style={{ marginTop: '12px' }}>
