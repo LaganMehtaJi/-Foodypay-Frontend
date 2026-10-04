@@ -383,7 +383,66 @@
 .crm-header-right {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.crm-header-clock-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #F8FAFC;
+  padding: 7px 14px;
+  border-radius: 10px;
+  border: 1px solid #E2E8F0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #475569;
+}
+
+.crm-header-sound-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: #F1F5F9;
+  border: 1px solid #CBD5E1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.crm-header-pos-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: 10px;
+  background: #1D4ED8;
+  color: #FFFFFF;
+  border: none;
+  font-weight: 800;
+  font-size: 13.5px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(29, 78, 216, 0.25);
+  white-space: nowrap;
+}
+
+.crm-header-logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 14px;
+  border-radius: 10px;
+  background-color: #FEF2F2;
+  border: 1.5px solid #FCA5A5;
+  color: #DC2626;
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
 }
 
 /* Action Buttons & Pills - Bigger & Punchier */
@@ -2714,8 +2773,35 @@ input:checked + .crm-blue-slider:before {
     justify-content: space-between;
   }
 
+  .crm-header-right {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px !important;
+  }
+
+  .crm-header-clock-badge {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .crm-header-sound-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  .crm-header-pos-btn {
+    padding: 8px 12px;
+    font-size: 12.5px;
+  }
+
+  .crm-header-logout-btn {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
   .crm-page-heading {
-    font-size: 18px !important;
+    font-size: 17px !important;
   }
 
   /* Filter Tabs & Search Bar */
@@ -2770,6 +2856,33 @@ input:checked + .crm-blue-slider:before {
 }
 
 @media (max-width: 480px) {
+  .crm-header-bar {
+    padding: 10px 12px !important;
+    gap: 8px !important;
+  }
+
+  .crm-header-right {
+    gap: 6px !important;
+  }
+
+  .crm-header-clock-badge {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+
+  .crm-header-pos-btn {
+    padding: 7px 10px;
+    font-size: 11.5px;
+    flex: 1;
+    justify-content: center;
+  }
+
+  .crm-header-logout-btn {
+    padding: 7px 8px;
+    font-size: 11.5px;
+    justify-content: center;
+  }
+
   .crm-kpi-banner-grid {
     grid-template-columns: 1fr 1fr;
     gap: 8px;
@@ -2780,15 +2893,15 @@ input:checked + .crm-blue-slider:before {
   }
 
   .crm-kpi-value {
-    font-size: 20px !important;
+    font-size: 18px !important;
   }
 
   .crm-kpi-label {
-    font-size: 11px !important;
+    font-size: 10.5px !important;
   }
 
   .crm-page-heading {
-    font-size: 16px !important;
+    font-size: 15px !important;
   }
 
   .crm-pill-action-btn {

@@ -3655,9 +3655,9 @@ export default function DashboardPage({ onShowToast }) {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div className="crm-header-right">
             {/* Live Clock Badge */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#F8FAFC', padding: '7px 14px', borderRadius: '10px', border: '1px solid #E2E8F0', fontSize: '13px', fontWeight: 700, color: '#475569' }}>
+            <div className="crm-header-clock-badge">
               <Clock size={15} color="#1D4ED8" />
               <span>{currentTime}</span>
             </div>
@@ -3665,16 +3665,8 @@ export default function DashboardPage({ onShowToast }) {
             {/* Sound Mute/Unmute */}
             <button
               type="button"
+              className="crm-header-sound-btn"
               style={{
-                width: '38px',
-                height: '38px',
-                borderRadius: '10px',
-                background: '#F1F5F9',
-                border: '1px solid #CBD5E1',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
                 color: soundEnabled ? '#1D4ED8' : '#94A3B8',
               }}
               title={soundEnabled ? 'Audio Alerts Enabled' : 'Audio Alerts Muted'}
@@ -3689,48 +3681,22 @@ export default function DashboardPage({ onShowToast }) {
             {/* Quick Manual Order Button */}
             <button
               type="button"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '9px 18px',
-                borderRadius: '10px',
-                background: '#1D4ED8',
-                color: '#FFFFFF',
-                border: 'none',
-                fontWeight: 800,
-                fontSize: '13.5px',
-                cursor: 'pointer',
-                boxShadow: '0 4px 12px rgba(29, 78, 216, 0.25)',
-              }}
+              className="crm-header-pos-btn"
               onClick={() => handleOpenManualOrder()}
             >
               <Plus size={16} />
-              <span>Counter POS Order</span>
+              <span className="crm-header-pos-text">Counter POS Order</span>
             </button>
 
             {/* Logout Header Button */}
             <button
               type="button"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '9px 14px',
-                borderRadius: '10px',
-                backgroundColor: '#FEF2F2',
-                border: '1.5px solid #FCA5A5',
-                color: '#DC2626',
-                fontWeight: 800,
-                fontSize: '13px',
-                cursor: 'pointer',
-                transition: 'all 0.2s',
-              }}
+              className="crm-header-logout-btn"
               title="Log Out of Merchant Account"
               onClick={handleLogout}
             >
               <LogOut size={16} />
-              <span>Log Out</span>
+              <span className="crm-header-logout-text">Log Out</span>
             </button>
           </div>
         </header>
@@ -3862,8 +3828,8 @@ export default function DashboardPage({ onShowToast }) {
                     </div>
 
                     {/* DAY-WISE CALENDAR & DATE RANGE SELECTOR (MATCHING USER SCREENSHOT) */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                      <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', width: '100%', maxWidth: '100%' }}>
+                      <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', width: '100%', maxWidth: '100%' }}>
                         <select
                           value={dateRangeFilter}
                           onChange={(e) => setDateRangeFilter(e.target.value)}
@@ -3873,13 +3839,19 @@ export default function DashboardPage({ onShowToast }) {
                             backgroundColor: '#FFFFFF',
                             border: '1.5px solid #CBD5E1',
                             borderRadius: '10px',
-                            padding: '8px 36px 8px 34px',
+                            padding: '8px 32px 8px 32px',
                             fontSize: '13px',
                             fontWeight: 700,
                             color: '#1E293B',
                             cursor: 'pointer',
                             boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
                             outline: 'none',
+                            width: '100%',
+                            maxWidth: '100%',
+                            boxSizing: 'border-box',
+                            textOverflow: 'ellipsis',
+                            overflow: 'hidden',
+                            whiteSpace: 'nowrap'
                           }}
                         >
                           <option value="today">📅 Today</option>
