@@ -574,16 +574,17 @@ export default function DashboardPage({ onShowToast }) {
   const isGrowthPro = isBaseGrowthPro && !isSubscriptionExpired;
   const isFreePlan = !isEnterpriseMax && !isGrowthPro;
 
-  // Feature Lock Rules (All navigation tabs unlocked & active):
+  // Feature Lock Rules (Temporarily hide requested menu items):
   const isKdsLocked = false;
   const isMarketingLocked = false;
   const isCustomersLocked = false;
-  const isReviewsLocked = false;
-
-  // Delivery Partner View, Themes & Branding, Grow -> Unlocked
-  const isDeliveryPartnerLocked = false;
-  const isThemesLocked = false;
+  const isReviewsLocked = true; // Hidden for now
+  const isDeliveryPartnerLocked = true; // Hidden for now
+  const isThemesLocked = true; // Hidden for now
   const isGrowLocked = false;
+  const isCollectionsLocked = true; // Hidden for now
+  const isWishlistLocked = true; // Hidden for now
+  const isDeliveryStoresLocked = true; // Hidden for now
 
   // Dynamic Database-Driven Delivery Zones & Store Management State
   const [deliveryZones, setDeliveryZones] = useState([]);
@@ -3487,19 +3488,21 @@ export default function DashboardPage({ onShowToast }) {
                 >
                   <span>Products</span>
                 </button>
-                <button
-                  type="button"
-                  className={`crm-submenu-item ${activeTab === 'catalog_collections' ? 'active' : ''}`}
-                  onClick={() => {
-                    setActiveTab('catalog_collections');
-                    setMobileMenuOpen(false);
-                  }}
-                >
-                  <span>Collections / Steal Deals</span>
-                  <span className="crm-badge-new" style={{ background: stealDealsConfig.enabled ? '#DCFCE7' : '#F1F5F9', color: stealDealsConfig.enabled ? '#15803D' : '#64748B', padding: '1px 6px' }}>
-                    {stealDealsConfig.enabled ? 'ON' : 'OFF'}
-                  </span>
-                </button>
+                {!isCollectionsLocked && (
+                  <button
+                    type="button"
+                    className={`crm-submenu-item ${activeTab === 'catalog_collections' ? 'active' : ''}`}
+                    onClick={() => {
+                      setActiveTab('catalog_collections');
+                      setMobileMenuOpen(false);
+                    }}
+                  >
+                    <span>Collections / Steal Deals</span>
+                    <span className="crm-badge-new" style={{ background: stealDealsConfig.enabled ? '#DCFCE7' : '#F1F5F9', color: stealDealsConfig.enabled ? '#15803D' : '#64748B', padding: '1px 6px' }}>
+                      {stealDealsConfig.enabled ? 'ON' : 'OFF'}
+                    </span>
+                  </button>
+                )}
                 {!isReviewsLocked && (
                   <button
                     type="button"
@@ -3513,14 +3516,16 @@ export default function DashboardPage({ onShowToast }) {
                     <span className="crm-badge-new" style={{ background: '#FEF3C7', color: '#D97706', padding: '1px 6px' }}>4.8 ⭐</span>
                   </button>
                 )}
-                <button
-                  type="button"
-                  className="crm-submenu-item"
-                  onClick={() => addToast('Diner Wishlist feature activated!')}
-                >
-                  <span>Wishlists</span>
-                  <span className="crm-badge-new">New</span>
-                </button>
+                {!isWishlistLocked && (
+                  <button
+                    type="button"
+                    className="crm-submenu-item"
+                    onClick={() => addToast('Diner Wishlist feature activated!')}
+                  >
+                    <span>Wishlists</span>
+                    <span className="crm-badge-new">New</span>
+                  </button>
+                )}
                 {!isThemesLocked && (
                   <button
                     type="button"
@@ -3558,24 +3563,26 @@ export default function DashboardPage({ onShowToast }) {
             </button>
           )}
 
-          {/* Delivery & Stores Management (Database-driven) */}
-          <button
-            type="button"
-            title="Delivery & Store Management"
-            className={`crm-menu-link ${activeTab === 'delivery_zones' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('delivery_zones');
-              setMobileMenuOpen(false);
-            }}
-          >
-            <div className="crm-menu-link-left">
-              <span className="crm-menu-icon">
-                <Truck size={20} color="#3B82F6" />
-              </span>
-              <span>Delivery & Stores</span>
-            </div>
-            <span className="crm-badge-new" style={{ background: '#DBEAFE', color: '#1E40AF', padding: '1px 6px' }}>Zones</span>
-          </button>
+          {/* Delivery & Stores Management (Hidden if Locked) */}
+          {!isDeliveryStoresLocked && (
+            <button
+              type="button"
+              title="Delivery & Store Management"
+              className={`crm-menu-link ${activeTab === 'delivery_zones' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveTab('delivery_zones');
+                setMobileMenuOpen(false);
+              }}
+            >
+              <div className="crm-menu-link-left">
+                <span className="crm-menu-icon">
+                  <Truck size={20} color="#3B82F6" />
+                </span>
+                <span>Delivery & Stores</span>
+              </div>
+              <span className="crm-badge-new" style={{ background: '#DBEAFE', color: '#1E40AF', padding: '1px 6px' }}>Zones</span>
+            </button>
+          )}
 
           {/* 4. Utilities (Table QR Generator) */}
           <button
@@ -3595,26 +3602,28 @@ export default function DashboardPage({ onShowToast }) {
             </div>
           </button>
 
-          {/* 4.5 Customer Reviews & Feedback */}
-          <button
-            type="button"
-            title="Customer Reviews & Feedback"
-            className={`crm-menu-link ${activeTab === 'customer_reviews' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('customer_reviews');
-              setMobileMenuOpen(false);
-            }}
-          >
-            <div className="crm-menu-link-left">
-              <span className="crm-menu-icon">
-                <Star size={20} color="#F59E0B" fill="#F59E0B" />
+          {/* 4.5 Customer Reviews & Feedback (Hidden if Locked) */}
+          {!isReviewsLocked && (
+            <button
+              type="button"
+              title="Customer Reviews & Feedback"
+              className={`crm-menu-link ${activeTab === 'customer_reviews' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveTab('customer_reviews');
+                setMobileMenuOpen(false);
+              }}
+            >
+              <div className="crm-menu-link-left">
+                <span className="crm-menu-icon">
+                  <Star size={20} color="#F59E0B" fill="#F59E0B" />
+                </span>
+                <span>Customer Reviews</span>
+              </div>
+              <span className="crm-badge-new" style={{ background: '#FEF3C7', color: '#D97706', padding: '1px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 800 }}>
+                4.8 ★
               </span>
-              <span>Customer Reviews</span>
-            </div>
-            <span className="crm-badge-new" style={{ background: '#FEF3C7', color: '#D97706', padding: '1px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 800 }}>
-              4.8 ★
-            </span>
-          </button>
+            </button>
+          )}
 
           {/* 5. Marketing (Hidden if Locked) */}
           {!isMarketingLocked && !storeControls.lockMarketingTab && (
