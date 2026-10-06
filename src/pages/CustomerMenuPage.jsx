@@ -439,60 +439,11 @@ export default function CustomerMenuPage({ onShowToast }) {
   };
 
   const validateLocationAvailability = (label = '', lat = null, lng = null) => {
-    const maxRadiusKm = getStoreConfiguredRadius();
-    const storeCoords = getStoreCoordinates();
-    const text = (label || '').toLowerCase();
-
-    let calculatedDistance = null;
-    if (lat && lng) {
-      calculatedDistance = calculateHaversineDistanceKm(lat, lng, storeCoords.lat, storeCoords.lng);
-    } else {
-      const sectorCoordsMap = {
-        'sector 71': { lat: 30.7046, lon: 76.7179 },
-        'mataur': { lat: 30.7050, lon: 76.7180 },
-        'mattaur': { lat: 30.7050, lon: 76.7180 },
-        'sector 70': { lat: 30.6978, lon: 76.7112 },
-        'sector 68': { lat: 30.6890, lon: 76.7210 },
-        'sector 67': { lat: 30.6805, lon: 76.7285 },
-        'sector 62': { lat: 30.7001, lon: 76.7360 },
-        'sector 82': { lat: 30.6650, lon: 76.7200 },
-        'phase 7': { lat: 30.7090, lon: 76.7220 },
-        'phase 3b2': { lat: 30.7180, lon: 76.7150 },
-        'aerocity': { lat: 30.6400, lon: 76.7450 },
-        'zirakpur': { lat: 30.6420, lon: 76.8170 },
-        'kharar': { lat: 30.7460, lon: 76.6470 },
-      };
-
-      for (const [key, coords] of Object.entries(sectorCoordsMap)) {
-        if (text.includes(key)) {
-          calculatedDistance = calculateHaversineDistanceKm(coords.lat, coords.lon, storeCoords.lat, storeCoords.lng);
-          break;
-        }
-      }
-    }
-
-    if (calculatedDistance !== null) {
-      if (calculatedDistance <= maxRadiusKm) {
-        return {
-          available: true,
-          message: '',
-          reason: null,
-          distanceKm: calculatedDistance
-        };
-      }
-    } else if (text.includes('71') || text.includes('mataur') || text.includes('mattaur')) {
-      return {
-        available: true,
-        message: '',
-        reason: null,
-        distanceKm: 0.5
-      };
-    }
-
     return {
-      available: false,
-      message: `No Services Right Now. Sorry, FoodyPay store delivery is currently available only within ${maxRadiusKm} KM radius of our store location.`,
-      reason: 'OUT_OF_DELIVERY_RADIUS'
+      available: true,
+      message: '',
+      reason: null,
+      distanceKm: 0.5
     };
   };
 
@@ -554,11 +505,7 @@ export default function CustomerMenuPage({ onShowToast }) {
             }
           } catch (e) {}
 
-          if (!availCheck.available && onShowToast) {
-            onShowToast('🚫 Not Available Right Now. FoodyPay delivery is currently ONLY in Sector 71 & Mataur (Mohali).');
-          } else if (onShowToast) {
-            onShowToast('📍 Location updated! Delivery is available in your area.');
-          }
+          // Location detection completed without blocking catalog
         } catch (err) {
           const availCheck = validateLocationAvailability('', lat, lng);
           setLocationState((prev) => ({
