@@ -94,10 +94,15 @@ export async function safeFetch(path, options = {}) {
 /**
  * Register user with form data (including logo file upload)
  */
-export async function registerApi(formData) {
+export async function registerApi(userData) {
+  const isFormData = typeof FormData !== 'undefined' && userData instanceof FormData;
+  const headers = isFormData ? {} : { 'Content-Type': 'application/json' };
+  const body = isFormData ? userData : JSON.stringify(userData);
+
   const response = await safeFetch('/auth/register', {
     method: 'POST',
-    body: formData,
+    headers,
+    body,
   });
   const data = await parseJsonResponse(response);
   if (!response.ok) {
@@ -419,33 +424,67 @@ export async function createDishApi(token, dishData) {
   return data.data;
 }
 
-export async function fetchReviewsApi() {
-  const response = await fetch(`${API_BASE_URL}/reviews`);
-  const data = await response.json();
+export async function fetchReviewsApi(token, params = {}) {
+  const headers = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  let queryStr = '';
+  if (params && Object.keys(params).length > 0) {
+    const searchParams = new URLSearchParams();
+    if (params.merchantId) searchParams.append('merchantId', params.merchantId);
+    if (params.foodypayId) searchParams.append('foodypayId', params.foodypayId);
+    if (params.userId) searchParams.append('userId', params.userId);
+    queryStr = `?${searchParams.toString()}`;
+  }
+  const response = await safeFetch(`/reviews${queryStr}`, { headers });
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to fetch reviews');
   return data.data || [];
 }
 
-export async function createReviewApi(reviewData) {
-  const response = await fetch(`${API_BASE_URL}/reviews`, {
+export async function createReviewApi(reviewData, token) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  const response = await safeFetch('/reviews', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(reviewData),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to post review');
   return data.data;
 }
 
-export async function replyReviewApi(reviewId, replyText) {
-  const response = await fetch(`${API_BASE_URL}/reviews/${reviewId}/reply`, {
+export async function replyReviewApi(reviewId, replyText, token) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  const response = await safeFetch(`/reviews/${reviewId}/reply`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ reply: replyText }),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to send reply');
   return data.data;
+}
+
+export async function deleteReviewApi(reviewId, token) {
+  const headers = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  const response = await safeFetch(`/reviews/${reviewId}`, {
+    method: 'DELETE',
+    headers,
+  });
+  const data = await parseJsonResponse(response);
+  if (!response.ok) throw new Error(data.message || 'Failed to delete review');
+  return data;
 }
 
 export async function toggleDishStockApi(token, dishId) {
@@ -759,4 +798,43 @@ export async function fetchAvailableProductsApi(lat, lng, category = 'All') {
   const res = await safeFetch(url);
   return await parseJsonResponse(res);
 }
+
+/**
+ * Haversine formula to calculate straight line distance in KM between 2 lat/lng points
+ */
+export function calculateHaversineDistanceKm(lat1, lon1, lat2, lon2) {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return 2.5; // fallback 2.5 km
+  const R = 6371; // Earth radius in KM
+  const dLat = ((Number(lat2) - Number(lat1)) * Math.PI) / 180;
+  const dLon = ((Number(lon2) - Number(lon1)) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((Number(lat1) * Math.PI) / 180) *
+      Math.cos((Number(lat2) * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const km = R * c;
+  return Math.max(0.3, Math.round(km * 10) / 10);
+}
+
+/**
+ * Calculates real bike/motorcycle delivery time in minutes based on Distance & City Traffic + Food Prep Buffer
+ */
+export function calculateBikeDeliveryTime(lat1, lon1, lat2, lon2) {
+  const distanceKm = calculateHaversineDistanceKm(lat1, lon1, lat2, lon2);
+  // Bike riding time in minutes (25 km/h avg city speed => 2.4 mins per KM) + 8 mins kitchen prep buffer
+  const ridingTimeMins = Math.ceil(distanceKm * 2.4);
+  const totalMins = Math.max(8, ridingTimeMins + 8);
+  return {
+    distanceKm,
+    formattedDistance: `${distanceKm} KM`,
+    transitMins: ridingTimeMins,
+    prepMins: 8,
+    totalMins,
+    formattedTime: `${totalMins} mins`,
+    label: `${totalMins} minutes`
+  };
+}
+
 

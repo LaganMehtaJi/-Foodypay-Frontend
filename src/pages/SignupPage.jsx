@@ -273,20 +273,29 @@ export default function SignupPage({ onShowToast }) {
     setError('');
     setSuccessMsg('');
 
-    if (!isVerified) {
-      setError('Please complete Step 1 Gmail identity verification first.');
-      return;
-    }
+    const cleanName = name.trim();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
+    const cleanBusinessName = businessName.trim();
+    const cleanContactNo = contactNo.trim();
 
-    if (!name.trim()) {
+    if (!cleanName) {
       setError('Please enter your Full Name.');
       return;
     }
-    if (!businessName.trim()) {
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setError('Please enter a valid Email Address.');
+      return;
+    }
+    if (!cleanPassword || cleanPassword.length < 6) {
+      setError('Password must be at least 6 characters long.');
+      return;
+    }
+    if (!cleanBusinessName) {
       setError('Please enter your Restaurant / Business Name.');
       return;
     }
-    if (!contactNo.trim()) {
+    if (!cleanContactNo) {
       setError('Please enter your WhatsApp Contact Number.');
       return;
     }
@@ -295,7 +304,7 @@ export default function SignupPage({ onShowToast }) {
 
     if (googleUserSession) {
       try {
-        await finalizeGoogleRegistration(googleUserSession, businessName.trim(), contactNo.trim(), name.trim(), email.trim());
+        await finalizeGoogleRegistration(googleUserSession, cleanBusinessName, cleanContactNo, cleanName, cleanEmail);
       } catch (err) {
         setError(err.message || 'Failed to complete Google registration.');
       } finally {
@@ -304,50 +313,50 @@ export default function SignupPage({ onShowToast }) {
       return;
     }
 
-    if (!password.trim() || password.length < 6) {
-      setError('Password must be at least 6 characters long.');
-      setLoading(false);
-      return;
-    }
-
     try {
       let fbUser = null;
       let fbToken = null;
 
-      // 1. Create User in Firebase Auth & Send Gmail Verification Link
+      // 1. Create User in Firebase Auth (optional helper)
       try {
-        const fbRes = await registerWithFirebaseEmail(email.trim(), password.trim());
+        const fbRes = await registerWithFirebaseEmail(cleanEmail, cleanPassword);
         fbUser = fbRes.user;
         fbToken = fbRes.token;
       } catch (fbErr) {
         console.warn('Firebase signup warning:', fbErr.message);
       }
 
-      // 2. Register / Sync in Node.js MongoDB Backend
+      // 2. Register in Node.js MongoDB Backend
       const formData = new FormData();
-      formData.append('name', name.trim());
-      formData.append('email', email.trim());
-      formData.append('password', password.trim());
-      formData.append('businessName', businessName.trim());
-      formData.append('contactNo', contactNo.trim());
+      formData.append('name', cleanName);
+      formData.append('email', cleanEmail);
+      formData.append('password', cleanPassword);
+      formData.append('businessName', cleanBusinessName);
+      formData.append('contactNo', cleanContactNo);
       if (fbUser) formData.append('firebaseUid', fbUser.uid);
       if (logoFile) {
         formData.append('logo', logoFile);
       }
 
-      let response = await registerApi(formData).catch(() => null);
-
-      if (!response && fbUser) {
-        response = await firebaseAuthApi({
-          firebaseToken: fbToken,
-          uid: fbUser.uid,
-          email: fbUser.email,
-          name: name.trim(),
-          businessName: businessName.trim(),
-          contactNo: contactNo.trim(),
-          emailVerified: fbUser.emailVerified,
-          providerId: 'password',
-        });
+      let response = null;
+      try {
+        response = await registerApi(formData);
+      } catch (regErr) {
+        if (fbUser) {
+          response = await firebaseAuthApi({
+            firebaseToken: fbToken,
+            uid: fbUser.uid,
+            email: fbUser.email,
+            name: cleanName,
+            businessName: cleanBusinessName,
+            contactNo: cleanContactNo,
+            emailVerified: fbUser.emailVerified,
+            providerId: 'password',
+          }).catch(() => null);
+        }
+        if (!response) {
+          throw regErr;
+        }
       }
 
       if (response && response.success && response.data) {

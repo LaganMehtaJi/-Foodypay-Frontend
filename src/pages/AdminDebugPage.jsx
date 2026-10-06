@@ -154,6 +154,267 @@ export default function AdminDebugPage({ onShowToast }) {
   const [selectedStoreForOwner, setSelectedStoreForOwner] = useState(null);
   const [assignOwnerEmailInput, setAssignOwnerEmailInput] = useState('');
 
+  // Multiple Featured Stores State
+  const [featuredStoreIds, setFeaturedStoreIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_featured_store_ids');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    const single = localStorage.getItem('foodypay_featured_merchant_id');
+    return single ? [single] : [];
+  });
+
+  const handleToggleFeaturedStore = (user) => {
+    const targetId = user.foodypayId || user._id;
+    setFeaturedStoreIds((prev) => {
+      let next;
+      if (prev.includes(targetId)) {
+        next = prev.filter((id) => id !== targetId);
+        if (onShowToast) onShowToast(`Removed "${user.businessName || user.name}" from Featured Stores`);
+      } else {
+        next = [...prev, targetId];
+        if (onShowToast) onShowToast(`⭐ Added "${user.businessName || user.name}" to Featured Stores!`);
+      }
+      try {
+        localStorage.setItem('foodypay_featured_store_ids', JSON.stringify(next));
+        if (next.length > 0) {
+          localStorage.setItem('foodypay_featured_merchant_id', next[0]);
+        }
+        window.dispatchEvent(new Event('storage'));
+      } catch (e) {}
+      return next;
+    });
+  };
+
+  // Location & Sectors Modal State
+  const [locationModalUser, setLocationModalUser] = useState(null);
+  const [locationForm, setLocationForm] = useState({
+    address: '',
+    city: 'Mohali',
+    state: 'Punjab',
+    pincode: '',
+    latitude: 30.7046,
+    longitude: 76.7179,
+    deliveryRadius: 5,
+    coveredSectors: '',
+    isWhiteLabel: false,
+  });
+
+  const [locationSearchQuery, setLocationSearchQuery] = useState('');
+  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
+  const [locationSearchResults, setLocationSearchResults] = useState([]);
+  const [customSectorInput, setCustomSectorInput] = useState('');
+
+  const handleOpenLocationModal = (user) => {
+    setLocationModalUser(user);
+    setLocationSearchQuery('');
+    setLocationSearchResults([]);
+    setCustomSectorInput('');
+    setLocationForm({
+      address: user.address || '',
+      city: user.city || 'Mohali',
+      state: user.state || 'Punjab',
+      pincode: user.pincode || '',
+      latitude: user.latitude || 30.7046,
+      longitude: user.longitude || 76.7179,
+      deliveryRadius: user.deliveryRadius || 5,
+      coveredSectors: user.coveredSectors || 'Sector 71, Mataur, Mohali',
+      isWhiteLabel: Boolean(user.isWhiteLabel || user.subscriptionPlan?.toLowerCase().includes('white label')),
+    });
+  };
+
+  const POPULAR_SECTORS_MAP = [
+    { name: 'Sector 71, Mohali, Punjab', sectorTag: 'Sector 71', lat: 30.7046, lon: 76.7179 },
+    { name: 'Sector 70, Mohali, Punjab', sectorTag: 'Sector 70', lat: 30.6978, lon: 76.7112 },
+    { name: 'Sector 68, Mohali, Punjab', sectorTag: 'Sector 68', lat: 30.6890, lon: 76.7210 },
+    { name: 'Sector 67, Mohali, Punjab', sectorTag: 'Sector 67', lat: 30.6805, lon: 76.7285 },
+    { name: 'Sector 62, Mohali, Punjab', sectorTag: 'Sector 62', lat: 30.7001, lon: 76.7360 },
+    { name: 'Sector 82, Mohali, Punjab', sectorTag: 'Sector 82', lat: 30.6650, lon: 76.7200 },
+    { name: 'Phase 7, Mohali, Punjab', sectorTag: 'Phase 7', lat: 30.7090, lon: 76.7220 },
+    { name: 'Phase 3B2, Mohali, Punjab', sectorTag: 'Phase 3B2', lat: 30.7180, lon: 76.7150 },
+    { name: 'Phase 5, Mohali, Punjab', sectorTag: 'Phase 5', lat: 30.7230, lon: 76.7080 },
+    { name: 'Phase 10, Mohali, Punjab', sectorTag: 'Phase 10', lat: 30.6860, lon: 76.7350 },
+    { name: 'Phase 11, Mohali, Punjab', sectorTag: 'Phase 11', lat: 30.6780, lon: 76.7400 },
+    { name: 'Aerocity, Mohali, Punjab', sectorTag: 'Aerocity', lat: 30.6400, lon: 76.7450 },
+    { name: 'IT City, Mohali, Punjab', sectorTag: 'IT City', lat: 30.6300, lon: 76.7600 },
+    { name: 'Sector 17, Chandigarh', sectorTag: 'Sector 17', lat: 30.7415, lon: 76.7794 },
+    { name: 'Sector 35, Chandigarh', sectorTag: 'Sector 35', lat: 30.7290, lon: 76.7680 },
+    { name: 'Sector 22, Chandigarh', sectorTag: 'Sector 22', lat: 30.7380, lon: 76.7720 },
+    { name: 'Sector 43, Chandigarh', sectorTag: 'Sector 43', lat: 30.7220, lon: 76.7550 },
+    { name: 'Zirakpur, Punjab', sectorTag: 'Zirakpur', lat: 30.6420, lon: 76.8170 },
+    { name: 'Kharar, Punjab', sectorTag: 'Kharar', lat: 30.7460, lon: 76.6470 },
+  ];
+
+  // LIVE DEBOUNCED AUTOCOMPLETE SEARCH EFFECT
+  useEffect(() => {
+    if (!locationSearchQuery || locationSearchQuery.trim().length < 1) {
+      setLocationSearchResults([]);
+      return;
+    }
+    const q = locationSearchQuery.trim().toLowerCase();
+
+    // 1. Instant local matching suggestions
+    const localMatches = POPULAR_SECTORS_MAP.filter(
+      (item) => item.name.toLowerCase().includes(q) || item.sectorTag.toLowerCase().includes(q)
+    ).map((item) => ({
+      display_name: item.name,
+      lat: item.lat,
+      lon: item.lon,
+      sectorTag: item.sectorTag,
+      isLocal: true,
+    }));
+
+    setLocationSearchResults(localMatches);
+
+    // 2. Debounced API search for wider Google/OSM locations
+    const timer = setTimeout(async () => {
+      setIsSearchingLocation(true);
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationSearchQuery + ' Mohali Chandigarh')}&addressdetails=1&limit=5`
+        );
+        const apiData = await res.json();
+        if (Array.isArray(apiData) && apiData.length > 0) {
+          const remoteMatches = apiData.map((item) => ({
+            display_name: item.display_name,
+            lat: Number(item.lat),
+            lon: Number(item.lon),
+            sectorTag: item.display_name.split(',')[0],
+            isLocal: false,
+          }));
+
+          setLocationSearchResults((prev) => {
+            const combined = [...localMatches];
+            remoteMatches.forEach((rm) => {
+              if (!combined.some((c) => Math.abs(c.lat - rm.lat) < 0.005 && Math.abs(c.lon - rm.lon) < 0.005)) {
+                combined.push(rm);
+              }
+            });
+            return combined;
+          });
+        }
+      } catch (err) {
+        console.warn('Live geocoding error:', err);
+      } finally {
+        setIsSearchingLocation(false);
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [locationSearchQuery]);
+
+  const handleSearchGoogleLocation = async (qStr) => {
+    const query = qStr !== undefined ? qStr : locationSearchQuery;
+    if (!query.trim()) return;
+    setIsSearchingLocation(true);
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=5`);
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        setLocationSearchResults(data);
+      }
+    } catch (err) {
+      console.warn('Geocoding search note:', err);
+    } finally {
+      setIsSearchingLocation(false);
+    }
+  };
+
+  const handleSelectSearchResult = (place) => {
+    const lat = Number(place.lat).toFixed(4);
+    const lon = Number(place.lon).toFixed(4);
+    const rawName = place.sectorTag || (place.display_name ? place.display_name.split(',')[0] : place.name || locationSearchQuery);
+    const sectorToAdd = rawName.trim();
+
+    let currentSectors = locationForm.coveredSectors.split(',').map((s) => s.trim()).filter(Boolean);
+    if (sectorToAdd && !currentSectors.includes(sectorToAdd)) {
+      currentSectors.push(sectorToAdd);
+    }
+
+    setLocationForm((prev) => ({
+      ...prev,
+      latitude: Number(lat),
+      longitude: Number(lon),
+      address: place.display_name || prev.address,
+      coveredSectors: currentSectors.join(', '),
+    }));
+
+    setLocationSearchResults([]);
+    setLocationSearchQuery('');
+    if (onShowToast) {
+      onShowToast(`📍 Map Updated to "${sectorToAdd}" (Lat: ${lat}, Lng: ${lon}) & Sector added!`);
+    }
+  };
+
+  const handleToggleQuickSector = (secName) => {
+    let currentSectors = locationForm.coveredSectors.split(',').map((s) => s.trim()).filter(Boolean);
+    if (currentSectors.includes(secName)) {
+      currentSectors = currentSectors.filter((s) => s !== secName);
+    } else {
+      currentSectors.push(secName);
+    }
+    setLocationForm((prev) => ({
+      ...prev,
+      coveredSectors: currentSectors.join(', '),
+    }));
+  };
+
+  const handleAddCustomSector = (e) => {
+    e.preventDefault();
+    if (!customSectorInput.trim()) return;
+    const secName = customSectorInput.trim();
+    let currentSectors = locationForm.coveredSectors.split(',').map((s) => s.trim()).filter(Boolean);
+    if (!currentSectors.includes(secName)) {
+      currentSectors.push(secName);
+    }
+    setLocationForm((prev) => ({
+      ...prev,
+      coveredSectors: currentSectors.join(', '),
+    }));
+    setCustomSectorInput('');
+  };
+
+  const handleSaveLocationSubmit = async (e) => {
+    e.preventDefault();
+    if (!locationModalUser) return;
+    const targetUserId = locationModalUser._id;
+
+    const updatedData = {
+      ...locationModalUser,
+      ...locationForm,
+      address: locationForm.address,
+      city: locationForm.city,
+      state: locationForm.state,
+      pincode: locationForm.pincode,
+      latitude: Number(locationForm.latitude),
+      longitude: Number(locationForm.longitude),
+      deliveryRadius: Number(locationForm.deliveryRadius),
+      coveredSectors: locationForm.coveredSectors,
+      isWhiteLabel: locationForm.isWhiteLabel,
+    };
+
+    setRegisteredUsers((prev) =>
+      prev.map((u) => (u._id === targetUserId || u.email === locationModalUser.email ? updatedData : u))
+    );
+
+    try {
+      const rawU = localStorage.getItem('foodypay_user');
+      if (rawU) {
+        const u = JSON.parse(rawU);
+        if (u.email === locationModalUser.email || u._id === targetUserId) {
+          localStorage.setItem('foodypay_user', JSON.stringify({ ...u, ...updatedData }));
+          window.dispatchEvent(new Event('storage'));
+        }
+      }
+    } catch (e) {}
+
+    if (onShowToast) {
+      onShowToast(`📍 Updated Location, Coordinates (${locationForm.latitude}, ${locationForm.longitude}) & Sectors for "${locationModalUser.businessName || locationModalUser.name}"!`);
+    }
+
+    setLocationModalUser(null);
+  };
+
   const loadDeliveryAndStoresData = async () => {
     try {
       const [zones, stores] = await Promise.all([
@@ -625,13 +886,18 @@ export default function AdminDebugPage({ onShowToast }) {
   // Calculated Metrics
   const totalRegisteredCount = registeredUsers.length;
   const lockedCount = registeredUsers.filter((u) => u.isLocked || u.subscriptionStatus === 'Locked').length;
-  const activeCount = registeredUsers.filter((u) => !u.isLocked && u.subscriptionStatus === 'Active').length;
+  const activeCount = registeredUsers.filter((u) => !u.isLocked).length;
+  const freeStoresCount = registeredUsers.filter((u) => u.subscriptionPrice === 0 || u.subscriptionPlan?.toLowerCase().includes('free')).length;
+  const paidStoresCount = registeredUsers.filter((u) => u.subscriptionPrice > 0 || u.subscriptionPlan?.toLowerCase().includes('growth') || u.subscriptionPlan?.toLowerCase().includes('enterprise') || u.subscriptionPlan?.toLowerCase().includes('pro')).length;
+  const whiteLabelStoresCount = registeredUsers.filter((u) => u.isWhiteLabel || u.subscriptionPlan?.toLowerCase().includes('white label') || u.subscriptionPlan?.toLowerCase().includes('enterprise max')).length;
+  const featuredStoresCount = registeredUsers.filter((u) => u.isFeatured || featuredStoreIds.includes(u._id) || featuredStoreIds.includes(u.foodypayId)).length;
+
   const totalPlatformSales = registeredUsers.reduce((s, u) => s + (Number(u.totalSales) || 0), 0);
   const totalPlatformOrders = registeredUsers.reduce((s, u) => s + (Number(u.totalOrders) || 0), 0);
   const totalPlatformDishes = registeredUsers.reduce((s, u) => s + (Number(u.dishCount) || 0), 0);
   const totalMRR = registeredUsers.filter((u) => !u.isLocked).reduce((s, u) => s + (Number(u.subscriptionPrice) || globalSubSettings.defaultMonthlyPrice), 0);
 
-  // Filtered Users List
+  // Filtered Users List with Subscription Tiers & Featured Filters
   const filteredUsers = registeredUsers.filter((u) => {
     const q = searchQuery.toLowerCase();
     const matchesSearch =
@@ -639,10 +905,16 @@ export default function AdminDebugPage({ onShowToast }) {
       (u.name || '').toLowerCase().includes(q) ||
       (u.businessName || '').toLowerCase().includes(q) ||
       (u.contactNo || '').toLowerCase().includes(q) ||
+      (u.coveredSectors || '').toLowerCase().includes(q) ||
+      (u.city || '').toLowerCase().includes(q) ||
       (u.foodypayId || '').toLowerCase().includes(q);
 
     if (!matchesSearch) return false;
 
+    if (statusFilter === 'free') return u.subscriptionPrice === 0 || u.subscriptionPlan?.toLowerCase().includes('free');
+    if (statusFilter === 'paid') return u.subscriptionPrice > 0 || u.subscriptionPlan?.toLowerCase().includes('growth') || u.subscriptionPlan?.toLowerCase().includes('enterprise') || u.subscriptionPlan?.toLowerCase().includes('pro');
+    if (statusFilter === 'white_label') return u.isWhiteLabel || u.subscriptionPlan?.toLowerCase().includes('white label') || u.subscriptionPlan?.toLowerCase().includes('enterprise max');
+    if (statusFilter === 'featured') return u.isFeatured || featuredStoreIds.includes(u._id) || featuredStoreIds.includes(u.foodypayId);
     if (statusFilter === 'active') return !u.isLocked;
     if (statusFilter === 'locked') return u.isLocked;
     return true;
@@ -879,7 +1151,7 @@ export default function AdminDebugPage({ onShowToast }) {
                 />
               </div>
 
-              <div style={{ display: 'flex', gap: '8px', backgroundColor: '#0F172A', padding: '4px', borderRadius: '12px', border: '1px solid #1E293B' }}>
+              <div style={{ display: 'flex', gap: '6px', backgroundColor: '#0F172A', padding: '4px', borderRadius: '12px', border: '1px solid #1E293B', flexWrap: 'wrap' }}>
                 <button
                   onClick={() => setStatusFilter('all')}
                   style={{
@@ -888,13 +1160,78 @@ export default function AdminDebugPage({ onShowToast }) {
                     border: 'none',
                     padding: '8px 14px',
                     borderRadius: '8px',
-                    fontSize: '13px',
+                    fontSize: '12.5px',
                     fontWeight: 700,
                     cursor: 'pointer',
                   }}
                 >
                   All Accounts ({registeredUsers.length})
                 </button>
+
+                <button
+                  onClick={() => setStatusFilter('free')}
+                  style={{
+                    backgroundColor: statusFilter === 'free' ? '#78350F' : 'transparent',
+                    color: statusFilter === 'free' ? '#FBBF24' : '#94A3B8',
+                    border: 'none',
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    fontSize: '12.5px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  🆓 Free Stores ({freeStoresCount})
+                </button>
+
+                <button
+                  onClick={() => setStatusFilter('paid')}
+                  style={{
+                    backgroundColor: statusFilter === 'paid' ? '#064E3B' : 'transparent',
+                    color: statusFilter === 'paid' ? '#34D399' : '#94A3B8',
+                    border: 'none',
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    fontSize: '12.5px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  💎 Paid Subscriptions ({paidStoresCount})
+                </button>
+
+                <button
+                  onClick={() => setStatusFilter('white_label')}
+                  style={{
+                    backgroundColor: statusFilter === 'white_label' ? '#312E81' : 'transparent',
+                    color: statusFilter === 'white_label' ? '#A5B4FC' : '#94A3B8',
+                    border: 'none',
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    fontSize: '12.5px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  🏷️ White Label ({whiteLabelStoresCount})
+                </button>
+
+                <button
+                  onClick={() => setStatusFilter('featured')}
+                  style={{
+                    backgroundColor: statusFilter === 'featured' ? '#854D0E' : 'transparent',
+                    color: statusFilter === 'featured' ? '#FACC15' : '#94A3B8',
+                    border: 'none',
+                    padding: '8px 14px',
+                    borderRadius: '8px',
+                    fontSize: '12.5px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                  }}
+                >
+                  ⭐ Featured Stores ({featuredStoresCount})
+                </button>
+
                 <button
                   onClick={() => setStatusFilter('active')}
                   style={{
@@ -903,13 +1240,14 @@ export default function AdminDebugPage({ onShowToast }) {
                     border: 'none',
                     padding: '8px 14px',
                     borderRadius: '8px',
-                    fontSize: '13px',
+                    fontSize: '12.5px',
                     fontWeight: 700,
                     cursor: 'pointer',
                   }}
                 >
                   Active ({activeCount})
                 </button>
+
                 <button
                   onClick={() => setStatusFilter('locked')}
                   style={{
@@ -918,7 +1256,7 @@ export default function AdminDebugPage({ onShowToast }) {
                     border: 'none',
                     padding: '8px 14px',
                     borderRadius: '8px',
-                    fontSize: '13px',
+                    fontSize: '12.5px',
                     fontWeight: 700,
                     cursor: 'pointer',
                   }}
@@ -1130,13 +1468,35 @@ export default function AdminDebugPage({ onShowToast }) {
                                   Open POS ↗
                                 </button>
 
-                                {/* Set as Default Homepage Store / Button */}
+                                {/* Edit Google Location, Radius & Covered Sectors */}
+                                <button
+                                  onClick={() => handleOpenLocationModal(user)}
+                                  style={{
+                                    backgroundColor: '#1E293B',
+                                    color: '#10B981',
+                                    border: '1px solid #059669',
+                                    padding: '6px 10px',
+                                    borderRadius: '8px',
+                                    fontSize: '12px',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                  }}
+                                  title="Assign Google Location Coordinates, Radius & Covered Sectors"
+                                >
+                                  <MapPin size={13} />
+                                  <span>📍 Edit Location &amp; Sectors</span>
+                                </button>
+
+                                {/* Set / Toggle Featured Store Button */}
                                 {(() => {
                                   const userId = user.foodypayId || user.merchantId || user._id;
-                                  const isFeat = String(featuredMerchantId) === String(userId);
+                                  const isFeat = user.isFeatured || featuredStoreIds.includes(userId) || String(featuredMerchantId) === String(userId);
                                   return (
                                     <button
-                                      onClick={() => handleSetFeaturedStore(user)}
+                                      onClick={() => handleToggleFeaturedStore(user)}
                                       style={{
                                         backgroundColor: isFeat ? '#F59E0B' : '#1E293B',
                                         color: isFeat ? '#0F172A' : '#F59E0B',
@@ -1150,10 +1510,10 @@ export default function AdminDebugPage({ onShowToast }) {
                                         alignItems: 'center',
                                         gap: '4px',
                                       }}
-                                      title="Show all products from this store directly on Homepage /"
+                                      title="Toggle Featured Store Status"
                                     >
                                       <Star size={13} fill={isFeat ? '#0F172A' : 'none'} />
-                                      <span>{isFeat ? 'Featured / Store' : 'Set as / Store'}</span>
+                                      <span>{isFeat ? '⭐ Featured Store' : '+ Add Featured'}</span>
                                     </button>
                                   );
                                 })()}
@@ -2500,6 +2860,301 @@ export default function AdminDebugPage({ onShowToast }) {
                 Save Owner Access Email
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* ==========================================================================
+          MODAL 8: ASSIGN GOOGLE LOCATION, COORDINATES, RADIUS & SECTORS MODAL
+          ========================================================================== */}
+      {locationModalUser && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }} onClick={() => setLocationModalUser(null)}>
+          <div style={{ backgroundColor: '#0F172A', border: '1.5px solid #10B981', borderRadius: '20px', padding: '28px', maxWidth: '640px', width: '100%', color: '#FFF', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 900, color: '#10B981', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <MapPin size={22} color="#10B981" /> Edit Google Location &amp; Sectors: {locationModalUser.businessName || locationModalUser.name}
+                </h3>
+                <span style={{ fontSize: '12.5px', color: '#94A3B8' }}>
+                  Assign GPS coordinates, Delivery Radius &amp; multiple covered Sectors/Areas for this business.
+                </span>
+              </div>
+              <button type="button" style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer' }} onClick={() => setLocationModalUser(null)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveLocationSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* GOOGLE MAPS LOCATION & SECTOR SEARCH BAR */}
+              <div style={{ backgroundColor: '#1E293B', border: '1px solid #334155', borderRadius: '12px', padding: '14px', position: 'relative' }}>
+                <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#10B981', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                  <Search size={16} color="#10B981" /> Search Google Location / Sector &amp; Auto-Assign
+                </label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    placeholder="Type location e.g. Sector 71 Mohali, Phase 7, Aerocity..."
+                    style={{ flex: 1, padding: '10px 14px', borderRadius: '8px', border: '1px solid #475569', backgroundColor: '#0F172A', color: '#FFF', fontSize: '13.5px', boxSizing: 'border-box' }}
+                    value={locationSearchQuery}
+                    onChange={(e) => setLocationSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSearchGoogleLocation();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={isSearchingLocation}
+                    style={{ backgroundColor: '#10B981', color: '#FFF', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: 800, fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    onClick={() => handleSearchGoogleLocation()}
+                  >
+                    {isSearchingLocation ? 'Searching...' : '🔍 Search Map'}
+                  </button>
+                </div>
+
+                {/* SEARCH RESULTS DROPDOWN */}
+                {locationSearchResults.length > 0 && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#0F172A', border: '1.5px solid #10B981', borderRadius: '10px', marginTop: '6px', zIndex: 120, maxHeight: '200px', overflowY: 'auto', boxShadow: '0 10px 30px rgba(0,0,0,0.8)' }}>
+                    {locationSearchResults.map((place, idx) => (
+                      <div
+                        key={idx}
+                        style={{ padding: '10px 14px', borderBottom: '1px solid #1E293B', cursor: 'pointer', fontSize: '12.5px', color: '#CBD5E1', display: 'flex', alignItems: 'center', gap: '8px' }}
+                        onClick={() => handleSelectSearchResult(place)}
+                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#1E293B')}
+                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                      >
+                        <MapPin size={16} color="#10B981" />
+                        <div>
+                          <strong style={{ color: '#FFF' }}>{place.display_name ? place.display_name.split(',')[0] : place.name}</strong>
+                          <div style={{ fontSize: '11px', color: '#94A3B8' }}>{place.display_name} (Lat: {Number(place.lat).toFixed(4)}, Lng: {Number(place.lon).toFixed(4)})</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* QUICK SECTOR CHIPS & SELECTOR */}
+              <div style={{ backgroundColor: '#161F33', border: '1px solid #334155', borderRadius: '12px', padding: '12px 14px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 800, color: '#94A3B8', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>⚡ Quick Add / Toggle Popular Sectors &amp; Areas:</span>
+                  <span style={{ fontSize: '11px', color: '#10B981' }}>Tap sector to add/remove</span>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {[
+                    'Sector 71', 'Sector 70', 'Sector 68', 'Sector 67', 'Sector 62', 'Sector 82',
+                    'Phase 7', 'Phase 3B2', 'Phase 5', 'Phase 10', 'Phase 11', 'Aerocity', 'IT City',
+                    'Sector 17', 'Sector 35', 'Zirakpur', 'Kharar'
+                  ].map((sec) => {
+                    const isSelected = locationForm.coveredSectors.split(',').map((s) => s.trim().toLowerCase()).includes(sec.toLowerCase());
+                    return (
+                      <button
+                        key={sec}
+                        type="button"
+                        onClick={() => handleToggleQuickSector(sec)}
+                        style={{
+                          padding: '5px 12px',
+                          borderRadius: '20px',
+                          border: isSelected ? '1.5px solid #10B981' : '1px solid #334155',
+                          backgroundColor: isSelected ? 'rgba(16,185,129,0.2)' : '#1E293B',
+                          color: isSelected ? '#10B981' : '#CBD5E1',
+                          fontWeight: isSelected ? 800 : 600,
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        {isSelected ? '✓ ' : '+ '} {sec}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* LIVE GOOGLE MAPS PREVIEW IFRAME */}
+              <div style={{ borderRadius: '14px', overflow: 'hidden', border: '1.5px solid #334155', height: '180px', backgroundColor: '#1E293B', position: 'relative' }}>
+                <iframe
+                  title="Google Location Preview"
+                  src={`https://maps.google.com/maps?q=${locationForm.latitude},${locationForm.longitude}&z=14&output=embed`}
+                  width="100%"
+                  height="100%"
+                  style={{ border: 0 }}
+                  allowFullScreen=""
+                  loading="lazy"
+                />
+                <div style={{ position: 'absolute', bottom: '8px', left: '8px', background: 'rgba(15,23,42,0.9)', color: '#10B981', fontSize: '11px', fontWeight: 800, padding: '3px 10px', borderRadius: '8px', border: '1px solid #059669' }}>
+                  📍 Live Lat: {locationForm.latitude}, Lng: {locationForm.longitude} (Radius: {locationForm.deliveryRadius} KM)
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>Street Address Line *</label>
+                <input
+                  type="text"
+                  required
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '13.5px', boxSizing: 'border-box' }}
+                  value={locationForm.address}
+                  onChange={(e) => setLocationForm((prev) => ({ ...prev, address: e.target.value }))}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>Latitude Coordinate (Lat) *</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '13.5px', boxSizing: 'border-box' }}
+                    value={locationForm.latitude}
+                    onChange={(e) => setLocationForm((prev) => ({ ...prev, latitude: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>Longitude Coordinate (Lng) *</label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '13.5px', boxSizing: 'border-box' }}
+                    value={locationForm.longitude}
+                    onChange={(e) => setLocationForm((prev) => ({ ...prev, longitude: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              {/* DELIVERY RADIUS SLIDER */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 800, marginBottom: '6px' }}>
+                  <span style={{ color: '#94A3B8' }}>Delivery Radius Limit:</span>
+                  <span style={{ color: '#10B981' }}>{locationForm.deliveryRadius} KM</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="50"
+                  step="0.5"
+                  style={{ width: '100%', accentColor: '#10B981', cursor: 'pointer' }}
+                  value={locationForm.deliveryRadius}
+                  onChange={(e) => setLocationForm((prev) => ({ ...prev, deliveryRadius: e.target.value }))}
+                />
+              </div>
+
+              {/* COVERED SECTORS / AREAS TAG MANAGER */}
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>
+                  Multiple Covered Sectors &amp; Areas (Comma Separated) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Sector 70, Sector 71, Phase 7, Phase 3B2, Aerocity"
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '13.5px', boxSizing: 'border-box' }}
+                  value={locationForm.coveredSectors}
+                  onChange={(e) => setLocationForm((prev) => ({ ...prev, coveredSectors: e.target.value }))}
+                />
+                
+                {/* ACTIVE SECTOR BADGES */}
+                {locationForm.coveredSectors.trim() && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                    {locationForm.coveredSectors.split(',').map((secStr, sIdx) => {
+                      const cleanSec = secStr.trim();
+                      if (!cleanSec) return null;
+                      return (
+                        <span
+                          key={sIdx}
+                          style={{
+                            backgroundColor: '#0F172A',
+                            border: '1px solid #10B981',
+                            color: '#10B981',
+                            fontSize: '11.5px',
+                            fontWeight: 800,
+                            padding: '3px 10px',
+                            borderRadius: '14px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                          }}
+                        >
+                          📍 {cleanSec}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleQuickSector(cleanSec)}
+                            style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', padding: 0, fontSize: '12px', fontWeight: 900 }}
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+                
+                <div style={{ fontSize: '11.5px', color: '#64748B', marginTop: '4px' }}>
+                  Customers searching in these sectors will automatically be assigned to this business store.
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>City</label>
+                  <input
+                    type="text"
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '13px', boxSizing: 'border-box' }}
+                    value={locationForm.city}
+                    onChange={(e) => setLocationForm((prev) => ({ ...prev, city: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>State</label>
+                  <input
+                    type="text"
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '13px', boxSizing: 'border-box' }}
+                    value={locationForm.state}
+                    onChange={(e) => setLocationForm((prev) => ({ ...prev, state: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '12px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>Pincode</label>
+                  <input
+                    type="text"
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '13px', boxSizing: 'border-box' }}
+                    value={locationForm.pincode}
+                    onChange={(e) => setLocationForm((prev) => ({ ...prev, pincode: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              {/* WHITE LABEL TOGGLE */}
+              <div style={{ backgroundColor: '#161F33', border: '1px solid #334155', padding: '12px 16px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#FFF' }}>🏷️ White Label Enterprise Account</div>
+                  <div style={{ fontSize: '11.5px', color: '#94A3B8' }}>Removes FoodyPay branding, activates custom domain &amp; dedicated app.</div>
+                </div>
+                <input
+                  type="checkbox"
+                  style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#10B981' }}
+                  checked={locationForm.isWhiteLabel}
+                  onChange={(e) => setLocationForm((prev) => ({ ...prev, isWhiteLabel: e.target.checked }))}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '8px' }}>
+                <button type="button" style={{ backgroundColor: '#1E293B', color: '#CBD5E1', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }} onClick={() => setLocationModalUser(null)}>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={{ backgroundColor: '#10B981', color: '#FFF', border: 'none', padding: '10px 22px', borderRadius: '8px', fontWeight: 900, fontSize: '13.5px', cursor: 'pointer' }}
+                >
+                  Save Location &amp; Sectors
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

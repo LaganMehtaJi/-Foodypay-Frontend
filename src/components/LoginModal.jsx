@@ -61,11 +61,7 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
         fbUser = fbRes.user;
         fbToken = fbRes.token;
       } catch (fbErr) {
-        if (fbErr.message.includes('Incorrect password') || fbErr.message.includes('credential')) {
-          setError('Wrong password! Click "Forgot Password?" below to reset via Firebase email link.');
-          setLoading(false);
-          return;
-        }
+        // Continue to primary backend login even if Firebase fails
       }
 
       let response = null;

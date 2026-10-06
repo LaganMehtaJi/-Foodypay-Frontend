@@ -51,7 +51,7 @@ import {
 } from 'lucide-react';
 import { playOrderPlaced } from '../utils/soundEffects';
 import { QrCodeComponent } from '../utils/qrGenerator';
-import { fetchDishesApi, fetchPublicDishesApi, fetchPublicMerchantApi, fetchPublicCouponsApi, createReviewApi, createPublicOrderApi, createRazorpayOrderApi, verifyRazorpaySignatureApi, checkDeliveryAvailabilityApi, fetchAvailableProductsApi } from '../utils/api';
+import { fetchDishesApi, fetchPublicDishesApi, fetchPublicMerchantApi, fetchPublicCouponsApi, createReviewApi, createPublicOrderApi, createRazorpayOrderApi, verifyRazorpaySignatureApi, checkDeliveryAvailabilityApi, fetchAvailableProductsApi, calculateBikeDeliveryTime, calculateHaversineDistanceKm } from '../utils/api';
 
 const AVAILABLE_COUPONS = [];
 
@@ -396,6 +396,10 @@ export default function CustomerMenuPage({ onShowToast }) {
   const [newAddrText, setNewAddrText] = useState('');
   const [newAddrLandmark, setNewAddrLandmark] = useState('');
 
+  // Location & Sector Selector Modal State
+  const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
+  const [sectorSearchQuery, setSectorSearchQuery] = useState('');
+
   // Automatic Customer Geolocation & Delivery Zone Availability State
   const [locationState, setLocationState] = useState({
     loading: false,
@@ -409,14 +413,99 @@ export default function CustomerMenuPage({ onShowToast }) {
     addressLabel: '',
   });
 
+  // Dynamic Delivery Location Availability Validator (Store Location & Owner Radius Limit)
+  const getStoreConfiguredRadius = () => {
+    try {
+      const rawU = localStorage.getItem('foodypay_user');
+      if (rawU) {
+        const u = JSON.parse(rawU);
+        if (u.deliveryRadius) return Number(u.deliveryRadius);
+      }
+    } catch (e) {}
+    return 5; // Default 5 KM Radius
+  };
+
+  const getStoreCoordinates = () => {
+    try {
+      const rawU = localStorage.getItem('foodypay_user');
+      if (rawU) {
+        const u = JSON.parse(rawU);
+        if (u.latitude && u.longitude) {
+          return { lat: Number(u.latitude), lng: Number(u.longitude) };
+        }
+      }
+    } catch (e) {}
+    return { lat: 30.7046, lng: 76.7179 }; // Sector 71 / Mataur Store GPS Center
+  };
+
+  const validateLocationAvailability = (label = '', lat = null, lng = null) => {
+    const maxRadiusKm = getStoreConfiguredRadius();
+    const storeCoords = getStoreCoordinates();
+    const text = (label || '').toLowerCase();
+
+    let calculatedDistance = null;
+    if (lat && lng) {
+      calculatedDistance = calculateHaversineDistanceKm(lat, lng, storeCoords.lat, storeCoords.lng);
+    } else {
+      const sectorCoordsMap = {
+        'sector 71': { lat: 30.7046, lon: 76.7179 },
+        'mataur': { lat: 30.7050, lon: 76.7180 },
+        'mattaur': { lat: 30.7050, lon: 76.7180 },
+        'sector 70': { lat: 30.6978, lon: 76.7112 },
+        'sector 68': { lat: 30.6890, lon: 76.7210 },
+        'sector 67': { lat: 30.6805, lon: 76.7285 },
+        'sector 62': { lat: 30.7001, lon: 76.7360 },
+        'sector 82': { lat: 30.6650, lon: 76.7200 },
+        'phase 7': { lat: 30.7090, lon: 76.7220 },
+        'phase 3b2': { lat: 30.7180, lon: 76.7150 },
+        'aerocity': { lat: 30.6400, lon: 76.7450 },
+        'zirakpur': { lat: 30.6420, lon: 76.8170 },
+        'kharar': { lat: 30.7460, lon: 76.6470 },
+      };
+
+      for (const [key, coords] of Object.entries(sectorCoordsMap)) {
+        if (text.includes(key)) {
+          calculatedDistance = calculateHaversineDistanceKm(coords.lat, coords.lon, storeCoords.lat, storeCoords.lng);
+          break;
+        }
+      }
+    }
+
+    if (calculatedDistance !== null) {
+      if (calculatedDistance <= maxRadiusKm) {
+        return {
+          available: true,
+          message: '',
+          reason: null,
+          distanceKm: calculatedDistance
+        };
+      }
+    } else if (text.includes('71') || text.includes('mataur') || text.includes('mattaur')) {
+      return {
+        available: true,
+        message: '',
+        reason: null,
+        distanceKm: 0.5
+      };
+    }
+
+    return {
+      available: false,
+      message: `No Services Right Now. Sorry, FoodyPay store delivery is currently available only within ${maxRadiusKm} KM radius of our store location.`,
+      reason: 'OUT_OF_DELIVERY_RADIUS'
+    };
+  };
+
   const handleDetectCustomerLocation = () => {
     if (typeof window === 'undefined' || !navigator.geolocation) {
+      const availCheck = validateLocationAvailability(locationState.addressLabel || 'Sector 71, Mataur', locationState.lat, locationState.lng);
       setLocationState((prev) => ({
         ...prev,
         loading: false,
         requested: true,
         permissionGranted: false,
-        message: 'Geolocation is not supported by your browser.',
+        message: availCheck.message || 'Geolocation is not supported by your browser.',
+        available: availCheck.available
       }));
       return;
     }
@@ -428,15 +517,20 @@ export default function CustomerMenuPage({ onShowToast }) {
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
         try {
-          const res = await checkDeliveryAvailabilityApi(lat, lng);
-          const isAvail = res.available !== false;
           let resolvedLabel = '';
-          if (Array.isArray(res.matchingZones) && res.matchingZones.length > 0) {
-            const mz = res.matchingZones[0];
-            resolvedLabel = `${mz.name}${mz.city && mz.name !== mz.city ? `, ${mz.city}` : ''}`;
-          } else {
+          try {
+            const res = await checkDeliveryAvailabilityApi(lat, lng);
+            if (Array.isArray(res.matchingZones) && res.matchingZones.length > 0) {
+              const mz = res.matchingZones[0];
+              resolvedLabel = `${mz.name}${mz.city && mz.name !== mz.city ? `, ${mz.city}` : ''}`;
+            }
+          } catch (e) {}
+
+          if (!resolvedLabel) {
             resolvedLabel = 'Mohali, Punjab';
           }
+
+          const availCheck = validateLocationAvailability(resolvedLabel, lat, lng);
 
           setLocationState({
             loading: false,
@@ -444,9 +538,9 @@ export default function CustomerMenuPage({ onShowToast }) {
             permissionGranted: true,
             lat,
             lng,
-            available: isAvail,
-            reason: res.reason || null,
-            message: res.message || '',
+            available: availCheck.available,
+            reason: availCheck.reason || null,
+            message: availCheck.message,
             addressLabel: resolvedLabel,
           });
 
@@ -460,12 +554,13 @@ export default function CustomerMenuPage({ onShowToast }) {
             }
           } catch (e) {}
 
-          if (!isAvail && onShowToast) {
-            onShowToast('Sorry, Home Delivery is currently not available in your area.');
+          if (!availCheck.available && onShowToast) {
+            onShowToast('🚫 Not Available Right Now. FoodyPay delivery is currently ONLY in Sector 71 & Mataur (Mohali).');
           } else if (onShowToast) {
             onShowToast('📍 Location updated! Delivery is available in your area.');
           }
         } catch (err) {
+          const availCheck = validateLocationAvailability('', lat, lng);
           setLocationState((prev) => ({
             ...prev,
             loading: false,
@@ -473,18 +568,22 @@ export default function CustomerMenuPage({ onShowToast }) {
             permissionGranted: true,
             lat,
             lng,
+            available: availCheck.available,
+            message: availCheck.message,
             addressLabel: `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
           }));
         }
       },
       (err) => {
         console.warn('Geolocation permission error:', err);
+        const availCheck = validateLocationAvailability(locationState.addressLabel || 'Sector 71, Mataur', null, null);
         setLocationState((prev) => ({
           ...prev,
           loading: false,
           requested: true,
           permissionGranted: false,
-          message: 'Location permission denied. Please allow location access for auto delivery checks.',
+          available: availCheck.available,
+          message: availCheck.message || 'Location permission denied. Please allow location access.',
         }));
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
@@ -1509,6 +1608,8 @@ export default function CustomerMenuPage({ onShowToast }) {
 
     try {
       await createReviewApi({
+        merchantId: effectiveMerchantId || storeInfo.merchantId,
+        foodypayId: storeInfo.foodypayId || storeInfo.foodypay_id,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim() || '+91 98000 00000',
         rating: ratingStars,
@@ -1529,7 +1630,40 @@ export default function CustomerMenuPage({ onShowToast }) {
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
-  const upiPayUrl = `upi://pay?pa=${storeInfo.upiId}&pn=${encodeURIComponent(storeInfo.name)}&am=${finalTotal}&cu=INR`;
+  // Dynamic Category Extractor based on Actual Database Products for this Store
+  const getDynamicCategories = () => {
+    if (!Array.isArray(dishes) || dishes.length === 0) {
+      return [{ id: 'All', label: 'All Essentials', icon: Sparkles, hasNew: false }];
+    }
+
+    const rawCategories = [...new Set(dishes.map((d) => (d && d.category ? String(d.category).trim() : '')).filter(Boolean))];
+
+    const getIconForCategory = (catName) => {
+      const c = catName.toLowerCase();
+      if (c.includes('milk') || c.includes('dairy') || c.includes('dahi') || c.includes('paneer')) return Utensils;
+      if (c.includes('biscuit') || c.includes('cookie') || c.includes('snack') || c.includes('chip') || c.includes('munchies')) return ShoppingBag;
+      if (c.includes('sweet') || c.includes('gift') || c.includes('cake') || c.includes('dessert')) return Gift;
+      if (c.includes('ice cream') || c.includes('drink') || c.includes('beverage') || c.includes('shake')) return Cake;
+      if (c.includes('navratri') || c.includes('fasting') || c.includes('flame')) return Flame;
+      if (c.includes('tech') || c.includes('electronic') || c.includes('phone')) return Smartphone;
+      if (c.includes('beauty') || c.includes('care') || c.includes('wellness')) return Award;
+      return Sparkles;
+    };
+
+    const dynamicList = rawCategories.map((catName) => ({
+      id: catName,
+      label: catName,
+      icon: getIconForCategory(catName),
+      hasNew: catName.toLowerCase().includes('special') || catName.toLowerCase().includes('new'),
+    }));
+
+    return [
+      { id: 'All', label: 'All Essentials', icon: Sparkles, hasNew: false },
+      ...dynamicList
+    ];
+  };
+
+  const activeCategoryList = getDynamicCategories();
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#FAFAFA', color: '#1E293B', fontFamily: 'system-ui, -apple-system, sans-serif', paddingBottom: '90px' }}>
@@ -1745,24 +1879,46 @@ export default function CustomerMenuPage({ onShowToast }) {
           <div style={{ width: '1px', height: '36px', backgroundColor: '#E2E8F0', margin: '0 8px' }} />
 
           {/* Delivery Info with Auto Location Trigger */}
-          <div style={{ display: 'flex', flexDirection: 'column', cursor: 'pointer', minWidth: '220px' }} onClick={handleDetectCustomerLocation} title="Click to refresh or detect location">
-            <div style={{ fontSize: '16px', fontWeight: 900, color: '#0F172A', lineHeight: '1.2', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span>Delivery in 8 minutes</span>
-              {locationState.loading && <RefreshCw size={14} className="spin" color="#FF5E14" />}
-            </div>
-            <div style={{ fontSize: '12px', color: '#475569', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-              <span style={{ maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: locationState.available === false ? '#DC2626' : '#475569' }}>
-                {locationState.loading
-                  ? '📍 Detecting Location...'
-                  : locationState.lat && locationState.lng
-                  ? `📍 ${locationState.addressLabel || 'Sector 70, Mohali'}`
-                  : savedAddresses.length > 0
-                  ? savedAddresses[0].text
-                  : '📍 Click to Detect Location'}
-              </span>
-              <ChevronDown size={14} color="#334155" />
-            </div>
-          </div>
+          {(() => {
+            const storeLat = storeInfo.latitude || 30.7046;
+            const storeLng = storeInfo.longitude || 76.7179;
+            const custLat = locationState.lat || 30.6978;
+            const custLng = locationState.lng || 76.7112;
+            const bikeDeliveryInfo = calculateBikeDeliveryTime(storeLat, storeLng, custLat, custLng);
+
+            const activeLocationLabel = (() => {
+              if (locationState.loading) return 'Detecting Location...';
+              if (locationState.addressLabel) return locationState.addressLabel;
+              if (savedAddresses.length > 0 && savedAddresses[0].text) return savedAddresses[0].text;
+              try {
+                const rawUser = localStorage.getItem('foodypay_user');
+                if (rawUser) {
+                  const u = JSON.parse(rawUser);
+                  if (u.coveredSectors && u.coveredSectors.trim()) {
+                    const topSec = u.coveredSectors.split(',')[0].trim();
+                    return `${topSec}, ${u.city || 'Mohali'}`;
+                  }
+                  if (u.address && u.address.trim()) return u.address;
+                }
+              } catch (e) {}
+              return 'Sector 71, Mohali';
+            })();
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', cursor: 'pointer', minWidth: '220px' }} onClick={() => setIsLocationModalOpen(true)} title="Click to select or change sector / address">
+                <div style={{ fontSize: '16px', fontWeight: 900, color: '#0F172A', lineHeight: '1.2', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>Delivery in {bikeDeliveryInfo.totalMins} minutes</span>
+                  {locationState.loading && <RefreshCw size={14} className="spin" color="#FF5E14" />}
+                </div>
+                <div style={{ fontSize: '12.5px', color: '#475569', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                  <span style={{ maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: locationState.available === false ? '#DC2626' : '#475569' }}>
+                    📍 {activeLocationLabel}
+                  </span>
+                  <ChevronDown size={14} color="#334155" />
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Wide Desktop Search Bar */}
           <div style={{ flex: 1, maxWidth: '640px', position: 'relative', display: 'flex', alignItems: 'center' }}>
@@ -1871,18 +2027,44 @@ export default function CustomerMenuPage({ onShowToast }) {
                 <span>FoodyPay in</span>
                 <span style={{ backgroundColor: 'rgba(255,255,255,0.2)', padding: '1px 6px', borderRadius: '10px', fontSize: '10px', fontWeight: 700 }}>24/7</span>
               </div>
-              <div style={{ fontSize: '24px', fontWeight: 900, color: '#FFFFFF', lineHeight: '1.1', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span>8 minutes</span>
-              </div>
-              <div style={{ fontSize: '12.5px', color: '#FFFFFF', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px', cursor: 'pointer' }} onClick={handleDetectCustomerLocation} title="Click to refresh or detect location">
-                <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {locationState.loading
-                    ? '📍 Detecting Location...'
-                    : locationState.lat && locationState.lng
-                    ? `📍 ${locationState.addressLabel || 'Sector 70, Mohali'}`
-                    : savedAddresses.length > 0
-                    ? savedAddresses[0].text
-                    : '📍 Tap to Detect Location'}
+              {(() => {
+                const storeLat = storeInfo.latitude || 30.7046;
+                const storeLng = storeInfo.longitude || 76.7179;
+                const custLat = locationState.lat || 30.6978;
+                const custLng = locationState.lng || 76.7112;
+                const bikeDeliveryInfo = calculateBikeDeliveryTime(storeLat, storeLng, custLat, custLng);
+
+                return (
+                  <div style={{ fontSize: '22px', fontWeight: 900, color: '#FFFFFF', lineHeight: '1.1', display: 'flex', alignItems: 'center', gap: '6px', margin: '2px 0' }}>
+                    <span>{bikeDeliveryInfo.totalMins} minutes</span>
+                  </div>
+                );
+              })()}
+              <div
+                style={{ fontSize: '13px', color: '#FFFFFF', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px', cursor: 'pointer', backgroundColor: 'rgba(255,255,255,0.18)', padding: '3px 10px', borderRadius: '14px', backdropFilter: 'blur(4px)' }}
+                onClick={() => setIsLocationModalOpen(true)}
+                title="Click to select or change delivery sector/street"
+              >
+                <span style={{ maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  📍 {(() => {
+                    if (locationState.loading) return 'Detecting Location...';
+                    if (locationState.addressLabel) return locationState.addressLabel;
+                    if (savedAddresses.length > 0 && savedAddresses[0].text) return savedAddresses[0].text;
+                    
+                    try {
+                      const rawUser = localStorage.getItem('foodypay_user');
+                      if (rawUser) {
+                        const u = JSON.parse(rawUser);
+                        if (u.coveredSectors && u.coveredSectors.trim()) {
+                          const topSec = u.coveredSectors.split(',')[0].trim();
+                          return `${topSec}, ${u.city || 'Mohali'}`;
+                        }
+                        if (u.address && u.address.trim()) return u.address;
+                      }
+                    } catch (e) {}
+
+                    return 'Sector 71, Mohali';
+                  })()}
                 </span>
                 <ChevronDown size={14} color="#FFFFFF" />
               </div>
@@ -1989,15 +2171,7 @@ export default function CustomerMenuPage({ onShowToast }) {
 
           {/* Row 3: Horizontal Scrollable Category Icons */}
           <div className="crm-no-scrollbar" style={{ display: 'flex', alignItems: 'center', gap: '16px', overflowX: 'auto', paddingBottom: '4px' }}>
-            {[
-              { id: 'All', label: 'All', icon: Sparkles, hasNew: false },
-              { id: 'Navratri', label: 'Navratri', icon: Flame, hasNew: true },
-              { id: 'Electronics', label: 'Electronics', icon: Smartphone, hasNew: false },
-              { id: 'Beauty', label: 'Beauty', icon: Award, hasNew: false },
-              { id: 'Gifting', label: 'Gifting', icon: Gift, hasNew: false },
-              { id: 'Milk & Dairy', label: 'Dairy', icon: Utensils, hasNew: false },
-              { id: 'Snacks & Chips', label: 'Snacks', icon: ShoppingBag, hasNew: false },
-            ].map((cat) => {
+            {activeCategoryList.map((cat) => {
               const IconComp = cat.icon;
               const isSel = selectedCategory === cat.id;
 
@@ -2056,15 +2230,7 @@ export default function CustomerMenuPage({ onShowToast }) {
             Categories
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {[
-              { id: 'All', label: 'All Essentials', icon: Sparkles },
-              { id: 'Navratri', label: 'Navratri Special', icon: Flame, hasNew: true },
-              { id: 'Electronics', label: 'Electronics & Tech', icon: Smartphone },
-              { id: 'Beauty', label: 'Beauty & Wellness', icon: Award },
-              { id: 'Gifting', label: 'Gifting & Sweets', icon: Gift },
-              { id: 'Milk & Dairy', label: 'Fresh Milk & Dairy', icon: Utensils },
-              { id: 'Snacks & Chips', label: 'Snacks & Munchies', icon: ShoppingBag },
-            ].map((cat) => {
+            {activeCategoryList.map((cat) => {
               const IconComp = cat.icon;
               const isSel = selectedCategory === cat.id;
 
@@ -2126,16 +2292,16 @@ export default function CustomerMenuPage({ onShowToast }) {
             backgroundColor: '#FEF2F2',
             border: '2px solid #FCA5A5',
             borderRadius: '16px',
-            padding: '20px 24px',
+            padding: '18px 22px',
             margin: '0 0 20px 0',
-            boxShadow: '0 8px 24px rgba(220, 38, 38, 0.08)',
+            boxShadow: '0 8px 24px rgba(220, 38, 38, 0.12)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             flexWrap: 'wrap',
             gap: '16px'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flex: 1, minWidth: '280px' }}>
               <div style={{
                 width: '46px',
                 height: '46px',
@@ -2150,38 +2316,71 @@ export default function CustomerMenuPage({ onShowToast }) {
                 <AlertCircle size={26} />
               </div>
               <div>
-                <h3 style={{ margin: '0 0 4px 0', fontSize: '16px', fontWeight: 900, color: '#991B1B' }}>
-                  Sorry, Home Delivery is currently not available in your area.
+                <h3 style={{ margin: '0 0 4px 0', fontSize: '15.5px', fontWeight: 900, color: '#991B1B' }}>
+                  🚫 Not Available Right Now
                 </h3>
-                <p style={{ margin: 0, fontSize: '13px', color: '#B91C1C', fontWeight: 600 }}>
-                  {locationState.message || 'We do not have active store coverage for your current latitude/longitude coordinates.'}
+                <p style={{ margin: 0, fontSize: '13px', color: '#B91C1C', fontWeight: 700, lineHeight: '1.4' }}>
+                  {locationState.message || 'Sorry, FoodyPay store delivery is currently available ONLY in Sector 71 & Mataur (Mohali).'}
                 </p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={handleDetectCustomerLocation}
-              style={{
-                backgroundColor: '#DC2626',
-                color: '#FFFFFF',
-                border: 'none',
-                padding: '10px 18px',
-                borderRadius: '12px',
-                fontWeight: 800,
-                fontSize: '13px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}
-            >
-              <RefreshCw size={15} /> Re-check Location
-            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setLocationState((prev) => ({
+                    ...prev,
+                    addressLabel: 'Sector 71, Mataur, Mohali',
+                    available: true,
+                    message: '',
+                    reason: null,
+                  }));
+                  if (onShowToast) onShowToast('📍 Switched delivery location to Sector 71 & Mataur (Mohali)!');
+                }}
+                style={{
+                  backgroundColor: '#16A34A',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  padding: '10px 18px',
+                  borderRadius: '12px',
+                  fontWeight: 900,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)'
+                }}
+              >
+                📍 Switch to Sector 71 &amp; Mataur
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDetectCustomerLocation}
+                style={{
+                  backgroundColor: '#DC2626',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  padding: '10px 16px',
+                  borderRadius: '12px',
+                  fontWeight: 800,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <RefreshCw size={15} /> Re-check GPS
+              </button>
+            </div>
           </div>
         )}
 
-        {/* Light Active Order Tracker Banner */}
-        {activePlacedOrder && activePlacedOrder.status !== 'completed' && activePlacedOrder.status !== 'delivered' && activePlacedOrder.status !== 'served' && (
+        {/* Light Active Order Tracker Banner (Hidden on Home Screen) */}
+        {navTab !== 'home' && activePlacedOrder && activePlacedOrder.status !== 'completed' && activePlacedOrder.status !== 'delivered' && activePlacedOrder.status !== 'served' && (
           <div style={{
             backgroundColor: '#F0F9FF',
             border: '1px solid #BAE6FD',
@@ -2381,54 +2580,68 @@ export default function CustomerMenuPage({ onShowToast }) {
                 )}
 
                 {/* MEGA PRICE DROPS CATEGORIES */}
-                <div>
-                  <div style={{ textAlign: 'center', marginBottom: '12px' }}>
-                    <div style={{ fontSize: '16px', fontWeight: 900, color: '#FF5E14', letterSpacing: '0.04em' }}>
-                      ✦ MEGA PRICE DROPS ✦
+                {activeCategoryList.filter((c) => c.id !== 'All').length > 0 && (
+                  <div>
+                    <div style={{ textAlign: 'center', marginBottom: '12px' }}>
+                      <div style={{ fontSize: '16px', fontWeight: 900, color: '#FF5E14', letterSpacing: '0.04em' }}>
+                        ✦ MEGA PRICE DROPS ✦
+                      </div>
+                    </div>
+
+                    <div className="fp-mega-drops-grid">
+                      {activeCategoryList.filter((c) => c.id !== 'All').slice(0, 6).map((cat, i) => {
+                        const themeColors = [
+                          { bg: '#FEF3C7', border: '#FDE68A', text: '#92400E', discount: 'Up to 50% OFF' },
+                          { bg: '#DCFCE7', border: '#86EFAC', text: '#15803D', discount: 'Up to 40% OFF' },
+                          { bg: '#EFF6FF', border: '#BFDBFE', text: '#1D4ED8', discount: 'Up to 45% OFF' },
+                          { bg: '#FCE7F3', border: '#FBCFE8', text: '#BE185D', discount: 'Up to 55% OFF' },
+                          { bg: '#F3E8FF', border: '#D8B4FE', text: '#6B21A8', discount: 'Up to 60% OFF' },
+                          { bg: '#FFEDD5', border: '#FDBA74', text: '#C2410C', discount: 'Up to 30% OFF' },
+                        ];
+                        const theme = themeColors[i % themeColors.length];
+                        const sampleDish = (dishes || []).find((d) => String(d.category || '').trim().toLowerCase() === cat.id.toLowerCase());
+                        const imgUrl = sampleDish ? getDishImageUrl(sampleDish) : 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300&auto=format&fit=crop&q=80';
+                        const isSel = selectedCategory === cat.id;
+
+                        return (
+                          <div
+                            key={cat.id}
+                            onClick={() => setSelectedCategory(cat.id)}
+                            style={{
+                              backgroundColor: theme.bg,
+                              border: isSel ? '2px solid #FF5E14' : `1.5px solid ${theme.border}`,
+                              borderRadius: '16px',
+                              padding: '12px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                              height: '105px',
+                              position: 'relative',
+                              overflow: 'hidden',
+                              cursor: 'pointer',
+                              boxShadow: isSel ? '0 4px 14px rgba(255,94,20,0.2)' : 'none',
+                              transition: 'all 0.2s ease'
+                            }}
+                          >
+                            <span style={{ fontSize: '10px', fontWeight: 900, backgroundColor: theme.text, color: '#FFF', padding: '2px 8px', borderRadius: '8px', width: 'fit-content' }}>
+                              {theme.discount}
+                            </span>
+
+                            <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#0F172A', zIndex: 2, marginTop: 'auto' }}>
+                              {cat.label}
+                            </span>
+
+                            <img
+                              src={imgUrl}
+                              alt={cat.label}
+                              style={{ position: 'absolute', right: '-10px', bottom: '-10px', width: '65px', height: '65px', objectFit: 'cover', borderRadius: '50%', opacity: 0.85 }}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-
-                  <div className="fp-mega-drops-grid">
-                    {[
-                      { title: 'Home Cleaning', discount: 'Up to 60% OFF', bg: '#FEF3C7', border: '#FDE68A', text: '#92400E', image: 'https://images.unsplash.com/photo-1583947215259-38e31be8751f?w=300&auto=format&fit=crop&q=80' },
-                      { title: 'Kitchen Essentials', discount: 'Up to 40% OFF', bg: '#DCFCE7', border: '#86EFAC', text: '#15803D', image: 'https://images.unsplash.com/photo-1596040033229-a9821ebd058d?w=300&auto=format&fit=crop&q=80' },
-                      { title: 'Food & Beverage', discount: 'Up to 40% OFF', bg: '#EFF6FF', border: '#BFDBFE', text: '#1D4ED8', image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300&auto=format&fit=crop&q=80' },
-                      { title: 'Self Care & Wellness', discount: 'Up to 55% OFF', bg: '#FCE7F3', border: '#FBCFE8', text: '#BE185D', image: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=300&auto=format&fit=crop&q=80' }
-                    ].map((cat, i) => (
-                      <div
-                        key={i}
-                        onClick={() => setSelectedCategory('All')}
-                        style={{
-                          backgroundColor: cat.bg,
-                          border: `1.5px solid ${cat.border}`,
-                          borderRadius: '16px',
-                          padding: '12px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          justifyContent: 'space-between',
-                          height: '105px',
-                          position: 'relative',
-                          overflow: 'hidden',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <span style={{ fontSize: '10px', fontWeight: 900, backgroundColor: cat.text, color: '#FFF', padding: '2px 8px', borderRadius: '8px', width: 'fit-content' }}>
-                          {cat.discount}
-                        </span>
-
-                        <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#0F172A', zIndex: 2, marginTop: 'auto' }}>
-                          {cat.title}
-                        </span>
-
-                        <img
-                          src={cat.image}
-                          alt={cat.title}
-                          style={{ position: 'absolute', right: '-10px', bottom: '-10px', width: '65px', height: '65px', objectFit: 'cover', borderRadius: '50%', opacity: 0.85 }}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                )}
               </>
             )}
 
@@ -4394,6 +4607,85 @@ export default function CustomerMenuPage({ onShowToast }) {
                 ⭐ Submit Feedback
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Customer Location & Sector Selector Modal */}
+      {isLocationModalOpen && (
+        <div
+          onClick={() => setIsLocationModalOpen(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(5px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px'
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: '24px',
+              maxWidth: '460px',
+              width: '100%',
+              padding: '24px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.3)',
+              position: 'relative'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <MapPin size={22} color="#FF5E14" /> Select Street / Sector Location
+                </h3>
+                <span style={{ fontSize: '12px', color: '#64748B' }}>
+                  Choose your sector or area to view live store delivery availability.
+                </span>
+              </div>
+              <button
+                onClick={() => setIsLocationModalOpen(false)}
+                style={{ background: '#F1F5F9', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <X size={18} color="#475569" />
+              </button>
+            </div>
+
+            {/* Live Geolocation Trigger Button */}
+            <button
+              type="button"
+              onClick={() => {
+                handleDetectCustomerLocation();
+                setIsLocationModalOpen(false);
+              }}
+              style={{
+                width: '100%',
+                backgroundColor: '#FFF7ED',
+                border: '1.5px solid #FF5E14',
+                color: '#FF5E14',
+                padding: '12px',
+                borderRadius: '14px',
+                fontWeight: 900,
+                fontSize: '13.5px',
+                cursor: 'pointer',
+                marginBottom: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                boxShadow: '0 2px 8px rgba(255,94,20,0.1)'
+              }}
+            >
+              <Compass size={18} color="#FF5E14" /> Use Current GPS Location (Auto-Detect)
+            </button>
           </div>
         </div>
       )}

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { playMilestoneCelebration } from '../utils/soundEffects';
-import { registerApi, googleAuthApi } from '../utils/api';
+import { registerApi, googleAuthApi, firebaseAuthApi } from '../utils/api';
+import { loginWithFirebaseGoogle } from '../utils/firebase';
 
 export default function SignupModal({ isOpen, onClose, onSwitchToLogin }) {
   const [currentStep, setCurrentStep] = useState(1); // 1, 2, 3, 4
@@ -139,18 +140,36 @@ export default function SignupModal({ isOpen, onClose, onSwitchToLogin }) {
     setLoading(true);
     setError('');
     try {
+      let fbRes = null;
+      try {
+        fbRes = await loginWithFirebaseGoogle();
+      } catch (e) {}
+
+      const gUser = fbRes?.user;
+      const gEmail = gUser?.email || email.trim() || 'merchant@foodypay.in';
+      const gName = gUser?.displayName || `${firstName || 'Restaurant'} ${lastName || 'Owner'}`.trim();
+      const gUid = gUser?.uid || 'google_uid_' + Date.now();
+
       const googlePayload = {
-        credential: 'demo_google_id_token_' + Date.now(),
-        email: email.trim() || 'owner@gmail.com',
-        name: `${firstName || 'Restaurant'} ${lastName || 'Owner'}`.trim(),
-        picture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-        businessName: businessName.trim() || "Sharma's Kitchen",
-        contactNo: contactNo.trim() || '+91 9876543210',
-        googleId: 'google_sub_' + Date.now(),
+        firebaseToken: fbRes?.token || 'google_token_' + Date.now(),
+        credential: fbRes?.token || 'google_token_' + Date.now(),
+        uid: gUid,
+        email: gEmail,
+        name: gName,
+        picture: gUser?.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+        businessName: businessName.trim() || `${gName}'s Kitchen`,
+        contactNo: contactNo.trim() || '+91 98000 00000',
+        providerId: 'google.com',
       };
 
-      const res = await googleAuthApi(googlePayload);
-      if (res.success && res.data) {
+      let res = null;
+      try {
+        res = await firebaseAuthApi(googlePayload);
+      } catch (e1) {
+        res = await googleAuthApi(googlePayload);
+      }
+
+      if (res && res.success && res.data) {
         if (res.data.token) {
           localStorage.setItem('foodypay_token', res.data.token);
           localStorage.setItem('foodypay_user', JSON.stringify(res.data));
@@ -158,6 +177,11 @@ export default function SignupModal({ isOpen, onClose, onSwitchToLogin }) {
         setSuccessUser(res.data);
         playMilestoneCelebration();
         confetti({ particleCount: 120, spread: 80, origin: { y: 0.4 } });
+        setTimeout(() => {
+          window.location.href = '/dashboard';
+        }, 600);
+      } else {
+        throw new Error('Google Sign-In failed. Please try again.');
       }
     } catch (err) {
       setError(err.message || 'Google Authentication failed.');

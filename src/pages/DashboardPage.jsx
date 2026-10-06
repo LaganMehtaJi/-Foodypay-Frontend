@@ -54,6 +54,8 @@ import {
   ThumbsUp,
   AlertCircle,
   MapPin,
+  Compass,
+  Save,
 } from 'lucide-react';
 import {
   playOrderPlaced,
@@ -89,6 +91,7 @@ import {
   fetchReviewsApi,
   createReviewApi,
   replyReviewApi,
+  deleteReviewApi,
   sendNotificationApi,
   createRazorpayOrderApi,
   verifyRazorpaySignatureApi,
@@ -102,6 +105,8 @@ import {
   deleteStoreApi,
   assignStoreOwnerEmailApi,
   assignZonesToStoreApi,
+  calculateBikeDeliveryTime,
+  calculateHaversineDistanceKm,
 } from '../utils/api';
 import './Dashboard.css';
 
@@ -211,6 +216,17 @@ export default function DashboardPage({ onShowToast }) {
       return {};
     }
   });
+
+  useEffect(() => {
+    const handleStorageChange = () => {
+      try {
+        const u = localStorage.getItem('foodypay_user');
+        if (u) setCurrentUser(JSON.parse(u));
+      } catch (e) {}
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
   const [storeControls, setStoreControls] = useState(() => {
     let savedKds = true;
@@ -558,16 +574,16 @@ export default function DashboardPage({ onShowToast }) {
   const isGrowthPro = isBaseGrowthPro && !isSubscriptionExpired;
   const isFreePlan = !isEnterpriseMax && !isGrowthPro;
 
-  // Feature Lock Rules:
-  const isKdsLocked = isFreePlan;
-  const isMarketingLocked = isFreePlan;
-  const isCustomersLocked = isFreePlan;
-  const isReviewsLocked = isFreePlan;
+  // Feature Lock Rules (All navigation tabs unlocked & active):
+  const isKdsLocked = false;
+  const isMarketingLocked = false;
+  const isCustomersLocked = false;
+  const isReviewsLocked = false;
 
-  // Delivery Partner View, Themes & Branding, Grow -> Locked on Free Plan AND Growth Pro (requires Enterprise Max)
-  const isDeliveryPartnerLocked = isFreePlan || isGrowthPro;
-  const isThemesLocked = isFreePlan || isGrowthPro;
-  const isGrowLocked = isFreePlan || isGrowthPro;
+  // Delivery Partner View, Themes & Branding, Grow -> Unlocked
+  const isDeliveryPartnerLocked = false;
+  const isThemesLocked = false;
+  const isGrowLocked = false;
 
   // Dynamic Database-Driven Delivery Zones & Store Management State
   const [deliveryZones, setDeliveryZones] = useState([]);
@@ -585,6 +601,89 @@ export default function DashboardPage({ onShowToast }) {
     radius: 5,
     isActive: true,
   });
+
+  // Store Owner Dynamic GPS Location & Delivery Radius Slider State (1 KM to 25 KM)
+  const [storeDeliveryRadiusSlider, setStoreDeliveryRadiusSlider] = useState(() => {
+    try {
+      const u = localStorage.getItem('foodypay_user');
+      if (u) {
+        const parsed = JSON.parse(u);
+        if (parsed.deliveryRadius) return Number(parsed.deliveryRadius);
+      }
+    } catch (e) {}
+    return 5;
+  });
+
+  const [storeAddressInput, setStoreAddressInput] = useState(() => {
+    try {
+      const u = localStorage.getItem('foodypay_user');
+      if (u) {
+        const parsed = JSON.parse(u);
+        if (parsed.address) return parsed.address;
+      }
+    } catch (e) {}
+    return 'Sector 71, Mataur, Mohali';
+  });
+
+  const [isDetectingStoreGps, setIsDetectingStoreGps] = useState(false);
+
+  const handleSaveStoreLocationAndRadius = (newRadius, newAddr, newLat, newLng) => {
+    const updatedRadius = Number(newRadius !== undefined ? newRadius : storeDeliveryRadiusSlider);
+    const updatedAddr = newAddr !== undefined ? newAddr : storeAddressInput;
+    const updatedLat = newLat || currentUser.latitude || 30.7046;
+    const updatedLng = newLng || currentUser.longitude || 76.7179;
+
+    const updatedUser = {
+      ...currentUser,
+      deliveryRadius: updatedRadius,
+      address: updatedAddr,
+      latitude: updatedLat,
+      longitude: updatedLng,
+      coveredSectors: `Sector 71, Mataur, ${updatedAddr}`
+    };
+
+    setCurrentUser(updatedUser);
+    try {
+      localStorage.setItem('foodypay_user', JSON.stringify(updatedUser));
+
+      const featPayload = localStorage.getItem('foodypay_featured_homepage_merchant');
+      if (featPayload) {
+        const parsed = JSON.parse(featPayload);
+        parsed.deliveryRadius = updatedRadius;
+        parsed.latitude = updatedLat;
+        parsed.longitude = updatedLng;
+        parsed.address = updatedAddr;
+        localStorage.setItem('foodypay_featured_homepage_merchant', JSON.stringify(parsed));
+      }
+
+      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('foodypay_store_location_updated'));
+    } catch (e) {}
+
+    addToast(`📍 Store Location & ${updatedRadius} KM Radius Saved! Customers within ${updatedRadius} KM will get live delivery.`, <Check size={18} />);
+  };
+
+  const handleDetectStoreCurrentGps = () => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      addToast('Geolocation is not supported by your browser.', <AlertCircle size={18} />);
+      return;
+    }
+    setIsDetectingStoreGps(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const detectedAddr = `GPS Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)} (Store GPS Saved)`;
+        setStoreAddressInput(detectedAddr);
+        setIsDetectingStoreGps(false);
+        handleSaveStoreLocationAndRadius(storeDeliveryRadiusSlider, detectedAddr, lat, lng);
+      },
+      (err) => {
+        setIsDetectingStoreGps(false);
+        addToast('Location permission denied. Please allow location access in browser.', <AlertCircle size={18} />);
+      }
+    );
+  };
 
   const [isAddStoreModalOpen, setIsAddStoreModalOpen] = useState(false);
   const [editingStoreObj, setEditingStoreObj] = useState(null);
@@ -909,7 +1008,8 @@ export default function DashboardPage({ onShowToast }) {
 
   const reloadServerReviews = async () => {
     try {
-      const data = await fetchReviewsApi();
+      const token = localStorage.getItem('foodypay_token');
+      const data = await fetchReviewsApi(token);
       if (Array.isArray(data)) {
         setReviews(data);
       }
@@ -951,8 +1051,9 @@ export default function DashboardPage({ onShowToast }) {
     if (!activeReplyReview || !replyTextInput.trim()) return;
 
     const revTargetId = activeReplyReview._id || activeReplyReview.id;
+    const token = localStorage.getItem('foodypay_token');
     try {
-      const updatedRev = await replyReviewApi(revTargetId, replyTextInput.trim());
+      const updatedRev = await replyReviewApi(revTargetId, replyTextInput.trim(), token);
       setReviews((prev) =>
         prev.map((r) => ((r._id || r.id) === revTargetId ? updatedRev : r))
       );
@@ -988,7 +1089,8 @@ export default function DashboardPage({ onShowToast }) {
     };
 
     try {
-      const createdRev = await createReviewApi(reviewData);
+      const token = localStorage.getItem('foodypay_token');
+      const createdRev = await createReviewApi(reviewData, token);
       setReviews((prev) => [createdRev, ...prev]);
     } catch (err) {
       const newR = {
@@ -1003,6 +1105,24 @@ export default function DashboardPage({ onShowToast }) {
 
     addToast(`⭐ Added review from ${newReviewForm.customerName}!`, <Star size={18} />);
     setIsAddReviewModalOpen(false);
+  };
+
+  const handleDeleteReview = async (reviewObj) => {
+    if (!reviewObj) return;
+    const reviewId = reviewObj._id || reviewObj.id;
+    if (!window.confirm(`Are you sure you want to delete the review from "${reviewObj.customerName || 'Customer'}"?`)) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('foodypay_token');
+      await deleteReviewApi(reviewId, token);
+      setReviews((prev) => prev.filter((r) => (r._id || r.id) !== reviewId));
+      addToast(` Deleted review from ${reviewObj.customerName || 'Customer'}!`, <Trash2 size={18} color="#DC2626" />);
+    } catch (err) {
+      setReviews((prev) => prev.filter((r) => (r._id || r.id) !== reviewId));
+      addToast(` Deleted review from ${reviewObj.customerName || 'Customer'}!`, <Trash2 size={18} color="#DC2626" />);
+    }
   };
 
   // Custom Meal Collections / Combo Bundles Dataset State (Cleared sample combos; merchant created combos only)
@@ -1464,7 +1584,7 @@ export default function DashboardPage({ onShowToast }) {
           fetchCouponsApi(token),
           fetchTablesApi(token),
           fetchSettingsApi(token),
-          fetchReviewsApi(),
+          fetchReviewsApi(token),
         ]);
 
         if (ordersRes.status === 'fulfilled') {
@@ -3475,6 +3595,27 @@ export default function DashboardPage({ onShowToast }) {
             </div>
           </button>
 
+          {/* 4.5 Customer Reviews & Feedback */}
+          <button
+            type="button"
+            title="Customer Reviews & Feedback"
+            className={`crm-menu-link ${activeTab === 'customer_reviews' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('customer_reviews');
+              setMobileMenuOpen(false);
+            }}
+          >
+            <div className="crm-menu-link-left">
+              <span className="crm-menu-icon">
+                <Star size={20} color="#F59E0B" fill="#F59E0B" />
+              </span>
+              <span>Customer Reviews</span>
+            </div>
+            <span className="crm-badge-new" style={{ background: '#FEF3C7', color: '#D97706', padding: '1px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 800 }}>
+              4.8 ★
+            </span>
+          </button>
+
           {/* 5. Marketing (Hidden if Locked) */}
           {!isMarketingLocked && !storeControls.lockMarketingTab && (
             <button
@@ -3511,26 +3652,6 @@ export default function DashboardPage({ onShowToast }) {
                   <Users size={20} color="#0D9488" />
                 </span>
                 <span>Customers</span>
-              </div>
-            </button>
-          )}
-
-          {/* 6.5 Customer Reviews (Hidden if Locked) */}
-          {!isReviewsLocked && (
-            <button
-              type="button"
-              title="Customer Reviews"
-              className={`crm-menu-link ${activeTab === 'customer_reviews' ? 'active' : ''}`}
-              onClick={() => {
-                setActiveTab('customer_reviews');
-                setMobileMenuOpen(false);
-              }}
-            >
-              <div className="crm-menu-link-left">
-                <span className="crm-menu-icon">
-                  <Star size={20} color="#F59E0B" />
-                </span>
-                <span>Customer Reviews</span>
               </div>
             </button>
           )}
@@ -6357,9 +6478,193 @@ export default function DashboardPage({ onShowToast }) {
                 </p>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#EFF6FF', border: '1px solid #BFDBFE', padding: '10px 16px', borderRadius: '12px', color: '#1E40AF', fontSize: '12.5px', fontWeight: 700 }}>
-                <MapPin size={18} color="#1E40AF" />
-                <span>ℹ️ Read-Only View: Displaying active delivery zones and store locations assigned to your account. System location updates & zone creation are managed centrally in Super Admin Portal (/admin).</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.3)', padding: '10px 16px', borderRadius: '12px', color: '#FFFFFF', fontSize: '13px', fontWeight: 800 }}>
+                <MapPin size={18} color="#93C5FD" />
+                <span>📍 Active Store Delivery Radius Limit: <strong>{storeDeliveryRadiusSlider} KM</strong> (Live GPS Active)</span>
+              </div>
+            </div>
+
+            {/* STORE LIVE GPS LOCATION & DYNAMIC DELIVERY RADIUS SLIDER WIDGET */}
+            <div style={{ backgroundColor: '#FFFFFF', border: '1.5px solid #10B981', borderRadius: '16px', padding: '20px 24px', boxShadow: '0 4px 16px rgba(16, 185, 129, 0.08)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ width: '44px', height: '44px', borderRadius: '12px', backgroundColor: '#ECFDF5', color: '#10B981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <MapPin size={24} color="#10B981" />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      Store GPS Location &amp; Delivery Radius Limit Configurator
+                    </h3>
+                    <span style={{ fontSize: '13px', color: '#475569', fontWeight: 600 }}>
+                      Set your store address &amp; delivery radius limit slider. Delivery is allowed only within this radius (e.g. 5 KM).
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={handleDetectStoreCurrentGps}
+                    disabled={isDetectingStoreGps}
+                    style={{
+                      backgroundColor: '#ECFDF5',
+                      border: '1.5px solid #86EFAC',
+                      color: '#15803D',
+                      padding: '9px 16px',
+                      borderRadius: '10px',
+                      fontWeight: 800,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <Compass size={16} color="#15803D" className={isDetectingStoreGps ? 'spin' : ''} />
+                    {isDetectingStoreGps ? 'Detecting Store GPS...' : '📍 Auto-Detect Store Location'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Interactive Address Input & Delivery Radius Slider Row */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px 200px', gap: '16px', alignItems: 'center', backgroundColor: '#F8FAFC', padding: '16px 18px', borderRadius: '14px', border: '1px solid #E2E8F0', marginBottom: '16px' }}>
+                {/* Store Address Field */}
+                <div>
+                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#334155', display: 'block', marginBottom: '6px' }}>
+                    Store Street Address / Landmark:
+                  </label>
+                  <input
+                    type="text"
+                    value={storeAddressInput}
+                    onChange={(e) => setStoreAddressInput(e.target.value)}
+                    placeholder="e.g. Sector 71, Mataur, Mohali..."
+                    style={{
+                      width: '100%',
+                      padding: '9px 12px',
+                      borderRadius: '8px',
+                      border: '1.5px solid #CBD5E1',
+                      fontSize: '13.5px',
+                      fontWeight: 600,
+                      color: '#0F172A',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+
+                {/* Delivery Radius Slider Input */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#334155' }}>
+                      Delivery Radius Limit Slider:
+                    </label>
+                    <span style={{ fontSize: '12.5px', fontWeight: 900, color: '#10B981', backgroundColor: '#ECFDF5', padding: '2px 10px', borderRadius: '8px', border: '1px solid #A7F3D0' }}>
+                      ⚡ {storeDeliveryRadiusSlider} KM Radius
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="25"
+                    step="0.5"
+                    value={storeDeliveryRadiusSlider}
+                    onChange={(e) => setStoreDeliveryRadiusSlider(Number(e.target.value))}
+                    style={{
+                      width: '100%',
+                      accentColor: '#10B981',
+                      cursor: 'pointer'
+                    }}
+                  />
+                </div>
+
+                {/* Save Location & Radius Button */}
+                <button
+                  type="button"
+                  onClick={() => handleSaveStoreLocationAndRadius(storeDeliveryRadiusSlider, storeAddressInput)}
+                  style={{
+                    backgroundColor: '#10B981',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    padding: '11px 18px',
+                    borderRadius: '10px',
+                    fontWeight: 900,
+                    fontSize: '13.5px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
+                  }}
+                >
+                  <Save size={16} /> Save Location &amp; Radius
+                </button>
+              </div>
+
+              {/* Live Nearby Sectors Distance & Radius Coverage Matrix */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: '16px', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#475569', marginBottom: '8px' }}>
+                    🎯 Live Delivery Status for Nearby Sectors (Radius Limit: {storeDeliveryRadiusSlider} KM):
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    {['Sector 71, Mohali', 'Mataur, Mohali', 'Sector 70, Mohali', 'Phase 7, Mohali', 'Phase 3B2, Mohali', 'Aerocity, Mohali', 'Kharar', 'Zirakpur'].map((s, idx) => {
+                      const storeLat = currentUser.latitude || 30.7046;
+                      const storeLng = currentUser.longitude || 76.7179;
+
+                      const sectorCoordsMap = {
+                        'sector 71, mohali': { lat: 30.7046, lon: 76.7179 },
+                        'mataur, mohali': { lat: 30.7050, lon: 76.7180 },
+                        'sector 70, mohali': { lat: 30.6978, lon: 76.7112 },
+                        'phase 7, mohali': { lat: 30.7090, lon: 76.7220 },
+                        'phase 3b2, mohali': { lat: 30.7180, lon: 76.7150 },
+                        'aerocity, mohali': { lat: 30.6400, lon: 76.7450 },
+                        'zirakpur': { lat: 30.6420, lon: 76.8170 },
+                        'kharar': { lat: 30.7460, lon: 76.6470 },
+                      };
+                      const matchKey = s.toLowerCase();
+                      const secLat = sectorCoordsMap[matchKey]?.lat || (storeLat + (idx * 0.008));
+                      const secLng = sectorCoordsMap[matchKey]?.lon || (storeLng + (idx * 0.007));
+                      const distInfo = calculateBikeDeliveryTime(storeLat, storeLng, secLat, secLng);
+                      const isWithinRadius = distInfo.distanceKm <= storeDeliveryRadiusSlider;
+
+                      return (
+                        <span
+                          key={idx}
+                          style={{
+                            backgroundColor: isWithinRadius ? '#F0FDF4' : '#FEF2F2',
+                            border: isWithinRadius ? '1px solid #86EFAC' : '1px solid #FCA5A5',
+                            color: isWithinRadius ? '#15803D' : '#DC2626',
+                            fontSize: '12px',
+                            fontWeight: 800,
+                            padding: '5px 12px',
+                            borderRadius: '20px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                          }}
+                        >
+                          📍 {s}
+                          <span style={{ fontSize: '10.5px', color: isWithinRadius ? '#047857' : '#991B1B', backgroundColor: isWithinRadius ? '#DCFCE7' : '#FEE2E2', padding: '1px 6px', borderRadius: '10px' }}>
+                            {isWithinRadius ? `✓ ${distInfo.distanceKm} KM (${distInfo.totalMins}m)` : `🚫 ${distInfo.distanceKm} KM (Out of Radius)`}
+                          </span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Google Map Embedded Frame */}
+                <div style={{ borderRadius: '12px', overflow: 'hidden', border: '1.5px solid #CBD5E1', height: '110px', backgroundColor: '#F1F5F9', position: 'relative' }}>
+                  <iframe
+                    title="Merchant Store Location Map"
+                    src={`https://maps.google.com/maps?q=${currentUser.latitude || 30.7046},${currentUser.longitude || 76.7179}&z=14&output=embed`}
+                    width="100%"
+                    height="100%"
+                    style={{ border: 0 }}
+                    loading="lazy"
+                  />
+                </div>
               </div>
             </div>
 
@@ -7886,7 +8191,7 @@ export default function DashboardPage({ onShowToast }) {
                             fontWeight: 500,
                           }}
                         >
-                          "{r.feedback}"
+                          {r.feedback}
                         </div>
 
                         {/* Ordered Item Tags */}
@@ -7901,7 +8206,7 @@ export default function DashboardPage({ onShowToast }) {
                         )}
 
                         {/* Merchant Store Reply Section */}
-                        {r.reply ? (
+                        {r.reply && (
                           <div
                             style={{
                               background: '#F0FDFA',
@@ -7917,52 +8222,78 @@ export default function DashboardPage({ onShowToast }) {
                               <div style={{ fontSize: '12px', fontWeight: 800, color: '#0D9488', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <Store size={14} /> Store Response from Merchant
                               </div>
+                            </div>
+                            <div style={{ fontSize: '13px', color: '#115E59', fontWeight: 600 }}>
+                              {r.reply}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Card Bottom Actions Row (Reply & Delete) */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px', borderTop: '1px dashed #E2E8F0', marginTop: '4px' }}>
+                          <div>
+                            {r.reply ? (
                               <button
                                 type="button"
-                                style={{ background: 'none', border: 'none', color: '#0D9488', fontSize: '12px', fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}
+                                style={{ background: 'none', border: 'none', color: '#0D9488', fontSize: '12.5px', fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}
                                 onClick={() => {
                                   setActiveReplyReview(r);
                                   setReplyTextInput(r.reply || '');
                                   setIsReplyModalOpen(true);
                                 }}
                               >
-                                Edit Reply
+                                Edit Store Reply
                               </button>
-                            </div>
-                            <div style={{ fontSize: '13px', color: '#115E59', fontWeight: 600 }}>
-                              "{r.reply}"
-                            </div>
+                            ) : (
+                              <button
+                                type="button"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  padding: '6px 14px',
+                                  borderRadius: '8px',
+                                  background: '#EFF6FF',
+                                  color: '#1D4ED8',
+                                  border: '1px solid #BFDBFE',
+                                  fontSize: '12.5px',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                }}
+                                onClick={() => {
+                                  setActiveReplyReview(r);
+                                  setReplyTextInput('');
+                                  setIsReplyModalOpen(true);
+                                }}
+                              >
+                                <MessageSquare size={14} /> Reply to Customer
+                              </button>
+                            )}
                           </div>
-                        ) : (
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px' }}>
-                            <span style={{ fontSize: '12px', color: '#94A3B8', fontStyle: 'italic' }}>
-                              No reply sent yet to customer
-                            </span>
-                            <button
-                              type="button"
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                                padding: '6px 14px',
-                                borderRadius: '8px',
-                                background: '#F1F5F9',
-                                color: '#1E293B',
-                                border: '1px solid #CBD5E1',
-                                fontSize: '12.5px',
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                              }}
-                              onClick={() => {
-                                setActiveReplyReview(r);
-                                setReplyTextInput('');
-                                setIsReplyModalOpen(true);
-                              }}
-                            >
-                              <MessageSquare size={14} /> Reply to Customer
-                            </button>
-                          </div>
-                        )}
+
+                          <button
+                            type="button"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '6px 12px',
+                              borderRadius: '8px',
+                              background: '#FEF2F2',
+                              color: '#DC2626',
+                              border: '1px solid #FCA5A5',
+                              fontSize: '12.5px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              transition: 'all 0.2s',
+                            }}
+                            onClick={() => handleDeleteReview(r)}
+                            title="Delete this customer review"
+                          >
+                            <Trash2 size={14} color="#DC2626" />
+                            <span>Delete Review</span>
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -11374,7 +11705,7 @@ export default function DashboardPage({ onShowToast }) {
 
             <form onSubmit={handleSaveReplySubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '16px 20px' }}>
               <div style={{ background: '#F8FAFC', padding: '12px 16px', borderRadius: '10px', borderLeft: '4px solid #1D4ED8', fontSize: '13px', color: '#334155' }}>
-                <strong>Customer Feedback:</strong> "{activeReplyReview.feedback}"
+                <strong>Customer Feedback:</strong> {activeReplyReview.feedback}
               </div>
 
               <div className="crm-form-group">

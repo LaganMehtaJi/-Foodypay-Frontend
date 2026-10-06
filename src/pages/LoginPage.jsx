@@ -146,18 +146,13 @@ export default function LoginPage({ onShowToast }) {
       let fbUser = null;
       let fbToken = null;
 
-      // 1. Authenticate with Firebase Auth
+      // 1. Authenticate with Firebase Auth (silent optional attempt)
       try {
         const fbRes = await loginWithFirebaseEmail(email.trim(), password.trim());
         fbUser = fbRes.user;
         fbToken = fbRes.token;
       } catch (fbErr) {
-        // If wrong password error from firebase, prompt forgot password reset!
-        if (fbErr.message.includes('Incorrect password') || fbErr.message.includes('credential')) {
-          setError('Wrong password entered! Click "Forgot Password?" to receive a reset link in your email.');
-          setLoading(false);
-          return;
-        }
+        // Continue to primary backend login even if Firebase fails
       }
 
       // 2. Sync / Authenticate with Node.js Backend
@@ -197,7 +192,7 @@ export default function LoginPage({ onShowToast }) {
           navigate('/dashboard');
         }, 500);
       } else {
-        throw new Error('Login failed. Please check your credentials.');
+        throw new Error('Invalid email or password. Please check your credentials.');
       }
     } catch (err) {
       setError(err.message || 'Invalid email or password. Please check your credentials.');
