@@ -4078,8 +4078,8 @@ export default function DashboardPage({ onShowToast }) {
             })()}
 
             {/* FILTER BAR WITH CARDS PER ROW SELECTOR & ORDER SEARCH */}
-            <div className="crm-filter-bar">
-              <div className="crm-filter-tabs-container">
+            <div className="crm-filter-bar" style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', alignItems: 'stretch' }}>
+              <div className="crm-filter-tabs-container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', flexWrap: 'wrap', gap: '12px' }}>
                 <div className="crm-filter-tabs">
                   {[
                     { key: 'all', label: 'All Orders' },
@@ -4101,11 +4101,22 @@ export default function DashboardPage({ onShowToast }) {
                     </button>
                   ))}
                 </div>
+
+                <button
+                  type="button"
+                  className="btn-create-order-primary desktop-create-btn"
+                  onClick={handleOpenManualOrder}
+                  style={{ marginLeft: 'auto' }}
+                  title="Create counter or dine-in order"
+                >
+                  <Plus size={18} />
+                  <span>Create Manual Order</span>
+                </button>
               </div>
 
-              <div className="crm-search-and-actions-row">
+              <div className="crm-search-and-actions-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', flexWrap: 'wrap', gap: '12px' }}>
                 {/* GLOBAL ORDER SEARCH BOX (SEARCH BY NAME, PHONE, ORDER #, TABLE, DISH) */}
-                <div className="crm-search-box-wrap">
+                <div className="crm-search-box-wrap" style={{ flex: 1, minWidth: '240px' }}>
                   <Search size={16} color="#64748B" style={{ flexShrink: 0 }} />
                   <input
                     type="text"
@@ -4148,7 +4159,7 @@ export default function DashboardPage({ onShowToast }) {
                 </div>
 
                 {/* 1 to 6 CARDS PER ROW SELECTOR CONTROL (DESKTOP ONLY) */}
-                <div className="crm-grid-columns-control">
+                <div className="crm-grid-columns-control" style={{ marginLeft: 'auto' }}>
                   <span className="crm-grid-control-label">
                     <SlidersHorizontal size={14} /> Cards / Row:
                   </span>
@@ -4164,16 +4175,6 @@ export default function DashboardPage({ onShowToast }) {
                     </button>
                   ))}
                 </div>
-
-                <button
-                  type="button"
-                  className="btn-create-order-primary desktop-create-btn"
-                  onClick={handleOpenManualOrder}
-                  title="Create counter or dine-in order"
-                >
-                  <Plus size={18} />
-                  <span>Create Manual Order</span>
-                </button>
               </div>
             </div>
 
