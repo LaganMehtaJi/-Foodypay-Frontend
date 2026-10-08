@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
+import ActiveOrderStatus3DCard from '../components/ActiveOrderStatus3DCanvas';
 import {
   Utensils,
   ShoppingBag,
@@ -2339,96 +2340,18 @@ export default function CustomerMenuPage({ onShowToast }) {
           </div>
         )}
 
-        {/* Light Active Order Tracker Banner (Hidden on Home Screen) */}
+        {/* Interactive 3D Active Order Tracker (Hidden on Home Screen) */}
         {navTab !== 'home' && activePlacedOrder && activePlacedOrder.status !== 'completed' && activePlacedOrder.status !== 'delivered' && activePlacedOrder.status !== 'served' && (
-          <div style={{
-            backgroundColor: '#F0F9FF',
-            border: '1px solid #BAE6FD',
-            borderRadius: '14px',
-            padding: '14px',
-            marginBottom: '16px',
-            position: 'relative'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <CheckCircle2 size={20} color="#0284C7" />
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '14.5px', fontWeight: 600, color: '#0369A1' }}>
-                    Active Order {activePlacedOrder.id}
-                  </h3>
-                  <p style={{ margin: 0, fontSize: '11.5px', color: '#0284C7', fontWeight: 400 }}>
-                    {activePlacedOrder.type} • {activePlacedOrder.table !== 'Delivery' ? activePlacedOrder.table : 'Home Delivery'}
-                  </p>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <button
-                  onClick={() => setShowRatingModal(true)}
-                  style={{
-                    backgroundColor: '#FFF',
-                    border: '1px solid #FCD34D',
-                    color: '#D97706',
-                    padding: '5px 10px',
-                    borderRadius: '8px',
-                    fontSize: '11.5px',
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}
-                >
-                  <Star size={13} fill="#F59E0B" /> Rate Food
-                </button>
-                <button
-                  onClick={() => {
-                    setActivePlacedOrder(null);
-                    try {
-                      sessionStorage.removeItem('foodypay_active_order');
-                    } catch (e) {}
-                  }}
-                  style={{
-                    background: '#E0F2FE',
-                    border: 'none',
-                    borderRadius: '50%',
-                    width: '26px',
-                    height: '26px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#0369A1',
-                    cursor: 'pointer'
-                  }}
-                  title="Dismiss Banner"
-                >
-                  <X size={15} />
-                </button>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '10px 0 6px', fontSize: '11px', fontWeight: 600 }}>
-              <span style={{ color: '#0284C7' }}>1. Placed </span>
-              <span style={{ color: activePlacedOrder.seen || activePlacedOrder.status !== 'new' ? '#0284C7' : '#94A3B8' }}>
-                2. Acknowledged {activePlacedOrder.seen || activePlacedOrder.status !== 'new' ? '' : '⏳'}
-              </span>
-              <span style={{ color: activePlacedOrder.status === 'preparing' || activePlacedOrder.status === 'ready' || activePlacedOrder.status === 'out_for_delivery' || activePlacedOrder.status === 'delivered' || activePlacedOrder.status === 'served' || activePlacedOrder.status === 'completed' ? '#0284C7' : '#94A3B8' }}>
-                3. Kitchen ‍
-              </span>
-              <span style={{ color: activePlacedOrder.status === 'ready' || activePlacedOrder.status === 'out_for_delivery' || activePlacedOrder.status === 'delivered' || activePlacedOrder.status === 'served' || activePlacedOrder.status === 'completed' ? '#059669' : '#94A3B8' }}>
-                4. {activePlacedOrder.table === 'Delivery' || activePlacedOrder.type === 'Home Delivery' ? 'Out for Delivery ' : 'Served ️'}
-              </span>
-            </div>
-
-            <div style={{ backgroundColor: '#E0F2FE', height: '4px', borderRadius: '4px', overflow: 'hidden' }}>
-              <div style={{
-                backgroundColor: activePlacedOrder.status === 'completed' || activePlacedOrder.status === 'delivered' || activePlacedOrder.status === 'served' || activePlacedOrder.status === 'ready' ? '#10B981' : '#0284C7',
-                width: activePlacedOrder.status === 'completed' || activePlacedOrder.status === 'delivered' || activePlacedOrder.status === 'served' ? '100%' : activePlacedOrder.status === 'ready' || activePlacedOrder.status === 'out_for_delivery' ? '80%' : activePlacedOrder.status === 'preparing' ? '55%' : activePlacedOrder.seen ? '35%' : '15%',
-                height: '100%',
-                transition: 'width 0.4s ease'
-              }} />
-            </div>
-          </div>
+          <ActiveOrderStatus3DCard
+            order={activePlacedOrder}
+            onRatingClick={() => setShowRatingModal(true)}
+            onDismiss={() => {
+              setActivePlacedOrder(null);
+              try {
+                sessionStorage.removeItem('foodypay_active_order');
+              } catch (e) {}
+            }}
+          />
         )}
 
         {/* STORE OUTLET OFFLINE / CLOSED BANNER */}
