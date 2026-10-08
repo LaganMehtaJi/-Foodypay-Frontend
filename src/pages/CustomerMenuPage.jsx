@@ -958,12 +958,26 @@ export default function CustomerMenuPage({ onShowToast }) {
     let merchant = '';
     let table = '';
 
-    if (str.startsWith('http://') || str.startsWith('https://')) {
+    // 1. Try parsing JSON QR Payload
+    if (str.startsWith('{') && str.endsWith('}')) {
+      try {
+        const obj = JSON.parse(str);
+        merchant = obj.merchantId || obj.merchant || obj.storeId || obj.store || '';
+        table = obj.table || obj.tableNo || obj.tableName || '';
+        slug = obj.slug || obj.storeName || merchant;
+      } catch (e) {}
+    }
+
+    // 2. Try parsing URL QR Code
+    if (!merchant && (str.startsWith('http://') || str.startsWith('https://'))) {
       try {
         const url = new URL(str);
-        if (url.searchParams.get('slug')) slug = url.searchParams.get('slug');
-        if (url.searchParams.get('merchant')) merchant = url.searchParams.get('merchant');
+        if (url.searchParams.get('merchantId')) merchant = url.searchParams.get('merchantId');
+        if (url.searchParams.get('merchant')) merchant = merchant || url.searchParams.get('merchant');
+        if (url.searchParams.get('storeId')) merchant = merchant || url.searchParams.get('storeId');
+        if (url.searchParams.get('store')) merchant = merchant || url.searchParams.get('store');
         if (url.searchParams.get('table')) table = url.searchParams.get('table');
+        if (url.searchParams.get('slug')) slug = url.searchParams.get('slug');
 
         const hashOrPath = url.hash ? url.hash.replace('#/', '').replace('#', '') : url.pathname.replace(/^\//, '');
         const parts = hashOrPath.split('/').filter(Boolean);
@@ -999,7 +1013,7 @@ export default function CustomerMenuPage({ onShowToast }) {
       }
     }
 
-    if (!table) table = 'table-1';
+    if (!table) table = 'Table 1';
     if (!merchant) merchant = effectiveMerchantId || 'FP-985569';
     if (!slug) slug = merchant.toLowerCase();
 
@@ -1019,13 +1033,20 @@ export default function CustomerMenuPage({ onShowToast }) {
       : 'Table 1';
     const formattedSlug = formatSlug(parsed.slug);
 
-    // Update Store Info State immediately
+    // Update Store Info State & Active Merchant ID immediately
     setStoreInfo((prev) => ({
       ...prev,
-      name: formattedSlug || 'FoodyPay Restaurant',
+      name: formattedSlug || 'FoodyPay Store',
       merchantId: parsed.merchant,
       table: formattedTable,
     }));
+
+    // Save scanned merchant & table session
+    try {
+      localStorage.setItem('foodypay_active_merchant', parsed.merchant);
+      localStorage.setItem('foodypay_scanned_table', formattedTable);
+      localStorage.setItem('foodypay_scanned_store_name', formattedSlug);
+    } catch (e) {}
 
     // Reset cart for newly scanned table
     setCarts((prev) => ({
@@ -1033,21 +1054,29 @@ export default function CustomerMenuPage({ onShowToast }) {
       ['table_' + formattedTable.toLowerCase().replace(/[^a-z0-9]+/g, '_')]: {}
     }));
 
-    if (onShowToast) onShowToast(` Table Scanned: ${formattedSlug} (${formattedTable})`);
+    if (onShowToast) onShowToast(`Table Scanned: Store ${parsed.merchant} (${formattedTable})`);
 
     // Fetch dynamic menu catalog for newly scanned merchant ID & restaurant
     try {
       const targetIdentifier = parsed.merchant || parsed.slug;
+      const apiDishes = await fetchPublicDishesApi(targetIdentifier, parsed.merchant);
+      if (Array.isArray(apiDishes) && apiDishes.length > 0) {
+        setDishes(normalizeDishes(apiDishes));
+      }
+
       const mData = await fetchPublicMerchantApi(targetIdentifier);
       if (mData) {
         setStoreInfo((prev) => ({
           ...prev,
           name: mData.businessName || mData.name || formattedSlug,
+          merchantId: mData.merchantId || parsed.merchant,
           logoUrl: mData.logo?.url || prev.logoUrl,
           gstPercent: mData.gstPercent !== undefined ? mData.gstPercent : 5,
           upiId: localStorage.getItem('foodypay_upi_id') || mData.upiId || mData.upi_id || prev.upiId || '7496888449@ptsbi'
         }));
       }
+    } catch (err) {}
+  };
 
       const newDishes = await fetchPublicDishesApi(parsed.merchant, parsed.merchant);
       if (Array.isArray(newDishes) && newDishes.length > 0) {
