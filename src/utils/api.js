@@ -1,4 +1,4 @@
-export const REMOTE_CLOUD_API_URL = 'https://api.foodypay.online/api';
+export const REMOTE_CLOUD_API_URL = 'https://3.108.59.216/api';
 
 /**
  * Dynamic API Base URL resolution for Local, LAN (Mobile on Wi-Fi), and Production (foodypay.in)
