@@ -9,11 +9,12 @@ export const getApiBaseUrl = () => {
   }
   if (typeof window !== 'undefined') {
     const { hostname, protocol } = window.location;
-    // Localhost or LAN IP (e.g. 192.168.x.x, 10.x.x.x)
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname)) {
+    // Localhost or Local Private LAN IP only (e.g. 192.168.x.x, 10.x.x.x)
+    const isPrivateLan = hostname === 'localhost' || hostname === '127.0.0.1' || /^192\.168\./.test(hostname) || /^10\./.test(hostname);
+    if (isPrivateLan) {
       return `${protocol}//${hostname}:3000/api`;
     }
-    // Live domain (foodypay.in) -> Live Render Cloud Backend
+    // Production / Public Cloud EC2 IP or Domain
     return REMOTE_CLOUD_API_URL;
   }
   return REMOTE_CLOUD_API_URL;
@@ -64,7 +65,7 @@ export async function safeFetch(path, options = {}) {
   // 2. Try Local Fallback Ports (3000, 5001, 3001) if on local machine / LAN
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
-    const isLocal = hostname === 'localhost' || hostname === '127.0.0.1' || /^(\d{1,3}\.){3}\d{1,3}$/.test(hostname);
+    const isLocal = hostname === 'localhost' || hostname === '127.0.0.1' || /^192\.168\./.test(hostname) || /^10\./.test(hostname);
     if (isLocal) {
       for (const port of ports) {
         try {
