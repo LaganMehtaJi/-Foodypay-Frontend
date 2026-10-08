@@ -204,7 +204,7 @@ export default function DashboardPage({ onShowToast }) {
   const [coupons, setCoupons] = useState([]);
   const [tables, setTables] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
-  const [cardsPerRow, setCardsPerRow] = useState(4);
+  const [cardsPerRow, setCardsPerRow] = useState(3);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Current logged in merchant user state synced with localStorage
@@ -234,6 +234,7 @@ export default function DashboardPage({ onShowToast }) {
     let savedRzpKey = '';
     let savedRzpSec = '';
     let savedRoutingMode = '';
+    let savedControls = {};
     try {
       const rawKds = localStorage.getItem('foodypay_kds_enabled');
       if (rawKds !== null) savedKds = JSON.parse(rawKds);
@@ -241,6 +242,8 @@ export default function DashboardPage({ onShowToast }) {
       savedRzpKey = localStorage.getItem('foodypay_rzp_key_id') || '';
       savedRzpSec = localStorage.getItem('foodypay_rzp_key_secret') || '';
       savedRoutingMode = localStorage.getItem('foodypay_payment_routing_mode') || '';
+      const rawCtrl = localStorage.getItem('foodypay_store_controls');
+      if (rawCtrl) savedControls = JSON.parse(rawCtrl);
     } catch(e) {}
 
     try {
@@ -249,9 +252,9 @@ export default function DashboardPage({ onShowToast }) {
         const u = JSON.parse(savedUser);
         return {
           foodypayId: u.foodypayId || 'FP-985569',
-          storeStatus: true,
-          deliveryStatus: true,
-          pickupStatus: true,
+          storeStatus: savedControls.storeStatus !== undefined ? savedControls.storeStatus : true,
+          deliveryStatus: savedControls.deliveryStatus !== undefined ? savedControls.deliveryStatus : true,
+          pickupStatus: savedControls.pickupStatus !== undefined ? savedControls.pickupStatus : true,
           kdsEnabled: savedKds,
           paymentRoutingMode: savedRoutingMode || u.paymentRoutingMode || 'foodypay_default',
           razorpayKeyId: savedRzpKey || u.razorpayKeyId || 'rzp_live_TjBEt4gu2aUflB',
@@ -267,14 +270,15 @@ export default function DashboardPage({ onShowToast }) {
           lockTableCrud: false,
           lockOrderDeletion: false,
           lockSettingsPanel: false,
+          ...savedControls
         };
       }
     } catch (e) {}
     return {
       foodypayId: '',
-      storeStatus: true,
-      deliveryStatus: true,
-      pickupStatus: true,
+      storeStatus: savedControls.storeStatus !== undefined ? savedControls.storeStatus : true,
+      deliveryStatus: savedControls.deliveryStatus !== undefined ? savedControls.deliveryStatus : true,
+      pickupStatus: savedControls.pickupStatus !== undefined ? savedControls.pickupStatus : true,
       kdsEnabled: savedKds,
       paymentRoutingMode: savedRoutingMode || 'foodypay_default',
       razorpayKeyId: savedRzpKey || 'rzp_live_TjBEt4gu2aUflB',
@@ -290,8 +294,16 @@ export default function DashboardPage({ onShowToast }) {
       lockTableCrud: false,
       lockOrderDeletion: false,
       lockSettingsPanel: false,
+      ...savedControls
     };
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('foodypay_store_controls', JSON.stringify(storeControls));
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {}
+  }, [storeControls]);
 
   // Customer Groups Cohorts State for Telemetry & Targeted Campaigns
   const [customerGroups, setCustomerGroups] = useState(() => {
@@ -2147,6 +2159,7 @@ export default function DashboardPage({ onShowToast }) {
       bc.postMessage({ type: 'ORDER_UPDATED', orderId, newStatus });
       bc.close();
       window.dispatchEvent(new Event('foodypay_order_created'));
+      window.dispatchEvent(new Event('storage'));
     } catch (e) {}
 
     if (newStatus === 'preparing') {
@@ -4167,12 +4180,12 @@ export default function DashboardPage({ onShowToast }) {
                   )}
                 </div>
 
-                {/* 1 to 6 CARDS PER ROW SELECTOR CONTROL (DESKTOP ONLY) */}
+                {/* 1 to 3 CARDS PER ROW SELECTOR CONTROL (DESKTOP ONLY) */}
                 <div className="crm-grid-columns-control" style={{ marginLeft: 'auto' }}>
                   <span className="crm-grid-control-label">
                     <SlidersHorizontal size={14} /> Cards / Row:
                   </span>
-                  {[1, 2, 3, 4, 5, 6].map((num) => (
+                  {[1, 2, 3].map((num) => (
                     <button
                       key={num}
                       type="button"
@@ -4540,7 +4553,7 @@ export default function DashboardPage({ onShowToast }) {
                                 onClick={() => handleUpdateOrderStatus(order._id || order.id, 'out_for_delivery')}
                               >
                                 <Truck size={17} />
-                                <span>Out for Delivery (Nikala Gaya)</span>
+                                <span>Out for Delivery</span>
                               </button>
                             )}
 
@@ -7114,7 +7127,7 @@ export default function DashboardPage({ onShowToast }) {
                 <Truck size={20} color="#F59E0B" /> Order Status Workflow & Stepper Settings (Dine-In vs Delivery)
               </div>
               <div style={{ fontSize: '13.5px', color: '#64748B', marginBottom: '14px' }}>
-                Customize how order status steps (Placed ➔ Kitchen ➔ Delivery Ke Liye Nikala ➔ Delivered) appear on order cards & delivery screens.
+                Customize how order status steps (Placed ➔ Kitchen ➔ Out for Delivery ➔ Delivered) appear on order cards & delivery screens.
               </div>
 
               <div style={{ background: '#F8FAFC', padding: '16px', borderRadius: '12px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '16px' }}>

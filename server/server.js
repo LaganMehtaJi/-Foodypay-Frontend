@@ -57,7 +57,6 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-
 // Server Telemetry & Status API Endpoints (/status, /api/status, /api/health)
 const getSystemStatus = (req, res) => {
   const dbStateMap = {
@@ -99,7 +98,7 @@ const getSystemStatus = (req, res) => {
       dashboard: '/api/dashboard',
       orders: '/api/orders',
       dishes: '/api/dishes',
-      customers: '/api/customers',
+      customers: '/api/customers',  
       coupons: '/api/coupons',
       tables: '/api/tables',
       settings: '/api/settings',
@@ -143,6 +142,7 @@ const startServer = (port) => {
   server.on('error', (error) => {
     if (error.code === 'EADDRINUSE') {
       console.warn(`Port ${port} is in use. Trying port ${Number(port) + 1}...`);
+      console.log('Express server initialized.');
       startServer(Number(port) + 1);
     } else {
       console.error('Server error:', error);

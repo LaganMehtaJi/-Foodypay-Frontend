@@ -207,8 +207,8 @@ export default function CustomerMenuPage({ onShowToast }) {
 
   const { restaurantSlug, merchantId, tableId } = getEffectiveParams();
 
-  // App Navigation 5 Bottom Tabs ('home' | 'orders' | 'scanner' | 'coupons' | 'profile')
-  const [navTab, setNavTab] = useState('home');
+  // App Navigation 4 Bottom Tabs ('orders' | 'scanner' | 'coupons' | 'profile')
+  const [navTab, setNavTab] = useState('scanner');
 
   const formatSlug = (str) => {
     if (!str) return '';
@@ -226,8 +226,9 @@ export default function CustomerMenuPage({ onShowToast }) {
     return 'FP-985569';
   };
 
-  const rawRestName = formatSlug(restaurantSlug || 'FoodyPay Store');
-  const rawTable = tableId ? formatSlug(tableId).replace(/tabel/gi, 'Table') : 'Table 1';
+  const hasScannedTable = Boolean(tableId || restaurantSlug);
+  const rawRestName = formatSlug(restaurantSlug || (hasScannedTable ? 'FoodyPay Store' : ''));
+  const rawTable = tableId ? formatSlug(tableId).replace(/tabel/gi, 'Table') : '';
   const effectiveMerchantId = merchantId || getFeaturedMerchantId();
 
   // Catalog Theme State
@@ -263,6 +264,31 @@ export default function CustomerMenuPage({ onShowToast }) {
       window.removeEventListener('storage', handleThemeSync);
       window.removeEventListener('foodypay_theme_changed', handleThemeSync);
     };
+  }, []);
+
+  // Store Operational Controls (storeStatus, deliveryStatus, pickupStatus)
+  const [storeControls, setStoreControls] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_store_controls');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {
+      storeStatus: true,
+      deliveryStatus: true,
+      pickupStatus: true,
+    };
+  });
+
+  useEffect(() => {
+    const handleControlsSync = () => {
+      try {
+        const saved = localStorage.getItem('foodypay_store_controls');
+        if (saved) setStoreControls(JSON.parse(saved));
+      } catch (e) {}
+    };
+    handleControlsSync();
+    window.addEventListener('storage', handleControlsSync);
+    return () => window.removeEventListener('storage', handleControlsSync);
   }, []);
 
   // Store & Catalog Datasets
@@ -643,13 +669,15 @@ export default function CustomerMenuPage({ onShowToast }) {
     } catch (e) {}
   }, []);
 
-  // Load customer order history
+  // Load customer order history & active order live tracker
   const loadCustomerOrders = () => {
     try {
       const saved = localStorage.getItem('foodypay_crm_orders_v3');
+      let allOrdersList = [];
       if (saved) {
         const list = JSON.parse(saved);
         if (Array.isArray(list)) {
+          allOrdersList = list;
           setCustomerOrders(list);
         }
       }
@@ -658,8 +686,29 @@ export default function CustomerMenuPage({ onShowToast }) {
       const currentSessionOrder = sessionStorage.getItem('foodypay_active_order');
       if (currentSessionOrder) {
         const parsedOrder = JSON.parse(currentSessionOrder);
-        if (parsedOrder && parsedOrder.status !== 'completed' && parsedOrder.status !== 'delivered' && parsedOrder.status !== 'served' && parsedOrder.status !== 'cancelled') {
-          setActivePlacedOrder(parsedOrder);
+        const match = allOrdersList.find((o) => {
+          if (!o) return false;
+          if (parsedOrder.id && (o.id === parsedOrder.id || o.orderId === parsedOrder.id || o._id === parsedOrder.id)) return true;
+          if (parsedOrder._id && (o._id === parsedOrder._id || o.id === parsedOrder._id)) return true;
+          if (parsedOrder.orderId && (o.orderId === parsedOrder.orderId || o.id === parsedOrder.orderId)) return true;
+          
+          const cleanP = String(parsedOrder.id || parsedOrder.orderId || '').replace(/[^0-9]/g, '');
+          const cleanO = String(o.id || o.orderId || '').replace(/[^0-9]/g, '');
+          if (cleanP && cleanO && cleanP === cleanO) return true;
+          return false;
+        });
+
+        const liveOrder = match ? { ...parsedOrder, ...match } : parsedOrder;
+
+        if (
+          liveOrder &&
+          liveOrder.status !== 'completed' &&
+          liveOrder.status !== 'delivered' &&
+          liveOrder.status !== 'served' &&
+          liveOrder.status !== 'cancelled'
+        ) {
+          setActivePlacedOrder(liveOrder);
+          sessionStorage.setItem('foodypay_active_order', JSON.stringify(liveOrder));
         } else {
           setActivePlacedOrder(null);
         }
@@ -674,7 +723,24 @@ export default function CustomerMenuPage({ onShowToast }) {
   useEffect(() => {
     loadCustomerOrders();
     window.addEventListener('storage', loadCustomerOrders);
-    return () => window.removeEventListener('storage', loadCustomerOrders);
+    window.addEventListener('foodypay_order_created', loadCustomerOrders);
+
+    let bc = null;
+    try {
+      bc = new BroadcastChannel('foodypay_live_orders_channel');
+      bc.onmessage = () => {
+        loadCustomerOrders();
+      };
+    } catch (e) {}
+
+    const intervalId = setInterval(loadCustomerOrders, 2000);
+
+    return () => {
+      window.removeEventListener('storage', loadCustomerOrders);
+      window.removeEventListener('foodypay_order_created', loadCustomerOrders);
+      if (bc) bc.close();
+      clearInterval(intervalId);
+    };
   }, []);
 
   // PWA Web App Installation Event Listener
@@ -774,6 +840,12 @@ export default function CustomerMenuPage({ onShowToast }) {
             logoUrl: merchantData.logo?.url || prev.logoUrl,
             gstPercent: merchantData.gstPercent !== undefined ? merchantData.gstPercent : 5,
             upiId: localStorage.getItem('foodypay_upi_id') || merchantData.upiId || merchantData.upi_id || prev.upiId || '7496888449@ptsbi',
+          }));
+          setStoreControls((prev) => ({
+            ...prev,
+            storeStatus: merchantData.storeStatus !== undefined ? merchantData.storeStatus : prev.storeStatus,
+            deliveryStatus: merchantData.deliveryStatus !== undefined ? merchantData.deliveryStatus : prev.deliveryStatus,
+            pickupStatus: merchantData.pickupStatus !== undefined ? merchantData.pickupStatus : prev.pickupStatus,
           }));
         }
       } catch (e) {}
@@ -1010,8 +1082,10 @@ export default function CustomerMenuPage({ onShowToast }) {
   useEffect(() => {
     if (navTab !== 'scanner') {
       stopCamera();
+    } else if (!hasScannedTable) {
+      setIsCameraActive(true);
     }
-  }, [navTab]);
+  }, [navTab, hasScannedTable]);
 
   // Live Camera Barcode/QR Code scanning loop
   useEffect(() => {
@@ -1273,6 +1347,16 @@ export default function CustomerMenuPage({ onShowToast }) {
   const handleInitiateOrder = async (e) => {
     e.preventDefault();
     if (isSubmittingOrder) return;
+
+    if (storeControls.storeStatus === false) {
+      if (onShowToast) onShowToast('⚠️ Restaurant Outlet is currently CLOSED and not accepting orders.');
+      return;
+    }
+
+    if (navTab === 'home' && storeControls.deliveryStatus === false) {
+      if (onShowToast) onShowToast('⚠️ Direct Delivery is currently OFF for this outlet.');
+      return;
+    }
 
     if (getCartCount() === 0) {
       if (onShowToast) onShowToast('Your cart is empty!');
@@ -1814,7 +1898,7 @@ export default function CustomerMenuPage({ onShowToast }) {
         {/* 1. DESKTOP LAPTOP HEADER VIEW (Min-width: 768px) - EXACT BLINKIT MATCH */}
         <div className="fp-header-desktop">
           {/* Logo & Brand */}
-          <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }} onClick={() => setNavTab('home')}>
+          <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }} onClick={() => setNavTab('scanner')}>
             <img
               src="/Logo.png"
               alt="FoodyPay Official Logo"
@@ -1825,54 +1909,22 @@ export default function CustomerMenuPage({ onShowToast }) {
           {/* Vertical Separator */}
           <div style={{ width: '1px', height: '36px', backgroundColor: '#E2E8F0', margin: '0 8px' }} />
 
-          {/* Delivery Info with Auto Location Trigger */}
-          {(() => {
-            const storeLat = storeInfo.latitude || 30.7046;
-            const storeLng = storeInfo.longitude || 76.7179;
-            const custLat = locationState.lat || 30.6978;
-            const custLng = locationState.lng || 76.7112;
-            const bikeDeliveryInfo = calculateBikeDeliveryTime(storeLat, storeLng, custLat, custLng);
-
-            const activeLocationLabel = (() => {
-              if (locationState.loading) return 'Detecting Location...';
-              if (locationState.addressLabel) return locationState.addressLabel;
-              if (savedAddresses.length > 0 && savedAddresses[0].text) return savedAddresses[0].text;
-              try {
-                const rawUser = localStorage.getItem('foodypay_user');
-                if (rawUser) {
-                  const u = JSON.parse(rawUser);
-                  if (u.coveredSectors && u.coveredSectors.trim()) {
-                    const topSec = u.coveredSectors.split(',')[0].trim();
-                    return `${topSec}, ${u.city || 'Mohali'}`;
-                  }
-                  if (u.address && u.address.trim()) return u.address;
-                }
-              } catch (e) {}
-              return 'Sector 71, Mohali';
-            })();
-
-            return (
-              <div style={{ display: 'flex', flexDirection: 'column', cursor: 'pointer', minWidth: '220px' }} onClick={() => setIsLocationModalOpen(true)} title="Click to select or change sector / address">
-                <div style={{ fontSize: '16px', fontWeight: 900, color: '#0F172A', lineHeight: '1.2', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span>Delivery in {bikeDeliveryInfo.totalMins} minutes</span>
-                  {locationState.loading && <RefreshCw size={14} className="spin" color="#FF5E14" />}
-                </div>
-                <div style={{ fontSize: '12.5px', color: '#475569', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                  <span style={{ maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: locationState.available === false ? '#DC2626' : '#475569' }}>
-                    📍 {activeLocationLabel}
-                  </span>
-                  <ChevronDown size={14} color="#334155" />
-                </div>
-              </div>
-            );
-          })()}
+          {/* Restaurant & Table Info Header */}
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: '180px' }}>
+            <div style={{ fontSize: '16px', fontWeight: 900, color: '#0F172A', lineHeight: '1.2' }}>
+              {rawRestName || 'FoodyPay Store'}
+            </div>
+            <div style={{ fontSize: '12.5px', color: '#64748B', fontWeight: 600, marginTop: '2px' }}>
+              {rawTable ? `Self Order • ${rawTable}` : 'Digital Menu Catalog'}
+            </div>
+          </div>
 
           {/* Wide Desktop Search Bar */}
           <div style={{ flex: 1, maxWidth: '640px', position: 'relative', display: 'flex', alignItems: 'center' }}>
             <Search size={18} color="#64748B" style={{ position: 'absolute', left: '14px', pointerEvents: 'none' }} />
             <input
               type="text"
-              placeholder='Search "butter", "bread", "milk", "dishes", "snacks"...'
+              placeholder='Search dishes, menu items, drinks...'
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
@@ -1967,53 +2019,14 @@ export default function CustomerMenuPage({ onShowToast }) {
 
         {/* 2. MOBILE HEADER VIEW (Max-width: 767px) */}
         <div className="fp-header-mobile">
-          {/* Row 1: Delivery Time & Location Header */}
+          {/* Row 1: Restaurant Brand & Actions */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
             <div>
-              <div style={{ fontSize: '12px', fontWeight: 600, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.02em', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span>FoodyPay in</span>
-                <span style={{ backgroundColor: 'rgba(255,255,255,0.2)', padding: '1px 6px', borderRadius: '10px', fontSize: '10px', fontWeight: 700 }}>24/7</span>
+              <div style={{ fontSize: '18px', fontWeight: 900, color: '#FFFFFF', lineHeight: '1.2' }}>
+                {rawRestName || 'FoodyPay Store'}
               </div>
-              {(() => {
-                const storeLat = storeInfo.latitude || 30.7046;
-                const storeLng = storeInfo.longitude || 76.7179;
-                const custLat = locationState.lat || 30.6978;
-                const custLng = locationState.lng || 76.7112;
-                const bikeDeliveryInfo = calculateBikeDeliveryTime(storeLat, storeLng, custLat, custLng);
-
-                return (
-                  <div style={{ fontSize: '22px', fontWeight: 900, color: '#FFFFFF', lineHeight: '1.1', display: 'flex', alignItems: 'center', gap: '6px', margin: '2px 0' }}>
-                    <span>{bikeDeliveryInfo.totalMins} minutes</span>
-                  </div>
-                );
-              })()}
-              <div
-                style={{ fontSize: '13px', color: '#FFFFFF', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px', cursor: 'pointer', backgroundColor: 'rgba(255,255,255,0.18)', padding: '3px 10px', borderRadius: '14px', backdropFilter: 'blur(4px)' }}
-                onClick={() => setIsLocationModalOpen(true)}
-                title="Click to select or change delivery sector/street"
-              >
-                <span style={{ maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  📍 {(() => {
-                    if (locationState.loading) return 'Detecting Location...';
-                    if (locationState.addressLabel) return locationState.addressLabel;
-                    if (savedAddresses.length > 0 && savedAddresses[0].text) return savedAddresses[0].text;
-                    
-                    try {
-                      const rawUser = localStorage.getItem('foodypay_user');
-                      if (rawUser) {
-                        const u = JSON.parse(rawUser);
-                        if (u.coveredSectors && u.coveredSectors.trim()) {
-                          const topSec = u.coveredSectors.split(',')[0].trim();
-                          return `${topSec}, ${u.city || 'Mohali'}`;
-                        }
-                        if (u.address && u.address.trim()) return u.address;
-                      }
-                    } catch (e) {}
-
-                    return 'Sector 71, Mohali';
-                  })()}
-                </span>
-                <ChevronDown size={14} color="#FFFFFF" />
+              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.9)', fontWeight: 600, marginTop: '2px' }}>
+                {rawTable ? `Self Order • ${rawTable}` : 'Digital Menu Catalog'}
               </div>
             </div>
 
@@ -2068,7 +2081,7 @@ export default function CustomerMenuPage({ onShowToast }) {
               <Search size={18} color="#64748B" style={{ position: 'absolute', left: '12px', pointerEvents: 'none' }} />
               <input
                 type="text"
-                placeholder='Search "birthday gift", "milk", "dishes"...'
+                placeholder='Search dishes, menu items, drinks...'
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 style={{
@@ -2394,26 +2407,74 @@ export default function CustomerMenuPage({ onShowToast }) {
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '10px 0 6px', fontSize: '11px', fontWeight: 500 }}>
-              <span style={{ color: '#0284C7' }}>1. Placed </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '10px 0 6px', fontSize: '11px', fontWeight: 600 }}>
+              <span style={{ color: '#0284C7' }}>1. Placed 📦</span>
               <span style={{ color: activePlacedOrder.seen || activePlacedOrder.status !== 'new' ? '#0284C7' : '#94A3B8' }}>
-                2. Acknowledged {activePlacedOrder.seen || activePlacedOrder.status !== 'new' ? '️' : '⏳'}
+                2. Acknowledged {activePlacedOrder.seen || activePlacedOrder.status !== 'new' ? '✅' : '⏳'}
               </span>
-              <span style={{ color: activePlacedOrder.status === 'preparing' || activePlacedOrder.status === 'ready' || activePlacedOrder.status === 'completed' ? '#0284C7' : '#94A3B8' }}>
-                3. Preparing 
+              <span style={{ color: activePlacedOrder.status === 'preparing' || activePlacedOrder.status === 'ready' || activePlacedOrder.status === 'out_for_delivery' || activePlacedOrder.status === 'delivered' || activePlacedOrder.status === 'served' || activePlacedOrder.status === 'completed' ? '#0284C7' : '#94A3B8' }}>
+                3. Kitchen 👨‍🍳
               </span>
-              <span style={{ color: activePlacedOrder.status === 'ready' || activePlacedOrder.status === 'completed' ? '#059669' : '#94A3B8' }}>
-                4. Delivered / Served ️
+              <span style={{ color: activePlacedOrder.status === 'ready' || activePlacedOrder.status === 'out_for_delivery' || activePlacedOrder.status === 'delivered' || activePlacedOrder.status === 'served' || activePlacedOrder.status === 'completed' ? '#059669' : '#94A3B8' }}>
+                4. {activePlacedOrder.table === 'Delivery' || activePlacedOrder.type === 'Home Delivery' ? 'Out for Delivery 🛵' : 'Served 🍽️'}
               </span>
             </div>
 
             <div style={{ backgroundColor: '#E0F2FE', height: '4px', borderRadius: '4px', overflow: 'hidden' }}>
               <div style={{
-                backgroundColor: activePlacedOrder.status === 'completed' || activePlacedOrder.status === 'ready' ? '#10B981' : '#0284C7',
-                width: activePlacedOrder.status === 'completed' || activePlacedOrder.status === 'ready' ? '100%' : activePlacedOrder.status === 'preparing' ? '70%' : activePlacedOrder.seen ? '45%' : '20%',
+                backgroundColor: activePlacedOrder.status === 'completed' || activePlacedOrder.status === 'delivered' || activePlacedOrder.status === 'served' || activePlacedOrder.status === 'ready' ? '#10B981' : '#0284C7',
+                width: activePlacedOrder.status === 'completed' || activePlacedOrder.status === 'delivered' || activePlacedOrder.status === 'served' ? '100%' : activePlacedOrder.status === 'ready' || activePlacedOrder.status === 'out_for_delivery' ? '80%' : activePlacedOrder.status === 'preparing' ? '55%' : activePlacedOrder.seen ? '35%' : '15%',
                 height: '100%',
                 transition: 'width 0.4s ease'
               }} />
+            </div>
+          </div>
+        )}
+
+        {/* STORE OUTLET OFFLINE / CLOSED BANNER */}
+        {storeControls.storeStatus === false && (
+          <div style={{
+            backgroundColor: '#FEF2F2',
+            border: '1.5px solid #FCA5A5',
+            color: '#991B1B',
+            padding: '14px 18px',
+            borderRadius: '16px',
+            marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            boxShadow: '0 4px 14px rgba(239, 68, 68, 0.12)'
+          }}>
+            <AlertCircle size={24} color="#DC2626" style={{ flexShrink: 0 }} />
+            <div>
+              <div style={{ fontWeight: 800, fontSize: '14.5px', color: '#991B1B' }}>🔴 Restaurant Outlet is Currently Closed</div>
+              <div style={{ fontSize: '12.5px', color: '#B91C1C', marginTop: '2px', fontWeight: 500 }}>
+                This store is temporarily closed and not accepting new orders right now. Please check back later!
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* DIRECT DELIVERY OFF BANNER */}
+        {storeControls.storeStatus !== false && storeControls.deliveryStatus === false && navTab === 'home' && (
+          <div style={{
+            backgroundColor: '#FFF7ED',
+            border: '1.5px solid #FDBA74',
+            color: '#9A3412',
+            padding: '12px 16px',
+            borderRadius: '16px',
+            marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            boxShadow: '0 4px 14px rgba(249, 115, 22, 0.12)'
+          }}>
+            <AlertCircle size={22} color="#EA580C" style={{ flexShrink: 0 }} />
+            <div>
+              <div style={{ fontWeight: 800, fontSize: '13.5px', color: '#9A3412' }}>🛵 Direct Delivery Orders currently OFF</div>
+              <div style={{ fontSize: '12px', color: '#C2410C', marginTop: '2px', fontWeight: 500 }}>
+                Home delivery is currently disabled by store management. You can scan table QR for Dine-In ordering.
+              </div>
             </div>
           </div>
         )}
@@ -2526,69 +2587,6 @@ export default function CustomerMenuPage({ onShowToast }) {
                   </div>
                 )}
 
-                {/* MEGA PRICE DROPS CATEGORIES */}
-                {activeCategoryList.filter((c) => c.id !== 'All').length > 0 && (
-                  <div>
-                    <div style={{ textAlign: 'center', marginBottom: '12px' }}>
-                      <div style={{ fontSize: '16px', fontWeight: 900, color: '#FF5E14', letterSpacing: '0.04em' }}>
-                        ✦ MEGA PRICE DROPS ✦
-                      </div>
-                    </div>
-
-                    <div className="fp-mega-drops-grid">
-                      {activeCategoryList.filter((c) => c.id !== 'All').slice(0, 6).map((cat, i) => {
-                        const themeColors = [
-                          { bg: '#FEF3C7', border: '#FDE68A', text: '#92400E', discount: 'Up to 50% OFF' },
-                          { bg: '#DCFCE7', border: '#86EFAC', text: '#15803D', discount: 'Up to 40% OFF' },
-                          { bg: '#EFF6FF', border: '#BFDBFE', text: '#1D4ED8', discount: 'Up to 45% OFF' },
-                          { bg: '#FCE7F3', border: '#FBCFE8', text: '#BE185D', discount: 'Up to 55% OFF' },
-                          { bg: '#F3E8FF', border: '#D8B4FE', text: '#6B21A8', discount: 'Up to 60% OFF' },
-                          { bg: '#FFEDD5', border: '#FDBA74', text: '#C2410C', discount: 'Up to 30% OFF' },
-                        ];
-                        const theme = themeColors[i % themeColors.length];
-                        const sampleDish = (dishes || []).find((d) => String(d.category || '').trim().toLowerCase() === cat.id.toLowerCase());
-                        const imgUrl = sampleDish ? getDishImageUrl(sampleDish) : 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300&auto=format&fit=crop&q=80';
-                        const isSel = selectedCategory === cat.id;
-
-                        return (
-                          <div
-                            key={cat.id}
-                            onClick={() => setSelectedCategory(cat.id)}
-                            style={{
-                              backgroundColor: theme.bg,
-                              border: isSel ? '2px solid #FF5E14' : `1.5px solid ${theme.border}`,
-                              borderRadius: '16px',
-                              padding: '12px',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              justifyContent: 'space-between',
-                              height: '105px',
-                              position: 'relative',
-                              overflow: 'hidden',
-                              cursor: 'pointer',
-                              boxShadow: isSel ? '0 4px 14px rgba(255,94,20,0.2)' : 'none',
-                              transition: 'all 0.2s ease'
-                            }}
-                          >
-                            <span style={{ fontSize: '10px', fontWeight: 900, backgroundColor: theme.text, color: '#FFF', padding: '2px 8px', borderRadius: '8px', width: 'fit-content' }}>
-                              {theme.discount}
-                            </span>
-
-                            <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#0F172A', zIndex: 2, marginTop: 'auto' }}>
-                              {cat.label}
-                            </span>
-
-                            <img
-                              src={imgUrl}
-                              alt={cat.label}
-                              style={{ position: 'absolute', right: '-10px', bottom: '-10px', width: '65px', height: '65px', objectFit: 'cover', borderRadius: '50%', opacity: 0.85 }}
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
               </>
             )}
 
@@ -2833,43 +2831,56 @@ export default function CustomerMenuPage({ onShowToast }) {
                     <QrCode size={24} />
                   </div>
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#0F172A' }}>{storeInfo.name}</h2>
-                      <span style={{ fontSize: '11px', backgroundColor: '#FF5E14', color: '#FFF', padding: '2px 8px', borderRadius: '8px', fontWeight: 700, boxShadow: '0 2px 6px rgba(255,94,20,0.2)' }}>
-                        🪑 {storeInfo.table}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 400, marginTop: '4px' }}>
-                      Merchant ID: <code style={{ backgroundColor: '#F1F5F9', padding: '1px 5px', borderRadius: '4px', color: '#334155' }}>{storeInfo.merchantId}</code> • Live Table Self-Ordering Catalog
-                    </div>
+                    {hasScannedTable ? (
+                      <>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#0F172A' }}>{storeInfo.name}</h2>
+                          <span style={{ fontSize: '11px', backgroundColor: '#FF5E14', color: '#FFF', padding: '2px 8px', borderRadius: '8px', fontWeight: 700, boxShadow: '0 2px 6px rgba(255,94,20,0.2)' }}>
+                            🪑 {storeInfo.table}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 400, marginTop: '4px' }}>
+                          Merchant ID: <code style={{ backgroundColor: '#F1F5F9', padding: '1px 5px', borderRadius: '4px', color: '#334155' }}>{storeInfo.merchantId}</code> • Live Table Self-Ordering Catalog
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: '#0F172A' }}>Scan Restaurant Table QR</h2>
+                        <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 500, marginTop: '4px' }}>
+                          Scan the QR code on your table to view menu & place order
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
 
-                <button
-                  onClick={() => setIsCameraActive(!isCameraActive)}
-                  style={{
-                    backgroundColor: isCameraActive ? '#EF4444' : '#FF5E14',
-                    color: '#FFF',
-                    border: 'none',
-                    padding: '8px 14px',
-                    borderRadius: '10px',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    whiteSpace: 'nowrap',
-                    boxShadow: '0 3px 10px rgba(0,0,0,0.1)'
-                  }}
-                >
-                  <Camera size={14} /> {isCameraActive ? 'Close Scanner' : '📷 Scan Again / New Table'}
-                </button>
+                {hasScannedTable && (
+                  <button
+                    onClick={() => setIsCameraActive(!isCameraActive)}
+                    style={{
+                      backgroundColor: isCameraActive ? '#EF4444' : '#FF5E14',
+                      color: '#FFF',
+                      border: 'none',
+                      padding: '8px 14px',
+                      borderRadius: '10px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      whiteSpace: 'nowrap',
+                      boxShadow: '0 3px 10px rgba(0,0,0,0.1)'
+                    }}
+                  >
+                    <Camera size={14} /> {isCameraActive ? 'Close Scanner' : '📷 Scan Again / New Table'}
+                  </button>
+                )}
               </div>
             </div>
 
             {/* Collapsible High-Tech Camera Scanner Viewport */}
-            {isCameraActive && (
+            {(isCameraActive || !hasScannedTable) && (
               <div style={{
                 backgroundColor: '#0F172A',
                 borderRadius: '20px',
@@ -2996,13 +3007,33 @@ export default function CustomerMenuPage({ onShowToast }) {
                     whiteSpace: 'nowrap'
                   }}
                 >
-                  Switch Table
+                  Open Table
                 </button>
               </form>
             </div>
 
-            {/* TABLE DINE-IN MENU PRODUCTS & CATEGORIES */}
-            <div>
+            {/* UN-SCANNED PROMPT BANNER WHEN VISITING '/' WITHOUT SCANNED TABLE */}
+            {!hasScannedTable && (
+              <div style={{
+                backgroundColor: '#FFF7ED',
+                border: '1.5px dashed #FDBA74',
+                borderRadius: '16px',
+                padding: '28px 18px',
+                textAlign: 'center',
+                color: '#9A3412',
+                marginTop: '4px'
+              }}>
+                <div style={{ fontSize: '36px', marginBottom: '8px' }}>📷 🍴</div>
+                <div style={{ fontWeight: 800, fontSize: '16px', color: '#9A3412' }}>Scan Table QR Code to View Menu</div>
+                <div style={{ fontSize: '13px', color: '#C2410C', marginTop: '6px', maxWidth: '340px', margin: '6px auto 0', lineHeight: '1.4' }}>
+                  Please point your camera at the QR code on your table (or enter table URL above) to load the menu & place your order.
+                </div>
+              </div>
+            )}
+
+            {/* TABLE DINE-IN MENU PRODUCTS & CATEGORIES (ONLY DISPLAYED WHEN A TABLE HAS BEEN SCANNED) */}
+            {hasScannedTable && (
+              <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
                 <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#0F172A' }}>
                   {storeInfo.name} Menu ({storeInfo.table})
@@ -3191,7 +3222,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                   );
                 })}
               </div>
-            </div>
+            )}
 
           </div>
         )}
@@ -3221,7 +3252,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                 <h3 style={{ margin: '0 0 4px', fontSize: '15px', fontWeight: 500, color: '#0F172A' }}>No Orders Placed Yet</h3>
                 <p style={{ margin: '0 0 14px', fontSize: '12px', color: '#64748B', fontWeight: 400 }}>Explore menu to place your first food order!</p>
                 <button
-                  onClick={() => setNavTab('home')}
+                  onClick={() => setNavTab('scanner')}
                   style={{ backgroundColor: '#FF5E14', color: '#FFF', border: 'none', padding: '8px 18px', borderRadius: '8px', fontWeight: 500, fontSize: '12.5px', cursor: 'pointer' }}
                 >
                   Explore Menu
@@ -3761,7 +3792,7 @@ export default function CustomerMenuPage({ onShowToast }) {
         </div>
       )}
 
-      {/* 5-TAB FIXED BOTTOM NAVIGATION BAR */}
+      {/* 4-TAB FIXED BOTTOM NAVIGATION BAR */}
       <div className="fp-mobile-nav-bar" style={{
         position: 'fixed',
         bottom: 0,
@@ -3775,27 +3806,7 @@ export default function CustomerMenuPage({ onShowToast }) {
         justifyContent: 'space-around',
         zIndex: 90
       }}>
-        {/* Tab 1: Home */}
-        <button
-          onClick={() => setNavTab('home')}
-          style={{
-            background: 'none',
-            border: 'none',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '2px',
-            color: navTab === 'home' ? '#FF5E14' : '#64748B',
-            fontWeight: navTab === 'home' ? 700 : 500,
-            fontSize: '11px',
-            cursor: 'pointer'
-          }}
-        >
-          <HomeIcon size={19} color={navTab === 'home' ? '#FF5E14' : '#64748B'} strokeWidth={navTab === 'home' ? 2.5 : 2} />
-          <span>Home</span>
-        </button>
-
-        {/* Tab 2: Orders */}
+        {/* Tab 1: Orders */}
         <button
           onClick={() => setNavTab('orders')}
           style={{
@@ -4198,19 +4209,24 @@ export default function CustomerMenuPage({ onShowToast }) {
 
               <button
                 type="submit"
+                disabled={storeControls.storeStatus === false || (navTab === 'home' && storeControls.deliveryStatus === false)}
                 style={{
                   width: '100%',
-                  backgroundColor: '#FF5E14',
+                  backgroundColor: (storeControls.storeStatus === false || (navTab === 'home' && storeControls.deliveryStatus === false)) ? '#94A3B8' : '#FF5E14',
                   color: '#FFF',
                   border: 'none',
                   borderRadius: '12px',
                   padding: '12px',
                   fontWeight: 600,
                   fontSize: '14.5px',
-                  cursor: 'pointer'
+                  cursor: (storeControls.storeStatus === false || (navTab === 'home' && storeControls.deliveryStatus === false)) ? 'not-allowed' : 'pointer'
                 }}
               >
-                {paymentMode === 'upi' ? 'Proceed to Pay (₹' + finalTotal + ') →' : 'Confirm Order (₹' + finalTotal + ') →'}
+                {storeControls.storeStatus === false
+                  ? 'Restaurant Outlet Closed'
+                  : (navTab === 'home' && storeControls.deliveryStatus === false)
+                    ? 'Direct Delivery Unavailable'
+                    : (paymentMode === 'upi' ? 'Proceed to Pay (₹' + finalTotal + ') →' : 'Confirm Order (₹' + finalTotal + ') →')}
               </button>
             </form>
           </div>
