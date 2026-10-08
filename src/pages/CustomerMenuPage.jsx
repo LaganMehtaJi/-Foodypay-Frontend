@@ -1076,22 +1076,6 @@ export default function CustomerMenuPage({ onShowToast }) {
         }));
       }
     } catch (err) {}
-  };
-
-      const newDishes = await fetchPublicDishesApi(parsed.merchant, parsed.merchant);
-      if (Array.isArray(newDishes) && newDishes.length > 0) {
-        const norm = newDishes.map((item, idx) => ({
-          ...item,
-          id: String(item.id || item._id || `d_${idx}`),
-          price: Number(item.price || item.comboPrice || 0)
-        }));
-        setDishes(norm);
-      } else {
-        setDishes([]);
-      }
-    } catch (err) {
-      setDishes([]);
-    }
 
     navigate(`/${parsed.slug}/${parsed.merchant}/${parsed.table}`);
   };
