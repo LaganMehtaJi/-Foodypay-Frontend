@@ -1,7 +1,9 @@
-export const REMOTE_CLOUD_API_URL = 'https://api.foodypay.online/api';
+export const PRIMARY_API_URL = 'http://3.108.59.216/api';
+export const BACKUP_CLOUD_API_URL = 'https://server-foodypay.onrender.com/api';
+export const REMOTE_CLOUD_API_URL = PRIMARY_API_URL;
 
 /**
- * Dynamic API Base URL resolution for Local, LAN (Mobile on Wi-Fi), and Production (foodypay.in)
+ * Dynamic API Base URL resolution for Local, LAN (Mobile on Wi-Fi), and Production
  */
 export const getApiBaseUrl = () => {
   if (import.meta.env.VITE_API_BASE_URL) {
@@ -14,10 +16,9 @@ export const getApiBaseUrl = () => {
     if (isPrivateLan) {
       return `${protocol}//${hostname}:3000/api`;
     }
-    // Production / Public Cloud EC2 IP or Domain
-    return REMOTE_CLOUD_API_URL;
+    return PRIMARY_API_URL;
   }
-  return REMOTE_CLOUD_API_URL;
+  return PRIMARY_API_URL;
 };
 
 export const API_BASE_URL = getApiBaseUrl();
@@ -38,28 +39,29 @@ export async function parseJsonResponse(res) {
 }
 
 /**
- * High-speed safe fetch helper with multi-port auto-discovery and Cloud Render fallback
+ * High-speed safe fetch helper with automatic Primary EC2 -> Backup Render failover
  */
 export async function safeFetch(path, options = {}) {
   const cleanPath = path.startsWith('/api') ? path.replace('/api', '') : (path.startsWith('/') ? path : `/${path}`);
   const primaryUrl = `${API_BASE_URL}${cleanPath}`;
-  const ports = [3000, 5001, 3001];
+  const backupUrl = `${BACKUP_CLOUD_API_URL}${cleanPath}`;
 
-  // 1. Try Primary URL
+  // 1. Try Primary EC2 API (http://3.108.59.216/api)
   try {
-    console.log(`🌐 [API Call] ${options.method || 'GET'} ${primaryUrl}`);
+    console.log(`🌐 [Primary API Call] ${options.method || 'GET'} ${primaryUrl}`);
     const res = await fetch(primaryUrl, options);
-    console.log(`✅ [API Response ${res.status}] ${primaryUrl}`);
     const contentType = res.headers.get('content-type') || '';
     if (res.ok || contentType.includes('application/json')) {
       const clone = res.clone();
       const text = await clone.text();
       if (text && !text.trim().startsWith('<')) {
+        console.log(`✅ [Primary API Success ${res.status}] ${primaryUrl}`);
         return res;
       }
     }
+    console.warn(`⚠️ [Primary API Non-JSON Response ${res.status}] ${primaryUrl}`);
   } catch (err) {
-    console.warn(`⚠️ [API Error] ${primaryUrl}:`, err.message);
+    console.warn(`⚠️ [Primary API Failed] ${primaryUrl}:`, err.message);
   }
 
   // 2. Try Local Fallback Ports (3000, 5001, 3001) if on local machine / LAN
@@ -67,6 +69,7 @@ export async function safeFetch(path, options = {}) {
     const hostname = window.location.hostname;
     const isLocal = hostname === 'localhost' || hostname === '127.0.0.1' || /^192\.168\./.test(hostname) || /^10\./.test(hostname);
     if (isLocal) {
+      const ports = [3000, 5001, 3001];
       for (const port of ports) {
         try {
           const testUrl = `http://${hostname}:${port}/api${cleanPath}`;
@@ -74,25 +77,33 @@ export async function safeFetch(path, options = {}) {
           const clone = res.clone();
           const text = await clone.text();
           if (res.ok && text && !text.trim().startsWith('<')) {
+            console.log(`✅ [Local Port ${port} Success] ${testUrl}`);
             return res;
           }
         } catch (e) {}
       }
-    } else {
-      // Production Fallback: Try live Render backend directly
-      try {
-        const cloudUrl = `${REMOTE_CLOUD_API_URL}${cleanPath}`;
-        const res = await fetch(cloudUrl, options);
-        const clone = res.clone();
-        const text = await clone.text();
-        if (res.ok && text && !text.trim().startsWith('<')) {
-          return res;
-        }
-      } catch (cloudErr) {}
     }
   }
 
-  // 3. Fallback to direct fetch
+  // 3. Automatic Backup Cloud API Failover (Render Server: https://server-foodypay.onrender.com/api)
+  try {
+    console.log(`🔄 [Backup API Failover] Primary API failed. Retrying on Backup Server -> ${backupUrl}`);
+    const res = await fetch(backupUrl, options);
+    const contentType = res.headers.get('content-type') || '';
+    if (res.ok || contentType.includes('application/json')) {
+      const clone = res.clone();
+      const text = await clone.text();
+      if (text && !text.trim().startsWith('<')) {
+        console.log(`✅ [Backup API Success ${res.status}] ${backupUrl}`);
+        return res;
+      }
+    }
+    return res;
+  } catch (cloudErr) {
+    console.error(`❌ [Both Primary & Backup APIs Failed] ${backupUrl}:`, cloudErr.message);
+  }
+
+  // Final fallback attempt
   return fetch(primaryUrl, options);
 }
 
