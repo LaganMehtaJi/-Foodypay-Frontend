@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import ActiveOrderStatus3DCard from '../components/ActiveOrderStatus3DCanvas';
+import PendingUnpaidBillCard from '../components/PendingUnpaidBillCard';
 import {
   Utensils,
   ShoppingBag,
@@ -597,8 +598,9 @@ export default function CustomerMenuPage({ onShowToast }) {
   const [selectedProductModal, setSelectedProductModal] = useState(null);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
-  // Active Placed Order Tracker state
+  // Active Placed Order Tracker & Unpaid Bill state
   const [activePlacedOrder, setActivePlacedOrder] = useState(null);
+  const [pendingUnpaidOrder, setPendingUnpaidOrder] = useState(null);
   const [copiedLink, setCopiedLink] = useState(false);
 
   // Dynamic Steal Deals / Collections Configuration from Merchant POS Dashboard
@@ -716,8 +718,18 @@ export default function CustomerMenuPage({ onShowToast }) {
       } else {
         setActivePlacedOrder(null);
       }
+
+      // Find any unpaid pending bill order for this customer/table
+      const unpaidMatch = allOrdersList.find((o) => {
+        if (!o || o.status === 'cancelled') return false;
+        const pStatus = String(o.paymentStatus || '').toLowerCase();
+        const isPaid = pStatus.includes('paid') || o.isPaid === true;
+        return !isPaid;
+      });
+      setPendingUnpaidOrder(unpaidMatch || null);
     } catch (e) {
       setActivePlacedOrder(null);
+      setPendingUnpaidOrder(null);
     }
   };
 
@@ -2350,6 +2362,19 @@ export default function CustomerMenuPage({ onShowToast }) {
               try {
                 sessionStorage.removeItem('foodypay_active_order');
               } catch (e) {}
+            }}
+          />
+        )}
+
+        {/* Real-Time Pending Unpaid Bill Alert Card */}
+        {navTab !== 'home' && pendingUnpaidOrder && (
+          <PendingUnpaidBillCard
+            order={pendingUnpaidOrder}
+            onPayOnline={() => {
+              setShowPaymentModal(true);
+            }}
+            onPayCash={() => {
+              addToast(`Cash Payment Request sent to Counter for Table ${pendingUnpaidOrder.table || 'Dine-In'}!`, <Check size={18} />);
             }}
           />
         )}
