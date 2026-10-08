@@ -46,7 +46,9 @@ export async function safeFetch(path, options = {}) {
 
   // 1. Try Primary URL
   try {
+    console.log(`🌐 [API Call] ${options.method || 'GET'} ${primaryUrl}`);
     const res = await fetch(primaryUrl, options);
+    console.log(`✅ [API Response ${res.status}] ${primaryUrl}`);
     const contentType = res.headers.get('content-type') || '';
     if (res.ok || contentType.includes('application/json')) {
       const clone = res.clone();
@@ -55,7 +57,9 @@ export async function safeFetch(path, options = {}) {
         return res;
       }
     }
-  } catch (err) {}
+  } catch (err) {
+    console.warn(`⚠️ [API Error] ${primaryUrl}:`, err.message);
+  }
 
   // 2. Try Local Fallback Ports (3000, 5001, 3001) if on local machine / LAN
   if (typeof window !== 'undefined') {

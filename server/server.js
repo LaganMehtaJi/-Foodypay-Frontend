@@ -62,6 +62,22 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Real-Time API Telemetry & Request Logger Middleware
+app.use((req, res, next) => {
+  const startTime = Date.now();
+  const timestamp = new Date().toISOString();
+  const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'Unknown';
+
+  res.on('finish', () => {
+    const duration = Date.now() - startTime;
+    const status = res.statusCode;
+    const statusIcon = status >= 500 ? '❌' : status >= 400 ? '⚠️' : '✅';
+    console.log(`[${timestamp}] ${statusIcon} ${req.method} ${req.originalUrl || req.url} | Status: ${status} | ${duration}ms | IP: ${clientIp}`);
+  });
+
+  next();
+});
+
 // Server Telemetry & Status API Endpoints (/status, /api/status, /api/health)
 const getSystemStatus = (req, res) => {
   const dbStateMap = {
