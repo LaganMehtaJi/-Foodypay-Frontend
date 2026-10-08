@@ -48,7 +48,7 @@ export async function safeFetch(path, options = {}) {
 
   // 1. Try Primary EC2 Production API (http://3.108.59.216/api)
   try {
-    console.log(`🌐 [PRODUCTION EC2 API CALL] ${options.method || 'GET'} ${primaryUrl}`);
+    console.log(` [PRODUCTION EC2 API CALL] ${options.method || 'GET'} ${primaryUrl}`);
     const res = await fetch(primaryUrl, options);
     const contentType = res.headers.get('content-type') || '';
     if (res.ok || contentType.includes('application/json')) {
@@ -59,9 +59,9 @@ export async function safeFetch(path, options = {}) {
         return res;
       }
     }
-    console.warn(`⚠️ [PRODUCTION EC2 API NON-JSON RESPONSE ${res.status}] ${primaryUrl}`);
+    console.warn(`️ [PRODUCTION EC2 API NON-JSON RESPONSE ${res.status}] ${primaryUrl}`);
   } catch (err) {
-    console.warn(`⚠️ [PRODUCTION EC2 API FAILED] ${primaryUrl}:`, err.message);
+    console.warn(`️ [PRODUCTION EC2 API FAILED] ${primaryUrl}:`, err.message);
   }
 
   // 2. Try Local Fallback Ports (3000, 5001, 3001) if on local machine / LAN
@@ -77,7 +77,7 @@ export async function safeFetch(path, options = {}) {
           const clone = res.clone();
           const text = await clone.text();
           if (res.ok && text && !text.trim().startsWith('<')) {
-            console.log(`💻 [SERVED FROM: LOCALHOST PORT ${port}] -> ${testUrl}`);
+            console.log(` [SERVED FROM: LOCALHOST PORT ${port}] -> ${testUrl}`);
             return res;
           }
         } catch (e) {}
@@ -87,7 +87,7 @@ export async function safeFetch(path, options = {}) {
 
   // 3. Automatic Backup Cloud API Failover (Render Server: https://server-foodypay.onrender.com/api)
   try {
-    console.log(`🔄 [FAILOVER TO BACKUP] Production EC2 Failed! Switching to Backup Server -> ${backupUrl}`);
+    console.log(` [FAILOVER TO BACKUP] Production EC2 Failed! Switching to Backup Server -> ${backupUrl}`);
     const res = await fetch(backupUrl, options);
     const contentType = res.headers.get('content-type') || '';
     if (res.ok || contentType.includes('application/json')) {
@@ -100,7 +100,7 @@ export async function safeFetch(path, options = {}) {
     }
     return res;
   } catch (cloudErr) {
-    console.error(`❌ [BOTH PRODUCTION & BACKUP APIs FAILED] ${backupUrl}:`, cloudErr.message);
+    console.error(` [BOTH PRODUCTION & BACKUP APIs FAILED] ${backupUrl}:`, cloudErr.message);
   }
 
   // Final fallback attempt

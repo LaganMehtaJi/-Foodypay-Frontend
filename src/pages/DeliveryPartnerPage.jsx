@@ -174,9 +174,9 @@ export default function DeliveryPartnerPage({ onShowToast }) {
     if (onShowToast) {
       const msg =
         newStatus === 'out_for_delivery' || newStatus === 'dispatched'
-          ? `🚀 Order #${orderId} Dispatched for Delivery!`
+          ? ` Order #${orderId} Dispatched for Delivery!`
           : newStatus === 'delivered'
-          ? `✅ Order #${orderId} Delivered Successfully!`
+          ? ` Order #${orderId} Delivered Successfully!`
           : `Order status updated to ${newStatus.toUpperCase()}`;
       onShowToast(msg);
     }
@@ -619,7 +619,7 @@ export default function DeliveryPartnerPage({ onShowToast }) {
                                 fontWeight: 900,
                               }}
                             >
-                              {isDone ? '✓' : sIdx + 1}
+                              {isDone ? '' : sIdx + 1}
                             </div>
                             <span
                               style={{
@@ -765,7 +765,7 @@ export default function DeliveryPartnerPage({ onShowToast }) {
                           borderRadius: '6px',
                         }}
                       >
-                        📝 Note: {ord.note}
+                         Note: {ord.note}
                       </div>
                     )}
                   </div>
@@ -825,8 +825,8 @@ export default function DeliveryPartnerPage({ onShowToast }) {
                                 fontSize: '12px',
                               }}
                             >
-                              <option value="Cash">💵 Cash</option>
-                              <option value="UPI">📱 UPI / QR</option>
+                              <option value="Cash"> Cash</option>
+                              <option value="UPI"> UPI / QR</option>
                             </select>
 
                             <button
@@ -927,7 +927,7 @@ export default function DeliveryPartnerPage({ onShowToast }) {
                           fontSize: '13px',
                         }}
                       >
-                        ✓ Order Delivered & Cash/UPI Collected
+                         Order Delivered & Cash/UPI Collected
                       </div>
                     )}
                   </div>

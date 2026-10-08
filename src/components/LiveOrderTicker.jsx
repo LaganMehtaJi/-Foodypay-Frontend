@@ -17,18 +17,18 @@ const AUS_NAMES = [
 ];
 
 const CITIES = [
-  { city: 'Mumbai', country: 'IN', flag: '🇮🇳' },
-  { city: 'Melbourne', country: 'AU', flag: '🇦🇺' },
-  { city: 'Bengaluru', country: 'IN', flag: '🇮🇳' },
-  { city: 'Sydney', country: 'AU', flag: '🇦🇺' },
-  { city: 'Delhi NCR', country: 'IN', flag: '🇮🇳' },
-  { city: 'Brisbane', country: 'AU', flag: '🇦🇺' },
-  { city: 'Hyderabad', country: 'IN', flag: '🇮🇳' },
-  { city: 'Perth', country: 'AU', flag: '🇦🇺' },
-  { city: 'Pune', country: 'IN', flag: '🇮🇳' },
-  { city: 'Adelaide', country: 'AU', flag: '🇦🇺' },
-  { city: 'Chennai', country: 'IN', flag: '🇮🇳' },
-  { city: 'Gold Coast', country: 'AU', flag: '🇦🇺' }
+  { city: 'Mumbai', country: 'IN', flag: '' },
+  { city: 'Melbourne', country: 'AU', flag: '' },
+  { city: 'Bengaluru', country: 'IN', flag: '' },
+  { city: 'Sydney', country: 'AU', flag: '' },
+  { city: 'Delhi NCR', country: 'IN', flag: '' },
+  { city: 'Brisbane', country: 'AU', flag: '' },
+  { city: 'Hyderabad', country: 'IN', flag: '' },
+  { city: 'Perth', country: 'AU', flag: '' },
+  { city: 'Pune', country: 'IN', flag: '' },
+  { city: 'Adelaide', country: 'AU', flag: '' },
+  { city: 'Chennai', country: 'IN', flag: '' },
+  { city: 'Gold Coast', country: 'AU', flag: '' }
 ];
 
 const FOOD_ITEMS = [

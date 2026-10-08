@@ -610,7 +610,7 @@ export default function CustomerMenuPage({ onShowToast }) {
       enabled: true,
       title: 'STEAL DEAL WEEKEND',
       badgePrice: '9',
-      subtitle: '✦ GET ANY ONE ITEM AT SPECIAL PRICE ✦',
+      subtitle: ' GET ANY ONE ITEM AT SPECIAL PRICE ',
       items: [
         { id: 'steal_1', name: 'Corn Cob (Bhutta)', unit: '1 pc', price: 9, originalPrice: 22, unlockAt: 499, isVeg: true, image: 'https://images.unsplash.com/photo-1551754655-cd27e38d2076?w=400&auto=format&fit=crop&q=80' },
         { id: 'steal_2', name: 'Sleepy Owl Assorted Instant Coffee', unit: '10 pcs', price: 29, originalPrice: 49, unlockAt: 899, isVeg: true, image: 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=400&auto=format&fit=crop&q=80' },
@@ -1298,7 +1298,7 @@ export default function CustomerMenuPage({ onShowToast }) {
             discount: c.discount || `Discount Code ${c.code}`,
             minOrder: c.minOrder || 199,
             desc: c.description || 'Voucher assigned to your account from dashboard',
-            badge: isPhoneMatch ? '🎯 ASSIGNED TO YOUR MOBILE' : (c.assignedToAll ? 'STORE OFFER' : 'EXCLUSIVE VIP'),
+            badge: isPhoneMatch ? ' ASSIGNED TO YOUR MOBILE' : (c.assignedToAll ? 'STORE OFFER' : 'EXCLUSIVE VIP'),
             assignedReason: isPhoneMatch ? `Assigned to Mobile ${customerPhone}` : (c.assignedToAll ? 'Available to Store Diners' : `Assigned to ${customerName || customerPhone || 'You'}`)
           });
         }
@@ -1331,7 +1331,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                   discount: c.title || c.discount || 'Assigned VIP Discount',
                   minOrder: c.minOrder || 149,
                   desc: c.description || 'Exclusive voucher assigned specifically to your mobile account',
-                  badge: isPhoneMatch ? '🎯 ASSIGNED TO YOUR MOBILE' : (c.badge || 'VIP VOUCHER'),
+                  badge: isPhoneMatch ? ' ASSIGNED TO YOUR MOBILE' : (c.badge || 'VIP VOUCHER'),
                   assignedReason: isPhoneMatch ? `Assigned to Mobile ${customerPhone}` : (c.targetPhone ? 'Personal VIP Gift' : 'Store Member Offer')
                 });
               }
@@ -1349,12 +1349,12 @@ export default function CustomerMenuPage({ onShowToast }) {
     if (isSubmittingOrder) return;
 
     if (storeControls.storeStatus === false) {
-      if (onShowToast) onShowToast('⚠️ Restaurant Outlet is currently CLOSED and not accepting orders.');
+      if (onShowToast) onShowToast('️ Restaurant Outlet is currently CLOSED and not accepting orders.');
       return;
     }
 
     if (navTab === 'home' && storeControls.deliveryStatus === false) {
-      if (onShowToast) onShowToast('⚠️ Direct Delivery is currently OFF for this outlet.');
+      if (onShowToast) onShowToast('️ Direct Delivery is currently OFF for this outlet.');
       return;
     }
 
@@ -1951,7 +1951,7 @@ export default function CustomerMenuPage({ onShowToast }) {
             <button
               type="button"
               onClick={() => {
-                if (onShowToast) onShowToast('🎙️ Voice Search active! Say item name...');
+                if (onShowToast) onShowToast('️ Voice Search active! Say item name...');
               }}
               style={{ position: 'absolute', right: '12px', background: 'none', border: 'none', color: '#FF5E14', cursor: 'pointer', display: 'flex' }}
               title="Voice Search"
@@ -2122,7 +2122,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                 cursor: 'pointer'
               }}
               onClick={() => {
-                if (onShowToast) onShowToast('🎙️ Voice Search active! Say item name...');
+                if (onShowToast) onShowToast('️ Voice Search active! Say item name...');
               }}
             >
               <Sparkles size={18} color="#FF5E14" />
@@ -2277,7 +2277,7 @@ export default function CustomerMenuPage({ onShowToast }) {
               </div>
               <div>
                 <h3 style={{ margin: '0 0 4px 0', fontSize: '15.5px', fontWeight: 900, color: '#991B1B' }}>
-                  🚫 Not Available Right Now
+                   Not Available Right Now
                 </h3>
                 <p style={{ margin: 0, fontSize: '13px', color: '#B91C1C', fontWeight: 700, lineHeight: '1.4' }}>
                   {locationState.message || 'Sorry, FoodyPay store delivery is currently available ONLY in Sector 71 & Mataur (Mohali).'}
@@ -2296,7 +2296,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                     message: '',
                     reason: null,
                   }));
-                  if (onShowToast) onShowToast('📍 Switched delivery location to Sector 71 & Mataur (Mohali)!');
+                  if (onShowToast) onShowToast(' Switched delivery location to Sector 71 & Mataur (Mohali)!');
                 }}
                 style={{
                   backgroundColor: '#16A34A',
@@ -2313,7 +2313,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                   boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)'
                 }}
               >
-                📍 Switch to Sector 71 &amp; Mataur
+                 Switch to Sector 71 &amp; Mataur
               </button>
 
               <button
@@ -2408,15 +2408,15 @@ export default function CustomerMenuPage({ onShowToast }) {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '10px 0 6px', fontSize: '11px', fontWeight: 600 }}>
-              <span style={{ color: '#0284C7' }}>1. Placed 📦</span>
+              <span style={{ color: '#0284C7' }}>1. Placed </span>
               <span style={{ color: activePlacedOrder.seen || activePlacedOrder.status !== 'new' ? '#0284C7' : '#94A3B8' }}>
-                2. Acknowledged {activePlacedOrder.seen || activePlacedOrder.status !== 'new' ? '✅' : '⏳'}
+                2. Acknowledged {activePlacedOrder.seen || activePlacedOrder.status !== 'new' ? '' : '⏳'}
               </span>
               <span style={{ color: activePlacedOrder.status === 'preparing' || activePlacedOrder.status === 'ready' || activePlacedOrder.status === 'out_for_delivery' || activePlacedOrder.status === 'delivered' || activePlacedOrder.status === 'served' || activePlacedOrder.status === 'completed' ? '#0284C7' : '#94A3B8' }}>
-                3. Kitchen 👨‍🍳
+                3. Kitchen ‍
               </span>
               <span style={{ color: activePlacedOrder.status === 'ready' || activePlacedOrder.status === 'out_for_delivery' || activePlacedOrder.status === 'delivered' || activePlacedOrder.status === 'served' || activePlacedOrder.status === 'completed' ? '#059669' : '#94A3B8' }}>
-                4. {activePlacedOrder.table === 'Delivery' || activePlacedOrder.type === 'Home Delivery' ? 'Out for Delivery 🛵' : 'Served 🍽️'}
+                4. {activePlacedOrder.table === 'Delivery' || activePlacedOrder.type === 'Home Delivery' ? 'Out for Delivery ' : 'Served ️'}
               </span>
             </div>
 
@@ -2447,7 +2447,7 @@ export default function CustomerMenuPage({ onShowToast }) {
           }}>
             <AlertCircle size={24} color="#DC2626" style={{ flexShrink: 0 }} />
             <div>
-              <div style={{ fontWeight: 800, fontSize: '14.5px', color: '#991B1B' }}>🔴 Restaurant Outlet is Currently Closed</div>
+              <div style={{ fontWeight: 800, fontSize: '14.5px', color: '#991B1B' }}> Restaurant Outlet is Currently Closed</div>
               <div style={{ fontSize: '12.5px', color: '#B91C1C', marginTop: '2px', fontWeight: 500 }}>
                 This store is temporarily closed and not accepting new orders right now. Please check back later!
               </div>
@@ -2471,7 +2471,7 @@ export default function CustomerMenuPage({ onShowToast }) {
           }}>
             <AlertCircle size={22} color="#EA580C" style={{ flexShrink: 0 }} />
             <div>
-              <div style={{ fontWeight: 800, fontSize: '13.5px', color: '#9A3412' }}>🛵 Direct Delivery Orders currently OFF</div>
+              <div style={{ fontWeight: 800, fontSize: '13.5px', color: '#9A3412' }}> Direct Delivery Orders currently OFF</div>
               <div style={{ fontSize: '12px', color: '#C2410C', marginTop: '2px', fontWeight: 500 }}>
                 Home delivery is currently disabled by store management. You can scan table QR for Dine-In ordering.
               </div>
@@ -2508,7 +2508,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                         )}
                       </div>
                       <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#FCD34D', marginTop: '6px', letterSpacing: '0.04em' }}>
-                        {stealDealsConfig.subtitle || '✦ GET ANY ONE ITEM AT SPECIAL PRICE ✦'}
+                        {stealDealsConfig.subtitle || ' GET ANY ONE ITEM AT SPECIAL PRICE '}
                       </div>
                     </div>
 
@@ -2775,7 +2775,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                         gap: '8px'
                       }}
                     >
-                      <span>Load More Products 🔽</span>
+                      <span>Load More Products </span>
                     </button>
                   )}
                 </div>
@@ -2873,7 +2873,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                       boxShadow: '0 3px 10px rgba(0,0,0,0.1)'
                     }}
                   >
-                    <Camera size={14} /> {isCameraActive ? 'Close Scanner' : '📷 Scan Again / New Table'}
+                    <Camera size={14} /> {isCameraActive ? 'Close Scanner' : ' Scan Again / New Table'}
                   </button>
                 )}
               </div>
@@ -2964,7 +2964,7 @@ export default function CustomerMenuPage({ onShowToast }) {
 
                 {cameraError ? (
                   <div style={{ fontSize: '12px', color: '#FCA5A5', marginTop: '10px', backgroundColor: 'rgba(239, 68, 68, 0.15)', padding: '6px 12px', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-                    ⚠️ {cameraError}
+                    ️ {cameraError}
                   </div>
                 ) : (
                   <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '10px', fontWeight: 400 }}>
@@ -3023,7 +3023,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                 color: '#9A3412',
                 marginTop: '4px'
               }}>
-                <div style={{ fontSize: '36px', marginBottom: '8px' }}>📷 🍴</div>
+                <div style={{ fontSize: '36px', marginBottom: '8px' }}> </div>
                 <div style={{ fontWeight: 800, fontSize: '16px', color: '#9A3412' }}>Scan Table QR Code to View Menu</div>
                 <div style={{ fontSize: '13px', color: '#C2410C', marginTop: '6px', maxWidth: '340px', margin: '6px auto 0', lineHeight: '1.4' }}>
                   Please point your camera at the QR code on your table (or enter table URL above) to load the menu & place your order.
@@ -3766,7 +3766,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                 ₹{finalTotal}
               </div>
               <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>
-                {navTab === 'scanner' ? `🍽️ ${storeInfo.table || 'Table 1'} (Dine-In)` : '🏠 Home Delivery'}
+                {navTab === 'scanner' ? `️ ${storeInfo.table || 'Table 1'} (Dine-In)` : ' Home Delivery'}
               </div>
             </div>
           </div>
@@ -3948,7 +3948,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                     color: navTab === 'scanner' ? '#FF5E14' : '#1D4ED8',
                     border: navTab === 'scanner' ? '1px solid #FFEDD5' : '1px solid #BFDBFE'
                   }}>
-                    {navTab === 'scanner' ? `🍽️ ${storeInfo.table || 'Table 1'} (Dine-In)` : '🏠 Home Delivery'}
+                    {navTab === 'scanner' ? `️ ${storeInfo.table || 'Table 1'} (Dine-In)` : ' Home Delivery'}
                   </span>
                 </div>
                 <span style={{ fontSize: '11.5px', color: '#64748B', fontWeight: 500 }}>{storeInfo.name}</span>
@@ -4078,7 +4078,7 @@ export default function CustomerMenuPage({ onShowToast }) {
 
                         if (matchedOtherStore) {
                           const otherFpId = matchedOtherStore.foodypayId || matchedOtherStore.merchantId;
-                          if (onShowToast) onShowToast(`⚠️ Promocode "${val}" belongs to store ${otherFpId} and is NOT valid for ${storeInfo.name}!`);
+                          if (onShowToast) onShowToast(`️ Promocode "${val}" belongs to store ${otherFpId} and is NOT valid for ${storeInfo.name}!`);
                           return;
                         }
 
@@ -4086,7 +4086,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                         const match = assignedList.find((c) => c.code.toUpperCase() === val) || (dbCoupons || []).find((c) => c.code.toUpperCase() === val && (!c.foodypayId || c.foodypayId.toUpperCase() === currentStoreId));
                         if (match) {
                           setAppliedCoupon({ code: match.code, label: match.discount || match.type });
-                          if (onShowToast) onShowToast(`🎯 Coupon "${match.code}" Applied!`);
+                          if (onShowToast) onShowToast(` Coupon "${match.code}" Applied!`);
                         } else {
                           if (onShowToast) onShowToast(` Invalid or Unassigned Coupon code "${val}" for this store`);
                         }
@@ -4098,7 +4098,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                   </div>
                 ) : (
                   <div style={{ fontSize: '12px', color: '#059669', fontWeight: 700 }}>
-                    ✅ 20% Discount applied to final bill!
+                     20% Discount applied to final bill!
                   </div>
                 )}
 
@@ -4116,7 +4116,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                           key={cp.code}
                           onClick={() => {
                             setAppliedCoupon({ code: cp.code, label: cp.discount });
-                            if (onShowToast) onShowToast(`🎯 Coupon "${cp.code}" Applied!`);
+                            if (onShowToast) onShowToast(` Coupon "${cp.code}" Applied!`);
                           }}
                           style={{
                             backgroundColor: '#FFF',
@@ -4805,7 +4805,7 @@ export default function CustomerMenuPage({ onShowToast }) {
 
                     {modalImages.length > 1 && (
                       <div style={{ position: 'absolute', bottom: '12px', right: '12px', backgroundColor: 'rgba(15,23,42,0.75)', color: '#FFFFFF', padding: '3px 8px', borderRadius: '6px', fontSize: '10.5px', fontWeight: 700 }}>
-                        📷 {safeIndex + 1} / {modalImages.length}
+                         {safeIndex + 1} / {modalImages.length}
                       </div>
                     )}
                   </div>
@@ -4851,7 +4851,7 @@ export default function CustomerMenuPage({ onShowToast }) {
 
               {selectedProductModal.category && (
                 <div style={{ fontSize: '12px', color: '#FF5E14', fontWeight: 600, marginBottom: '10px' }}>
-                  🏷️ {selectedProductModal.category}
+                  ️ {selectedProductModal.category}
                 </div>
               )}
 
@@ -5039,7 +5039,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                     boxShadow: '0 4px 14px rgba(255, 94, 20, 0.35)'
                   }}
                 >
-                  <Download size={18} /> ⚡ Click to Install App Now
+                  <Download size={18} />  Click to Install App Now
                 </button>
               </div>
             ) : null}
@@ -5053,7 +5053,7 @@ export default function CustomerMenuPage({ onShowToast }) {
               {/* Android Chrome */}
               <div style={{ marginBottom: '12px' }}>
                 <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#334155', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span>📱 For Android (Chrome / Brave / Edge):</span>
+                  <span> For Android (Chrome / Brave / Edge):</span>
                 </div>
                 <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '12px', color: '#64748B', lineHeight: '1.5' }}>
                   <li>Tap the <strong>3 vertical dots (⋮)</strong> in browser top right menu.</li>
@@ -5065,7 +5065,7 @@ export default function CustomerMenuPage({ onShowToast }) {
               {/* iOS Safari */}
               <div>
                 <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#334155', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span>🍏 For iPhone (Safari):</span>
+                  <span> For iPhone (Safari):</span>
                 </div>
                 <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '12px', color: '#64748B', lineHeight: '1.5' }}>
                   <li>Tap the <strong>Share button ( ⎕↑ )</strong> at bottom of Safari screen.</li>

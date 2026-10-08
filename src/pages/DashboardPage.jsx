@@ -379,7 +379,7 @@ export default function DashboardPage({ onShowToast }) {
       enabled: true,
       title: 'STEAL DEAL WEEKEND',
       badgePrice: '9',
-      subtitle: '✦ GET ANY ONE ITEM AT SPECIAL PRICE ✦',
+      subtitle: ' GET ANY ONE ITEM AT SPECIAL PRICE ',
       items: [
         { id: 'steal_1', name: 'Corn Cob (Bhutta)', unit: '1 pc', price: 9, originalPrice: 22, unlockAt: 499, isVeg: true, image: 'https://images.unsplash.com/photo-1551754655-cd27e38d2076?w=400&auto=format&fit=crop&q=80' },
         { id: 'steal_2', name: 'Sleepy Owl Assorted Instant Coffee', unit: '10 pcs', price: 29, originalPrice: 49, unlockAt: 899, isVeg: true, image: 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=400&auto=format&fit=crop&q=80' },
@@ -673,7 +673,7 @@ export default function DashboardPage({ onShowToast }) {
       window.dispatchEvent(new Event('foodypay_store_location_updated'));
     } catch (e) {}
 
-    addToast(`📍 Store Location & ${updatedRadius} KM Radius Saved! Customers within ${updatedRadius} KM will get live delivery.`, <Check size={18} />);
+    addToast(` Store Location & ${updatedRadius} KM Radius Saved! Customers within ${updatedRadius} KM will get live delivery.`, <Check size={18} />);
   };
 
   const handleDetectStoreCurrentGps = () => {
@@ -938,12 +938,12 @@ export default function DashboardPage({ onShowToast }) {
         setCurrentUser(updatedUser);
         window.dispatchEvent(new Event('storage'));
         playMilestoneCelebration();
-        addToast(`🎉 Paid by Razorpay (${paymentId})! Plan ${targetPlan} unlocked until ${expDateIsoStr}.`, <CheckCircle2 size={18} color="#10B981" />);
+        addToast(` Paid by Razorpay (${paymentId})! Plan ${targetPlan} unlocked until ${expDateIsoStr}.`, <CheckCircle2 size={18} color="#10B981" />);
         setUpgradeModalFeature(null);
       },
       modal: {
         ondismiss: function () {
-          addToast('⚠️ Subscription payment cancelled or dismissed. Features remain locked.', <AlertCircle size={18} color="#EF4444" />);
+          addToast('️ Subscription payment cancelled or dismissed. Features remain locked.', <AlertCircle size={18} color="#EF4444" />);
         }
       }
     };
@@ -2759,7 +2759,7 @@ export default function DashboardPage({ onShowToast }) {
       triggerSound(playMilestoneCelebration);
       confetti({ particleCount: 90, spread: 80, origin: { y: 0.3 } });
       addToast(
-        `🎯 Promocode "${campaignCouponCode}" assigned to Mobile ${cleanPhone}! Available in Customer Web App.`,
+        ` Promocode "${campaignCouponCode}" assigned to Mobile ${cleanPhone}! Available in Customer Web App.`,
         <Gift size={18} />
       );
       return;
@@ -2806,7 +2806,7 @@ export default function DashboardPage({ onShowToast }) {
     triggerSound(playMilestoneCelebration);
     addToast(
       cleanPhone
-        ? `🎯 Promocode "${selectedCouponForAssignModal.code}" assigned to Mobile ${cleanPhone}! Available in Customer Web App.`
+        ? ` Promocode "${selectedCouponForAssignModal.code}" assigned to Mobile ${cleanPhone}! Available in Customer Web App.`
         : `Promocode "${selectedCouponForAssignModal.code}" is now available to all store diners!`,
       <Gift size={18} />
     );
@@ -3633,7 +3633,7 @@ export default function DashboardPage({ onShowToast }) {
                 <span>Customer Reviews</span>
               </div>
               <span className="crm-badge-new" style={{ background: '#FEF3C7', color: '#D97706', padding: '1px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 800 }}>
-                4.8 ★
+                4.8 
               </span>
             </button>
           )}
@@ -3882,7 +3882,7 @@ export default function DashboardPage({ onShowToast }) {
               </div>
               <div>
                 <div style={{ fontSize: '15px', fontWeight: 900, color: '#991B1B', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  ⚠️ Your Subscription Plan Has Expired!
+                  ️ Your Subscription Plan Has Expired!
                   <span style={{ fontSize: '11.5px', background: '#FEE2E2', color: '#B91C1C', padding: '2px 8px', borderRadius: '12px', textTransform: 'uppercase', fontWeight: 800 }}>
                     Starter Free Active
                   </span>
@@ -3997,13 +3997,13 @@ export default function DashboardPage({ onShowToast }) {
                             whiteSpace: 'nowrap'
                           }}
                         >
-                          <option value="today">📅 Today</option>
-                          <option value="yesterday">📅 Yesterday</option>
-                          <option value="last_7">📅 Last 7 days</option>
-                          <option value="last_30">📅 Last 30 days</option>
-                          <option value="this_month">📅 This Month</option>
-                          <option value="custom">🗓️ Custom Date Range (Day-Wise Calendar)</option>
-                          <option value="all">🌐 All Time (All Sales)</option>
+                          <option value="today"> Today</option>
+                          <option value="yesterday"> Yesterday</option>
+                          <option value="last_7"> Last 7 days</option>
+                          <option value="last_30"> Last 30 days</option>
+                          <option value="this_month"> This Month</option>
+                          <option value="custom">️ Custom Date Range (Day-Wise Calendar)</option>
+                          <option value="all"> All Time (All Sales)</option>
                         </select>
                         <Calendar size={16} color="#475569" style={{ position: 'absolute', left: '10px', pointerEvents: 'none' }} />
                         <ChevronDown size={15} color="#475569" style={{ position: 'absolute', right: '10px', pointerEvents: 'none' }} />
@@ -4218,7 +4218,7 @@ export default function DashboardPage({ onShowToast }) {
                 }}
               >
                 <span>
-                  🔍 Showing <b>{filteredOrders.length}</b> orders matching "<b>{orderSearchQuery}</b>" across all sections (Paid & Unpaid)
+                   Showing <b>{filteredOrders.length}</b> orders matching "<b>{orderSearchQuery}</b>" across all sections (Paid & Unpaid)
                 </span>
                 <button
                   type="button"
@@ -4406,7 +4406,7 @@ export default function DashboardPage({ onShowToast }) {
                         <div style={{ backgroundColor: '#F0FDF4', border: '1.5px solid #86EFAC', borderRadius: '10px', padding: '8px 12px', marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', fontWeight: 800, color: '#15803D' }}>
                             <CheckCircle2 size={16} color="#16A34A" />
-                            <span>Already Collected ✓</span>
+                            <span>Already Collected </span>
                           </div>
                           <span style={{ fontSize: '11.5px', fontWeight: 900, color: '#15803D', backgroundColor: '#DCFCE7', padding: '2px 8px', borderRadius: '6px', border: '1px solid #86EFAC' }}>
                             {order.paymentLabel || 'Paid Online'}
@@ -4444,7 +4444,7 @@ export default function DashboardPage({ onShowToast }) {
                         <div>
                           <div className="crm-total-amount">₹{order.total}</div>
                           <div style={{ fontSize: '11px', fontWeight: 800, color: isOrderPaid ? '#15803D' : '#C2410C', marginTop: '1px' }}>
-                            {isOrderPaid ? '✓ Payment Received' : '⏳ Bill Pending'}
+                            {isOrderPaid ? ' Payment Received' : '⏳ Bill Pending'}
                           </div>
                         </div>
                         <span
@@ -4459,7 +4459,7 @@ export default function DashboardPage({ onShowToast }) {
                             fontSize: '12px',
                           }}
                         >
-                          {isOrderPaid ? '✓ ' : '⏳ '}{order.paymentLabel || (isOrderPaid ? 'Paid' : 'Unpaid')}
+                          {isOrderPaid ? ' ' : '⏳ '}{order.paymentLabel || (isOrderPaid ? 'Paid' : 'Unpaid')}
                         </span>
                       </div>
 
@@ -4482,7 +4482,7 @@ export default function DashboardPage({ onShowToast }) {
                               title={order.seen ? "Order Acknowledged (Bell Stopped)" : "Acknowledge Order & Stop Bell Alarm"}
                             >
                               {order.seen ? <Check size={16} /> : <Eye size={16} />}
-                              <span>{order.seen ? '✓ SEEN (BELL STOPPED)' : '️ SEEN (STOP BELL)'}</span>
+                              <span>{order.seen ? ' SEEN (BELL STOPPED)' : '️ SEEN (STOP BELL)'}</span>
                             </button>
                             <button
                               type="button"
@@ -4807,7 +4807,7 @@ export default function DashboardPage({ onShowToast }) {
                           }}
                         >
                           {order.seen ? <Check size={16} /> : <Eye size={16} />}
-                          <span>{order.seen ? '✓ SEEN (STOPPED)' : '️ SEEN (STOP BELL)'}</span>
+                          <span>{order.seen ? ' SEEN (STOPPED)' : '️ SEEN (STOP BELL)'}</span>
                         </button>
                         <button
                           onClick={() => handleStartPreparingOrder(order._id || order.id)}
@@ -4913,7 +4913,7 @@ export default function DashboardPage({ onShowToast }) {
                               />
                               {hasMultiPhotos && (
                                 <span style={{ position: 'absolute', bottom: '2px', right: '2px', background: 'rgba(15,23,42,0.85)', color: '#FFF', fontSize: '9px', fontWeight: 800, padding: '1px 4px', borderRadius: '4px' }}>
-                                  📷 {dish.images.length}
+                                   {dish.images.length}
                                 </span>
                               )}
                             </div>
@@ -4989,7 +4989,7 @@ export default function DashboardPage({ onShowToast }) {
                           </div>
                           {dish.showDiscountTag !== false && Number(dish.originalPrice) > Number(dish.price) ? (
                             <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#059669', background: '#ECFDF5', border: '1px solid #A7F3D0', padding: '1px 6px', borderRadius: '6px', width: 'fit-content' }}>
-                              🔥 {Math.round(((Number(dish.originalPrice) - Number(dish.price)) / Number(dish.originalPrice)) * 100)}% OFF
+                               {Math.round(((Number(dish.originalPrice) - Number(dish.price)) / Number(dish.originalPrice)) * 100)}% OFF
                             </span>
                           ) : dish.showDiscountTag === false && Number(dish.originalPrice) > Number(dish.price) ? (
                             <span style={{ fontSize: '10px', color: '#94A3B8', fontStyle: 'italic' }}>
@@ -5395,7 +5395,7 @@ export default function DashboardPage({ onShowToast }) {
                       </div>
                       <div>
                         <div style={{ fontWeight: 800, fontSize: '14px' }}>{storeControls.restName || 'FoodyPay Bistro'}</div>
-                        <div style={{ fontSize: '10px', opacity: 0.9 }}>📍 Table 4 • Quick Digital Order</div>
+                        <div style={{ fontSize: '10px', opacity: 0.9 }}> Table 4 • Quick Digital Order</div>
                       </div>
                     </div>
                   </div>
@@ -5410,7 +5410,7 @@ export default function DashboardPage({ onShowToast }) {
                     {/* Category Tabs */}
                     <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', overflowX: 'hidden' }}>
                       <div style={{ background: selectedCatalogTheme.primary, color: '#FFFFFF', padding: '5px 10px', borderRadius: '14px', fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                        ★ Best Sellers
+                         Best Sellers
                       </div>
                       <div style={{ background: selectedCatalogTheme.bg, color: '#475569', padding: '5px 10px', borderRadius: '14px', fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap' }}>
                         Starter &amp; Snacks
@@ -5573,7 +5573,7 @@ export default function DashboardPage({ onShowToast }) {
                     type="text"
                     value={stealDealsConfig.subtitle || ''}
                     onChange={(e) => saveStealDealsConfig({ ...stealDealsConfig, subtitle: e.target.value })}
-                    placeholder="e.g. ✦ GET ANY ONE ITEM AT SPECIAL PRICE ✦"
+                    placeholder="e.g.  GET ANY ONE ITEM AT SPECIAL PRICE "
                     style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #CBD5E1', fontSize: '14px', fontWeight: 600, outline: 'none' }}
                   />
                 </div>
@@ -6238,7 +6238,7 @@ export default function DashboardPage({ onShowToast }) {
                   >
                     <option value="all_group">Send to ALL Group Members</option>
                     <option value="random_n">Selective / Random N Members</option>
-                    <option value="specific_phone">🎯 Assign to Specific Mobile Number</option>
+                    <option value="specific_phone"> Assign to Specific Mobile Number</option>
                   </select>
                 </div>
 
@@ -6503,7 +6503,7 @@ export default function DashboardPage({ onShowToast }) {
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.3)', padding: '10px 16px', borderRadius: '12px', color: '#FFFFFF', fontSize: '13px', fontWeight: 800 }}>
                 <MapPin size={18} color="#93C5FD" />
-                <span>📍 Active Store Delivery Radius Limit: <strong>{storeDeliveryRadiusSlider} KM</strong> (Live GPS Active)</span>
+                <span> Active Store Delivery Radius Limit: <strong>{storeDeliveryRadiusSlider} KM</strong> (Live GPS Active)</span>
               </div>
             </div>
 
@@ -6544,7 +6544,7 @@ export default function DashboardPage({ onShowToast }) {
                     }}
                   >
                     <Compass size={16} color="#15803D" className={isDetectingStoreGps ? 'spin' : ''} />
-                    {isDetectingStoreGps ? 'Detecting Store GPS...' : '📍 Auto-Detect Store Location'}
+                    {isDetectingStoreGps ? 'Detecting Store GPS...' : ' Auto-Detect Store Location'}
                   </button>
                 </div>
               </div>
@@ -6581,7 +6581,7 @@ export default function DashboardPage({ onShowToast }) {
                       Delivery Radius Limit Slider:
                     </label>
                     <span style={{ fontSize: '12.5px', fontWeight: 900, color: '#10B981', backgroundColor: '#ECFDF5', padding: '2px 10px', borderRadius: '8px', border: '1px solid #A7F3D0' }}>
-                      ⚡ {storeDeliveryRadiusSlider} KM Radius
+                       {storeDeliveryRadiusSlider} KM Radius
                     </span>
                   </div>
                   <input
@@ -6627,7 +6627,7 @@ export default function DashboardPage({ onShowToast }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: '16px', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#475569', marginBottom: '8px' }}>
-                    🎯 Live Delivery Status for Nearby Sectors (Radius Limit: {storeDeliveryRadiusSlider} KM):
+                     Live Delivery Status for Nearby Sectors (Radius Limit: {storeDeliveryRadiusSlider} KM):
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                     {['Sector 71, Mohali', 'Mataur, Mohali', 'Sector 70, Mohali', 'Phase 7, Mohali', 'Phase 3B2, Mohali', 'Aerocity, Mohali', 'Kharar', 'Zirakpur'].map((s, idx) => {
@@ -6667,9 +6667,9 @@ export default function DashboardPage({ onShowToast }) {
                             boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
                           }}
                         >
-                          📍 {s}
+                           {s}
                           <span style={{ fontSize: '10.5px', color: isWithinRadius ? '#047857' : '#991B1B', backgroundColor: isWithinRadius ? '#DCFCE7' : '#FEE2E2', padding: '1px 6px', borderRadius: '10px' }}>
-                            {isWithinRadius ? `✓ ${distInfo.distanceKm} KM (${distInfo.totalMins}m)` : `🚫 ${distInfo.distanceKm} KM (Out of Radius)`}
+                            {isWithinRadius ? ` ${distInfo.distanceKm} KM (${distInfo.totalMins}m)` : ` ${distInfo.distanceKm} KM (Out of Radius)`}
                           </span>
                         </span>
                       );
@@ -6708,7 +6708,7 @@ export default function DashboardPage({ onShowToast }) {
                   transition: 'all 0.2s'
                 }}
               >
-                📍 Delivery Zones ({(deliveryZones || []).length})
+                 Delivery Zones ({(deliveryZones || []).length})
               </button>
 
               <button
@@ -6726,7 +6726,7 @@ export default function DashboardPage({ onShowToast }) {
                   transition: 'all 0.2s'
                 }}
               >
-                🏪 Stores &amp; Owner Access ({(storesList || []).length})
+                 Stores &amp; Owner Access ({(storesList || []).length})
               </button>
             </div>
 
@@ -6758,7 +6758,7 @@ export default function DashboardPage({ onShowToast }) {
                               {zone.zoneId || 'ZONE'}
                             </span>
                             <h4 style={{ margin: '6px 0 2px', fontSize: '17px', fontWeight: 900, color: '#0F172A' }}>{zone.name}</h4>
-                            <div style={{ fontSize: '12.5px', color: '#64748B', fontWeight: 600 }}>📍 {zone.city}{zone.state ? `, ${zone.state}` : ''} {zone.pincode ? `(${zone.pincode})` : ''}</div>
+                            <div style={{ fontSize: '12.5px', color: '#64748B', fontWeight: 600 }}> {zone.city}{zone.state ? `, ${zone.state}` : ''} {zone.pincode ? `(${zone.pincode})` : ''}</div>
                           </div>
                           <span style={{ fontSize: '11px', fontWeight: 800, padding: '3px 10px', borderRadius: '12px', background: zone.isActive !== false ? '#DCFCE7' : '#FEF2F2', color: zone.isActive !== false ? '#15803D' : '#DC2626' }}>
                             {zone.isActive !== false ? 'ACTIVE' : 'INACTIVE'}
@@ -6769,7 +6769,7 @@ export default function DashboardPage({ onShowToast }) {
                           <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '2px' }}>
                             {(Array.isArray(zone.coveredSectors) ? zone.coveredSectors : (zone.coveredSectors || '').split(',')).filter(Boolean).map((sec, i) => (
                               <span key={i} style={{ fontSize: '10.5px', fontWeight: 700, padding: '2px 7px', borderRadius: '6px', background: '#F1F5F9', color: '#334155', border: '1px solid #E2E8F0' }}>
-                                🏷️ {sec.trim()}
+                                ️ {sec.trim()}
                               </span>
                             ))}
                           </div>
@@ -6817,7 +6817,7 @@ export default function DashboardPage({ onShowToast }) {
                               {store.storeId || 'STORE'}
                             </span>
                             <h4 style={{ margin: '6px 0 2px', fontSize: '18px', fontWeight: 900, color: '#0F172A' }}>{store.name}</h4>
-                            <div style={{ fontSize: '12.5px', color: '#64748B', fontWeight: 600 }}>📍 {store.address}, {store.city}</div>
+                            <div style={{ fontSize: '12.5px', color: '#64748B', fontWeight: 600 }}> {store.address}, {store.city}</div>
                           </div>
                           <span style={{ fontSize: '11px', fontWeight: 800, padding: '3px 10px', borderRadius: '12px', background: store.isActive !== false ? '#DCFCE7' : '#FEF2F2', color: store.isActive !== false ? '#15803D' : '#DC2626' }}>
                             {store.isActive !== false ? 'ACTIVE' : 'INACTIVE'}
@@ -6825,7 +6825,7 @@ export default function DashboardPage({ onShowToast }) {
                         </div>
 
                         <div style={{ background: '#EFF6FF', padding: '10px 12px', borderRadius: '10px', fontSize: '12.5px', color: '#1E40AF' }}>
-                          <b>📧 Owner Email Access:</b> <span style={{ fontWeight: 800, textDecoration: 'underline' }}>{store.ownerEmail || 'Not Assigned'}</span>
+                          <b> Owner Email Access:</b> <span style={{ fontWeight: 800, textDecoration: 'underline' }}>{store.ownerEmail || 'Not Assigned'}</span>
                           {store.ownerName ? ` (${store.ownerName})` : ''}
                         </div>
 
@@ -6842,7 +6842,7 @@ export default function DashboardPage({ onShowToast }) {
                             {Array.isArray(store.deliveryZones) && store.deliveryZones.length > 0 ? (
                               store.deliveryZones.map((z) => (
                                 <span key={z._id || z.name} style={{ background: '#DBEAFE', color: '#1E40AF', padding: '3px 10px', borderRadius: '12px', fontSize: '11.5px', fontWeight: 800 }}>
-                                  📍 {z.name} ({z.city})
+                                   {z.name} ({z.city})
                                 </span>
                               ))
                             ) : (
@@ -7127,7 +7127,7 @@ export default function DashboardPage({ onShowToast }) {
                 <Truck size={20} color="#F59E0B" /> Order Status Workflow & Stepper Settings (Dine-In vs Delivery)
               </div>
               <div style={{ fontSize: '13.5px', color: '#64748B', marginBottom: '14px' }}>
-                Customize how order status steps (Placed ➔ Kitchen ➔ Out for Delivery ➔ Delivered) appear on order cards & delivery screens.
+                Customize how order status steps (Placed  Kitchen  Out for Delivery  Delivered) appear on order cards & delivery screens.
               </div>
 
               <div style={{ background: '#F8FAFC', padding: '16px', borderRadius: '12px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -7135,9 +7135,9 @@ export default function DashboardPage({ onShowToast }) {
                   <div style={{ fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '8px' }}>WORKFLOW MODE</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
                     {[
-                      { id: 'auto', label: '⚡ Auto Dynamic (Dine-In: Placed ➔ Kitchen ➔ Ready ➔ Served | Delivery: Placed ➔ Kitchen ➔ Out for Delivery ➔ Delivered)' },
-                      { id: 'dine_in', label: '🍽️ Dine-In Mode (Placed ➔ Kitchen ➔ Ready ➔ Served)' },
-                      { id: 'delivery', label: '🚀 Delivery & Store Mode (Placed ➔ Kitchen ➔ Out for Delivery ➔ Delivered)' },
+                      { id: 'auto', label: ' Auto Dynamic (Dine-In: Placed  Kitchen  Ready  Served | Delivery: Placed  Kitchen  Out for Delivery  Delivered)' },
+                      { id: 'dine_in', label: '️ Dine-In Mode (Placed  Kitchen  Ready  Served)' },
+                      { id: 'delivery', label: ' Delivery & Store Mode (Placed  Kitchen  Out for Delivery  Delivered)' },
                     ].map((mode) => (
                       <label
                         key={mode.id}
@@ -7177,7 +7177,7 @@ export default function DashboardPage({ onShowToast }) {
                 {/* Custom Order Status Stepper Step Names Customizer */}
                 <div style={{ paddingTop: '12px', borderTop: '1px dashed #CBD5E1' }}>
                   <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0F172A', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <SlidersHorizontal size={16} color="#FF5E14" /> Customize Status Step Names (Placed ➔ Kitchen ➔ Delivery ➔ Served)
+                    <SlidersHorizontal size={16} color="#FF5E14" /> Customize Status Step Names (Placed  Kitchen  Delivery  Served)
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: '10px' }}>
@@ -7240,7 +7240,7 @@ export default function DashboardPage({ onShowToast }) {
                   <div style={{ paddingTop: '12px', borderTop: '1px dashed #CBD5E1', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
                     <div>
                       <div style={{ fontSize: '13px', fontWeight: 800, color: '#0F172A' }}>
-                        🚚 Delivery Partner Portal Link
+                         Delivery Partner Portal Link
                       </div>
                       <div style={{ fontSize: '11.5px', color: '#64748B', marginTop: '2px' }}>
                         URL: <code>https://foodypay.in/{(storeControls.restName || 'thefoodypay').toLowerCase().replace(/\s+/g, '-')}/{storeControls.foodypayId || 'FP-790044'}/delivery-partner</code>
@@ -9641,7 +9641,7 @@ export default function DashboardPage({ onShowToast }) {
                     {Number(editProductForm.originalPrice) > Number(editProductForm.price) && Number(editProductForm.price) > 0 && (
                       <div style={{ background: '#ECFDF5', border: '1.5px solid #A7F3D0', padding: '8px 12px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#047857', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span>🔥 Discount Calculated:</span>
+                          <span> Discount Calculated:</span>
                           <span style={{ background: '#10B981', color: '#FFF', padding: '2px 8px', borderRadius: '6px', fontSize: '12px' }}>
                             {Math.round(((Number(editProductForm.originalPrice) - Number(editProductForm.price)) / Number(editProductForm.originalPrice)) * 100)}% OFF
                           </span>
@@ -9661,7 +9661,7 @@ export default function DashboardPage({ onShowToast }) {
                             style={{ width: '17px', height: '17px', accentColor: '#1D4ED8' }}
                           />
                           <div>
-                            <span>🏷️ Show % OFF Badge &amp; Strikethrough Price on Menu</span>
+                            <span>️ Show % OFF Badge &amp; Strikethrough Price on Menu</span>
                             <div style={{ fontSize: '11px', color: '#64748B', fontWeight: 400, marginTop: '1px' }}>
                               Enable to show discount tag (e.g. 25% OFF) to customers on storefront.
                             </div>
@@ -9745,11 +9745,11 @@ export default function DashboardPage({ onShowToast }) {
                           <img src={editProductForm.images?.[0] || editProductForm.image} alt="Dish Main Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : (
                           <div style={{ textAlign: 'center', color: '#64748B', fontSize: '13px', paddingTop: '50px' }}>
-                            📷 No Photo Selected. Click below to add photos.
+                             No Photo Selected. Click below to add photos.
                           </div>
                         )}
                         <span style={{ position: 'absolute', bottom: '8px', left: '8px', background: 'rgba(15,23,42,0.8)', color: '#FFF', fontSize: '10px', fontWeight: 800, padding: '2px 8px', borderRadius: '6px' }}>
-                          ★ Main Cover Photo
+                           Main Cover Photo
                         </span>
                       </div>
 
@@ -9804,7 +9804,7 @@ export default function DashboardPage({ onShowToast }) {
                                 }}
                                 title="Remove Photo"
                               >
-                                ✕
+                                
                               </button>
                             </div>
                           ))}
@@ -10083,7 +10083,7 @@ export default function DashboardPage({ onShowToast }) {
                     {Number(newProductForm.originalPrice) > Number(newProductForm.price) && Number(newProductForm.price) > 0 && (
                       <div style={{ background: '#ECFDF5', border: '1.5px solid #A7F3D0', padding: '8px 12px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                         <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#047857', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span>🔥 Discount Calculated:</span>
+                          <span> Discount Calculated:</span>
                           <span style={{ background: '#10B981', color: '#FFF', padding: '2px 8px', borderRadius: '6px', fontSize: '12px' }}>
                             {Math.round(((Number(newProductForm.originalPrice) - Number(newProductForm.price)) / Number(newProductForm.originalPrice)) * 100)}% OFF
                           </span>
@@ -10103,7 +10103,7 @@ export default function DashboardPage({ onShowToast }) {
                             style={{ width: '17px', height: '17px', accentColor: '#1D4ED8' }}
                           />
                           <div>
-                            <span>🏷️ Show % OFF Badge &amp; Strikethrough Price on Menu</span>
+                            <span>️ Show % OFF Badge &amp; Strikethrough Price on Menu</span>
                             <div style={{ fontSize: '11px', color: '#64748B', fontWeight: 400, marginTop: '1px' }}>
                               Enable to show discount tag (e.g. 25% OFF) to customers on storefront.
                             </div>
@@ -10192,11 +10192,11 @@ export default function DashboardPage({ onShowToast }) {
                           <img src={newProductForm.images?.[0] || productLogoPreview || newProductForm.image} alt="Dish Main Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : (
                           <div style={{ textAlign: 'center', color: '#64748B', fontSize: '13px', paddingTop: '50px' }}>
-                            📷 Click to Upload Computer / Mobile Photos
+                             Click to Upload Computer / Mobile Photos
                           </div>
                         )}
                         <span style={{ position: 'absolute', bottom: '8px', left: '8px', background: 'rgba(15,23,42,0.8)', color: '#FFF', fontSize: '10px', fontWeight: 800, padding: '2px 8px', borderRadius: '6px' }}>
-                          ★ Main Cover Photo
+                           Main Cover Photo
                         </span>
                       </div>
 
@@ -10251,7 +10251,7 @@ export default function DashboardPage({ onShowToast }) {
                                 }}
                                 title="Remove Photo"
                               >
-                                ✕
+                                
                               </button>
                             </div>
                           ))}
@@ -12311,7 +12311,7 @@ export default function DashboardPage({ onShowToast }) {
             </div>
 
             <div style={{ display: 'inline-block', background: '#FEF3C7', color: '#B45309', padding: '4px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '12px' }}>
-              🔒 {upgradeModalFeature.requiredPlan || 'Higher Plan Required'}
+               {upgradeModalFeature.requiredPlan || 'Higher Plan Required'}
             </div>
 
             <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', margin: '0 0 8px 0' }}>
@@ -12334,21 +12334,21 @@ export default function DashboardPage({ onShowToast }) {
               <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '13px', color: '#475569', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                 {upgradeModalFeature.requiredPlan?.includes('Enterprise') ? (
                   <>
-                    <li>✓ Delivery Partner View</li>
-                    <li>✓ Catalog Themes &amp; Branding</li>
-                    <li>✓ Grow Telemetry Analytics</li>
-                    <li>✓ 0% Order Commission</li>
-                    <li>✓ Custom Domain Website</li>
-                    <li>✓ 24/7 VIP Account Manager</li>
+                    <li> Delivery Partner View</li>
+                    <li> Catalog Themes &amp; Branding</li>
+                    <li> Grow Telemetry Analytics</li>
+                    <li> 0% Order Commission</li>
+                    <li> Custom Domain Website</li>
+                    <li> 24/7 VIP Account Manager</li>
                   </>
                 ) : (
                   <>
-                    <li>✓ Kitchen Display (KDS)</li>
-                    <li>✓ Customers CRM &amp; Loyalty</li>
-                    <li>✓ Diner Reviews Console</li>
-                    <li>✓ Marketing Push Campaigns</li>
-                    <li>✓ 1% Lower QR Commission</li>
-                    <li>✓ 24/7 Priority Support</li>
+                    <li> Kitchen Display (KDS)</li>
+                    <li> Customers CRM &amp; Loyalty</li>
+                    <li> Diner Reviews Console</li>
+                    <li> Marketing Push Campaigns</li>
+                    <li> 1% Lower QR Commission</li>
+                    <li> 24/7 Priority Support</li>
                   </>
                 )}
               </ul>
@@ -12371,7 +12371,7 @@ export default function DashboardPage({ onShowToast }) {
                 }}
                 style={{ flex: 1.5, padding: '12px 16px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #FF5E14 0%, #D97706 100%)', color: '#FFFFFF', fontWeight: 900, fontSize: '14px', cursor: 'pointer', boxShadow: '0 4px 14px rgba(255,94,20,0.3)' }}
               >
-                💳 Pay &amp; Unlock with Razorpay ({upgradeModalFeature.requiredPlan?.includes('Enterprise') ? '₹5,999 / $75' : '₹2,999 / $35'})
+                 Pay &amp; Unlock with Razorpay ({upgradeModalFeature.requiredPlan?.includes('Enterprise') ? '₹5,999 / $75' : '₹2,999 / $35'})
               </button>
             </div>
 
@@ -12413,7 +12413,7 @@ export default function DashboardPage({ onShowToast }) {
                     setCurrentUser(updatedUser);
                     window.dispatchEvent(new Event('storage'));
                     playMilestoneCelebration();
-                    addToast(`🎉 Verified Razorpay Txn ID (${cleanTxn})! ${targetPlan} unlocked until ${expDateIsoStr}.`, <CheckCircle2 size={18} color="#10B981" />);
+                    addToast(` Verified Razorpay Txn ID (${cleanTxn})! ${targetPlan} unlocked until ${expDateIsoStr}.`, <CheckCircle2 size={18} color="#10B981" />);
                     setUpgradeModalFeature(null);
                   } else if (txnId !== null) {
                     alert('Invalid Razorpay Payment Transaction ID! Please check your Razorpay payment receipt.');
@@ -12429,7 +12429,7 @@ export default function DashboardPage({ onShowToast }) {
                   textDecoration: 'underline',
                 }}
               >
-                🔍 Already paid via Razorpay? Click here to enter Payment Txn ID &amp; Unlock
+                 Already paid via Razorpay? Click here to enter Payment Txn ID &amp; Unlock
               </button>
             </div>
           </div>
@@ -12501,7 +12501,7 @@ export default function DashboardPage({ onShowToast }) {
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '2px', marginBottom: '-6px' }}>
                 <span style={{ fontSize: '11.5px', color: '#475569', fontWeight: 600 }}>
-                  📍 Google Maps Coordinates & Delivery Radius
+                   Google Maps Coordinates & Delivery Radius
                 </span>
                 <button
                   type="button"
@@ -12516,14 +12516,14 @@ export default function DashboardPage({ onShowToast }) {
                             centerLatitude: pos.coords.latitude,
                             centerLongitude: pos.coords.longitude,
                           }));
-                          addToast('📍 Current GPS coordinates loaded into form!');
+                          addToast(' Current GPS coordinates loaded into form!');
                         },
-                        () => addToast('⚠️ Could not fetch location. Please enter manually or check permissions.')
+                        () => addToast('️ Could not fetch location. Please enter manually or check permissions.')
                       );
                     }
                   }}
                 >
-                  📍 Fill My Current GPS Coords
+                   Fill My Current GPS Coords
                 </button>
               </div>
 
@@ -12556,7 +12556,7 @@ export default function DashboardPage({ onShowToast }) {
               <div className="crm-form-group">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                   <label style={{ fontSize: '12.5px', fontWeight: 800 }}>
-                    🚀 Interactive Delivery Coverage Radius: <span style={{ color: '#1E40AF', fontSize: '14px', fontWeight: 900 }}>{zoneForm.radius || 5} KM</span>
+                     Interactive Delivery Coverage Radius: <span style={{ color: '#1E40AF', fontSize: '14px', fontWeight: 900 }}>{zoneForm.radius || 5} KM</span>
                   </label>
                   <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 700 }}>
                     Coverage Area: ~{(Math.PI * Math.pow(Number(zoneForm.radius || 5), 2)).toFixed(1)} sq. km
@@ -12601,7 +12601,7 @@ export default function DashboardPage({ onShowToast }) {
               {/* COVERED SECTORS & SUB-LOCATIONS INPUT & TAGS */}
               <div className="crm-form-group">
                 <label style={{ fontSize: '12.5px', fontWeight: 800 }}>
-                  🏷️ Covered Sectors & Sub-Locations in Zone (Comma Separated) *
+                  ️ Covered Sectors & Sub-Locations in Zone (Comma Separated) *
                 </label>
                 <input
                   type="text"
@@ -12641,7 +12641,7 @@ export default function DashboardPage({ onShowToast }) {
                           cursor: 'pointer'
                         }}
                       >
-                        {isSelected ? '✓ ' : '+ '} {sec}
+                        {isSelected ? ' ' : '+ '} {sec}
                       </button>
                     );
                   })}
@@ -12667,7 +12667,7 @@ export default function DashboardPage({ onShowToast }) {
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 800 }}>
                     <MapPin size={16} color="#93C5FD" />
-                    <span>🗺️ Live Google Maps Delivery Zone Preview</span>
+                    <span>️ Live Google Maps Delivery Zone Preview</span>
                   </div>
                   <span style={{ fontSize: '11px', background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: '12px', fontWeight: 700 }}>
                     Radius: {zoneForm.radius || 5} KM
@@ -12707,7 +12707,7 @@ export default function DashboardPage({ onShowToast }) {
                     justify: 'space-between'
                   }}>
                     <div>
-                      <span style={{ color: '#60A5FA', fontWeight: 700 }}>📍 Target Zone Center:</span> {Number(zoneForm.centerLatitude || 0).toFixed(4)}, {Number(zoneForm.centerLongitude || 0).toFixed(4)}
+                      <span style={{ color: '#60A5FA', fontWeight: 700 }}> Target Zone Center:</span> {Number(zoneForm.centerLatitude || 0).toFixed(4)}, {Number(zoneForm.centerLongitude || 0).toFixed(4)}
                     </div>
                     <a
                       href={`https://www.google.com/maps/@${zoneForm.centerLatitude || 30.7046},${zoneForm.centerLongitude || 76.7179},15z`}
@@ -12721,7 +12721,7 @@ export default function DashboardPage({ onShowToast }) {
                 </div>
 
                 <div style={{ padding: '10px 14px', background: '#EFF6FF', fontSize: '11.5px', color: '#1E3A8A', borderTop: '1px solid #DBEAFE', lineHeight: '1.4' }}>
-                  <b>🎯 Zone Geofence Coverage:</b> All customers within <b>{zoneForm.radius || 5} KM</b> of center ({zoneForm.centerLatitude || 30.7046}, {zoneForm.centerLongitude || 76.7179}) covering <b>{zoneForm.coveredSectors || 'Sector 70, Sector 71, Mattaur, Phase 7'}</b> will automatically get product availability & delivery access.
+                  <b> Zone Geofence Coverage:</b> All customers within <b>{zoneForm.radius || 5} KM</b> of center ({zoneForm.centerLatitude || 30.7046}, {zoneForm.centerLongitude || 76.7179}) covering <b>{zoneForm.coveredSectors || 'Sector 70, Sector 71, Mattaur, Phase 7'}</b> will automatically get product availability & delivery access.
                 </div>
               </div>
 
@@ -12877,7 +12877,7 @@ export default function DashboardPage({ onShowToast }) {
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '2px', marginBottom: '-6px' }}>
                 <span style={{ fontSize: '11.5px', color: '#475569', fontWeight: 600 }}>
-                  📍 Store GPS Coordinates & Delivery Radius
+                   Store GPS Coordinates & Delivery Radius
                 </span>
                 <button
                   type="button"
@@ -12892,14 +12892,14 @@ export default function DashboardPage({ onShowToast }) {
                             latitude: pos.coords.latitude,
                             longitude: pos.coords.longitude,
                           }));
-                          addToast('📍 Current GPS coordinates loaded into store form!');
+                          addToast(' Current GPS coordinates loaded into store form!');
                         },
-                        () => addToast('⚠️ Could not fetch location. Please enter manually.')
+                        () => addToast('️ Could not fetch location. Please enter manually.')
                       );
                     }
                   }}
                 >
-                  📍 Fill My Current GPS Coords
+                   Fill My Current GPS Coords
                 </button>
               </div>
 
@@ -12942,7 +12942,7 @@ export default function DashboardPage({ onShowToast }) {
                 </div>
               </div>
               <div style={{ fontSize: '11px', color: '#64748B', marginTop: '-8px' }}>
-                💡 Tip: Right-click any location on <a href={`https://www.google.com/maps/@${storeForm.latitude || 30.7046},${storeForm.longitude || 76.7179},15z`} target="_blank" rel="noopener noreferrer" style={{ color: '#059669', fontWeight: 700 }}>Google Maps</a> to copy Latitude & Longitude.
+                 Tip: Right-click any location on <a href={`https://www.google.com/maps/@${storeForm.latitude || 30.7046},${storeForm.longitude || 76.7179},15z`} target="_blank" rel="noopener noreferrer" style={{ color: '#059669', fontWeight: 700 }}>Google Maps</a> to copy Latitude & Longitude.
               </div>
 
               {/* LIVE GOOGLE MAPS VISUALIZATION PREVIEW CARD FOR STORE */}
@@ -12964,7 +12964,7 @@ export default function DashboardPage({ onShowToast }) {
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 800 }}>
                     <Store size={16} color="#A7F3D0" />
-                    <span>🗺️ Live Store Location & Delivery Radius Preview</span>
+                    <span>️ Live Store Location & Delivery Radius Preview</span>
                   </div>
                   <span style={{ fontSize: '11px', background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: '12px', fontWeight: 700 }}>
                     Store Radius: {storeForm.deliveryRadius || 5} KM
@@ -13004,7 +13004,7 @@ export default function DashboardPage({ onShowToast }) {
                     justify: 'space-between'
                   }}>
                     <div>
-                      <span style={{ color: '#34D399', fontWeight: 700 }}>🏪 Store GPS Location:</span> {Number(storeForm.latitude || 0).toFixed(4)}, {Number(storeForm.longitude || 0).toFixed(4)}
+                      <span style={{ color: '#34D399', fontWeight: 700 }}> Store GPS Location:</span> {Number(storeForm.latitude || 0).toFixed(4)}, {Number(storeForm.longitude || 0).toFixed(4)}
                     </div>
                     <a
                       href={`https://www.google.com/maps/@${storeForm.latitude || 30.7046},${storeForm.longitude || 76.7179},15z`}
@@ -13018,7 +13018,7 @@ export default function DashboardPage({ onShowToast }) {
                 </div>
 
                 <div style={{ padding: '10px 14px', background: '#ECFDF5', fontSize: '11.5px', color: '#065F46', borderTop: '1px solid #D1FAE5', lineHeight: '1.4' }}>
-                  <b>🎯 Store Delivery Geofence:</b> This store will automatically serve all customers within <b>{storeForm.deliveryRadius || 5} KM</b> (covering Sector 70, Sector 71, Mattaur, etc.).
+                  <b> Store Delivery Geofence:</b> This store will automatically serve all customers within <b>{storeForm.deliveryRadius || 5} KM</b> (covering Sector 70, Sector 71, Mattaur, etc.).
                 </div>
               </div>
 
@@ -13074,7 +13074,7 @@ export default function DashboardPage({ onShowToast }) {
                           }}
                         />
                         <div>
-                          <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#0F172A' }}>📍 {z.name}</div>
+                          <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#0F172A' }}> {z.name}</div>
                           <div style={{ fontSize: '11.5px', color: '#64748B' }}>{z.city} • {z.radius} KM Radius</div>
                         </div>
                       </label>

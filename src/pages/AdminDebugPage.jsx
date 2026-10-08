@@ -342,7 +342,7 @@ export default function AdminDebugPage({ onShowToast }) {
     setLocationSearchResults([]);
     setLocationSearchQuery('');
     if (onShowToast) {
-      onShowToast(`📍 Map Updated to "${sectorToAdd}" (Lat: ${lat}, Lng: ${lon}) & Sector added!`);
+      onShowToast(` Map Updated to "${sectorToAdd}" (Lat: ${lat}, Lng: ${lon}) & Sector added!`);
     }
   };
 
@@ -409,7 +409,7 @@ export default function AdminDebugPage({ onShowToast }) {
     } catch (e) {}
 
     if (onShowToast) {
-      onShowToast(`📍 Updated Location, Coordinates (${locationForm.latitude}, ${locationForm.longitude}) & Sectors for "${locationModalUser.businessName || locationModalUser.name}"!`);
+      onShowToast(` Updated Location, Coordinates (${locationForm.latitude}, ${locationForm.longitude}) & Sectors for "${locationModalUser.businessName || locationModalUser.name}"!`);
     }
 
     setLocationModalUser(null);
@@ -1102,7 +1102,7 @@ export default function AdminDebugPage({ onShowToast }) {
             { id: 'merchants', label: ' Merchant Accounts', count: registeredUsers.length },
             { id: 'customers', label: ' Customers & CRM', count: aggregateCustomers.length || registeredUsers.length },
             { id: 'orders', label: ' Live Orders Feed', count: globalOrders.length },
-            { id: 'delivery_zones', label: '🚚 Delivery Zones & Stores', count: (deliveryZones || []).length },
+            { id: 'delivery_zones', label: ' Delivery Zones & Stores', count: (deliveryZones || []).length },
             { id: 'subscription_settings', label: '️ Global Subscription Settings' },
           ].map((tab) => (
             <button
@@ -1197,7 +1197,7 @@ export default function AdminDebugPage({ onShowToast }) {
                     cursor: 'pointer',
                   }}
                 >
-                  💎 Paid Subscriptions ({paidStoresCount})
+                   Paid Subscriptions ({paidStoresCount})
                 </button>
 
                 <button
@@ -1213,7 +1213,7 @@ export default function AdminDebugPage({ onShowToast }) {
                     cursor: 'pointer',
                   }}
                 >
-                  🏷️ White Label ({whiteLabelStoresCount})
+                  ️ White Label ({whiteLabelStoresCount})
                 </button>
 
                 <button
@@ -1348,7 +1348,7 @@ export default function AdminDebugPage({ onShowToast }) {
                                 <div>
                                   <div style={{ fontWeight: 800, color: '#FFF', fontSize: '14.5px' }}>{user.businessName || user.name}</div>
                                   {user.name && user.businessName && user.name !== user.businessName && (
-                                    <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '1px' }}>👤 Owner: {user.name}</div>
+                                    <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '1px' }}> Owner: {user.name}</div>
                                   )}
                                   <div style={{ fontSize: '11.5px', color: '#38BDF8', marginTop: '2px', fontWeight: 600 }}>ID: {user.foodypayId}</div>
                                 </div>
@@ -1358,10 +1358,10 @@ export default function AdminDebugPage({ onShowToast }) {
                             {/* 2. EMAIL & PHONE */}
                             <td style={{ padding: '16px 18px' }}>
                               <div style={{ color: '#38BDF8', fontWeight: 800, fontSize: '13.5px', wordBreak: 'break-all' }}>
-                                📧 {user.email}
+                                 {user.email}
                               </div>
                               <div style={{ fontSize: '12.5px', color: '#F1F5F9', marginTop: '4px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                📞 {user.contactNo || 'No Phone Added'}
+                                 {user.contactNo || 'No Phone Added'}
                               </div>
                             </td>
 
@@ -1397,7 +1397,7 @@ export default function AdminDebugPage({ onShowToast }) {
                                 }}
                                 style={{ background: 'none', border: 'none', color: '#38BDF8', cursor: 'pointer', padding: 0, fontSize: '11.5px', fontWeight: 700, marginTop: '4px', textDecoration: 'underline' }}
                               >
-                                ✏️ Edit Plan / Pricing
+                                ️ Edit Plan / Pricing
                               </button>
                             </td>
 
@@ -1487,7 +1487,7 @@ export default function AdminDebugPage({ onShowToast }) {
                                   title="Assign Google Location Coordinates, Radius & Covered Sectors"
                                 >
                                   <MapPin size={13} />
-                                  <span>📍 Edit Location &amp; Sectors</span>
+                                  <span> Edit Location &amp; Sectors</span>
                                 </button>
 
                                 {/* Set / Toggle Featured Store Button */}
@@ -1728,7 +1728,7 @@ export default function AdminDebugPage({ onShowToast }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '20px' }}>
                 <div>
                   <h2 style={{ margin: '0 0 4px', fontSize: '22px', fontWeight: 900, color: '#FFFFFF' }}>
-                    🚚 Delivery Zones &amp; Marketplace Store Registry
+                     Delivery Zones &amp; Marketplace Store Registry
                   </h2>
                   <p style={{ margin: 0, fontSize: '13.5px', color: '#94A3B8' }}>
                     Master Super Admin control center to manage dynamic delivery zones, GPS radius geofencing, covered sectors, and store assignments.
@@ -1804,7 +1804,7 @@ export default function AdminDebugPage({ onShowToast }) {
                     color: deliverySubTab === 'zones' ? '#FFFFFF' : '#94A3B8',
                   }}
                 >
-                  📍 Delivery Zones ({(deliveryZones || []).length})
+                   Delivery Zones ({(deliveryZones || []).length})
                 </button>
 
                 <button
@@ -1821,7 +1821,7 @@ export default function AdminDebugPage({ onShowToast }) {
                     color: deliverySubTab === 'stores' ? '#FFFFFF' : '#94A3B8',
                   }}
                 >
-                  🏪 Stores &amp; Owner Email Access ({(storesList || []).length})
+                   Stores &amp; Owner Email Access ({(storesList || []).length})
                 </button>
               </div>
 
@@ -1836,7 +1836,7 @@ export default function AdminDebugPage({ onShowToast }) {
                             {zone.zoneId || 'ZONE'}
                           </span>
                           <h4 style={{ margin: '6px 0 2px', fontSize: '18px', fontWeight: 900, color: '#FFF' }}>{zone.name}</h4>
-                          <div style={{ fontSize: '12.5px', color: '#94A3B8' }}>📍 {zone.city}{zone.state ? `, ${zone.state}` : ''} {zone.pincode ? `(${zone.pincode})` : ''}</div>
+                          <div style={{ fontSize: '12.5px', color: '#94A3B8' }}> {zone.city}{zone.state ? `, ${zone.state}` : ''} {zone.pincode ? `(${zone.pincode})` : ''}</div>
                         </div>
                         <span style={{ fontSize: '11px', fontWeight: 800, padding: '3px 10px', borderRadius: '12px', background: zone.isActive !== false ? '#064E3B' : '#7F1D1D', color: zone.isActive !== false ? '#6EE7B7' : '#FECACA' }}>
                           {zone.isActive !== false ? 'ACTIVE' : 'INACTIVE'}
@@ -1847,7 +1847,7 @@ export default function AdminDebugPage({ onShowToast }) {
                         <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                           {(Array.isArray(zone.coveredSectors) ? zone.coveredSectors : (zone.coveredSectors || '').split(',')).filter(Boolean).map((sec, i) => (
                             <span key={i} style={{ fontSize: '10.5px', fontWeight: 700, padding: '2px 7px', borderRadius: '6px', background: '#1E293B', color: '#94A3B8', border: '1px solid #334155' }}>
-                              🏷️ {sec.trim()}
+                              ️ {sec.trim()}
                             </span>
                           ))}
                         </div>
@@ -1916,7 +1916,7 @@ export default function AdminDebugPage({ onShowToast }) {
                             {store.storeId || 'STORE'}
                           </span>
                           <h4 style={{ margin: '6px 0 2px', fontSize: '18px', fontWeight: 900, color: '#FFF' }}>{store.name}</h4>
-                          <div style={{ fontSize: '12.5px', color: '#94A3B8' }}>📍 {store.address}, {store.city}</div>
+                          <div style={{ fontSize: '12.5px', color: '#94A3B8' }}> {store.address}, {store.city}</div>
                         </div>
                         <span style={{ fontSize: '11px', fontWeight: 800, padding: '3px 10px', borderRadius: '12px', background: store.isActive !== false ? '#064E3B' : '#7F1D1D', color: store.isActive !== false ? '#6EE7B7' : '#FECACA' }}>
                           {store.isActive !== false ? 'ACTIVE' : 'INACTIVE'}
@@ -1924,7 +1924,7 @@ export default function AdminDebugPage({ onShowToast }) {
                       </div>
 
                       <div style={{ backgroundColor: '#0F172A', padding: '10px 12px', borderRadius: '10px', fontSize: '12.5px', color: '#60A5FA' }}>
-                        <b>📧 Owner Email Access:</b> <span style={{ fontWeight: 800, textDecoration: 'underline' }}>{store.ownerEmail || 'Not Assigned'}</span>
+                        <b> Owner Email Access:</b> <span style={{ fontWeight: 800, textDecoration: 'underline' }}>{store.ownerEmail || 'Not Assigned'}</span>
                         {store.ownerName ? ` (${store.ownerName})` : ''}
                       </div>
 
@@ -1941,7 +1941,7 @@ export default function AdminDebugPage({ onShowToast }) {
                           {Array.isArray(store.deliveryZones) && store.deliveryZones.length > 0 ? (
                             store.deliveryZones.map((z) => (
                               <span key={z._id || z.name} style={{ background: '#1E293B', color: '#38BDF8', padding: '3px 10px', borderRadius: '12px', fontSize: '11.5px', fontWeight: 800, border: '1px solid #334155' }}>
-                                📍 {z.name} ({z.city})
+                                 {z.name} ({z.city})
                               </span>
                             ))
                           ) : (
@@ -2202,7 +2202,7 @@ export default function AdminDebugPage({ onShowToast }) {
                   <option value="Trial">Trial Period</option>
                   <option value="Expired">Expired (Locked)</option>
                   <option value="Locked">Locked (Unpaid)</option>
-                  <option value="Suspended">⚠️ Suspended (Block Access)</option>
+                  <option value="Suspended">️ Suspended (Block Access)</option>
                 </select>
               </div>
 
@@ -2223,7 +2223,7 @@ export default function AdminDebugPage({ onShowToast }) {
                   style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                 />
                 <label htmlFor="chkSuspend" style={{ fontSize: '12.5px', fontWeight: 800, color: '#FCA5A5', cursor: 'pointer' }}>
-                  ⚠️ Suspend Merchant Account (Blocks POS &amp; Customer Menu Access)
+                  ️ Suspend Merchant Account (Blocks POS &amp; Customer Menu Access)
                 </label>
               </div>
 
@@ -2377,7 +2377,7 @@ export default function AdminDebugPage({ onShowToast }) {
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '2px', marginBottom: '-6px' }}>
                 <span style={{ fontSize: '11.5px', color: '#94A3B8', fontWeight: 600 }}>
-                  📍 Google Maps Coordinates &amp; Delivery Radius
+                   Google Maps Coordinates &amp; Delivery Radius
                 </span>
                 <button
                   type="button"
@@ -2391,14 +2391,14 @@ export default function AdminDebugPage({ onShowToast }) {
                             centerLatitude: pos.coords.latitude,
                             centerLongitude: pos.coords.longitude,
                           }));
-                          if (onShowToast) onShowToast('📍 Current GPS coordinates loaded!');
+                          if (onShowToast) onShowToast(' Current GPS coordinates loaded!');
                         },
                         () => alert('Could not fetch location.')
                       );
                     }
                   }}
                 >
-                  📍 Fill My Current GPS Coords
+                   Fill My Current GPS Coords
                 </button>
               </div>
 
@@ -2432,7 +2432,7 @@ export default function AdminDebugPage({ onShowToast }) {
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                   <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8' }}>
-                    🚀 Interactive Delivery Coverage Radius: <span style={{ color: '#38BDF8', fontSize: '14px', fontWeight: 900 }}>{zoneForm.radius || 5} KM</span>
+                     Interactive Delivery Coverage Radius: <span style={{ color: '#38BDF8', fontSize: '14px', fontWeight: 900 }}>{zoneForm.radius || 5} KM</span>
                   </label>
                   <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 700 }}>
                     Area: ~{(Math.PI * Math.pow(Number(zoneForm.radius || 5), 2)).toFixed(1)} sq. km
@@ -2476,7 +2476,7 @@ export default function AdminDebugPage({ onShowToast }) {
               {/* COVERED SECTORS & SUB-LOCATIONS INPUT & TAGS */}
               <div>
                 <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#94A3B8', display: 'block', marginBottom: '4px' }}>
-                  🏷️ Covered Sectors &amp; Sub-Locations in Zone (Comma Separated) *
+                  ️ Covered Sectors &amp; Sub-Locations in Zone (Comma Separated) *
                 </label>
                 <input
                   type="text"
@@ -2516,7 +2516,7 @@ export default function AdminDebugPage({ onShowToast }) {
                           cursor: 'pointer'
                         }}
                       >
-                        {isSelected ? '✓ ' : '+ '} {sec}
+                        {isSelected ? ' ' : '+ '} {sec}
                       </button>
                     );
                   })}
@@ -2528,7 +2528,7 @@ export default function AdminDebugPage({ onShowToast }) {
                 <div style={{ background: 'linear-gradient(90deg, #1E40AF 0%, #3B82F6 100%)', padding: '8px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#FFF' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 800 }}>
                     <MapPin size={16} color="#93C5FD" />
-                    <span>🗺️ Live Google Maps Delivery Zone Preview</span>
+                    <span>️ Live Google Maps Delivery Zone Preview</span>
                   </div>
                   <span style={{ fontSize: '11px', background: 'rgba(255,255,255,0.2)', padding: '2px 8px', borderRadius: '12px', fontWeight: 700 }}>
                     Radius: {zoneForm.radius || 5} KM
@@ -2554,7 +2554,7 @@ export default function AdminDebugPage({ onShowToast }) {
                 </div>
 
                 <div style={{ padding: '10px 14px', background: '#0F172A', fontSize: '11.5px', color: '#93C5FD', borderTop: '1px solid #1E293B', lineHeight: '1.4' }}>
-                  <b>🎯 Zone Geofence Coverage:</b> All customers within <b>{zoneForm.radius || 5} KM</b> of center ({zoneForm.centerLatitude || 30.7046}, {zoneForm.centerLongitude || 76.7179}) covering <b>{zoneForm.coveredSectors || 'Sector 70, Sector 71, Mattaur, Phase 7'}</b> will automatically get product availability &amp; delivery access.
+                  <b> Zone Geofence Coverage:</b> All customers within <b>{zoneForm.radius || 5} KM</b> of center ({zoneForm.centerLatitude || 30.7046}, {zoneForm.centerLongitude || 76.7179}) covering <b>{zoneForm.coveredSectors || 'Sector 70, Sector 71, Mattaur, Phase 7'}</b> will automatically get product availability &amp; delivery access.
                 </div>
               </div>
 
@@ -2909,7 +2909,7 @@ export default function AdminDebugPage({ onShowToast }) {
                     style={{ backgroundColor: '#10B981', color: '#FFF', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: 800, fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                     onClick={() => handleSearchGoogleLocation()}
                   >
-                    {isSearchingLocation ? 'Searching...' : '🔍 Search Map'}
+                    {isSearchingLocation ? 'Searching...' : ' Search Map'}
                   </button>
                 </div>
 
@@ -2938,7 +2938,7 @@ export default function AdminDebugPage({ onShowToast }) {
               {/* QUICK SECTOR CHIPS & SELECTOR */}
               <div style={{ backgroundColor: '#161F33', border: '1px solid #334155', borderRadius: '12px', padding: '12px 14px' }}>
                 <div style={{ fontSize: '12px', fontWeight: 800, color: '#94A3B8', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>⚡ Quick Add / Toggle Popular Sectors &amp; Areas:</span>
+                  <span> Quick Add / Toggle Popular Sectors &amp; Areas:</span>
                   <span style={{ fontSize: '11px', color: '#10B981' }}>Tap sector to add/remove</span>
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -2968,7 +2968,7 @@ export default function AdminDebugPage({ onShowToast }) {
                           transition: 'all 0.15s ease',
                         }}
                       >
-                        {isSelected ? '✓ ' : '+ '} {sec}
+                        {isSelected ? ' ' : '+ '} {sec}
                       </button>
                     );
                   })}
@@ -2987,7 +2987,7 @@ export default function AdminDebugPage({ onShowToast }) {
                   loading="lazy"
                 />
                 <div style={{ position: 'absolute', bottom: '8px', left: '8px', background: 'rgba(15,23,42,0.9)', color: '#10B981', fontSize: '11px', fontWeight: 800, padding: '3px 10px', borderRadius: '8px', border: '1px solid #059669' }}>
-                  📍 Live Lat: {locationForm.latitude}, Lng: {locationForm.longitude} (Radius: {locationForm.deliveryRadius} KM)
+                   Live Lat: {locationForm.latitude}, Lng: {locationForm.longitude} (Radius: {locationForm.deliveryRadius} KM)
                 </div>
               </div>
 
@@ -3080,13 +3080,13 @@ export default function AdminDebugPage({ onShowToast }) {
                             gap: '6px',
                           }}
                         >
-                          📍 {cleanSec}
+                           {cleanSec}
                           <button
                             type="button"
                             onClick={() => handleToggleQuickSector(cleanSec)}
                             style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', padding: 0, fontSize: '12px', fontWeight: 900 }}
                           >
-                            ✕
+                            
                           </button>
                         </span>
                       );
@@ -3132,7 +3132,7 @@ export default function AdminDebugPage({ onShowToast }) {
               {/* WHITE LABEL TOGGLE */}
               <div style={{ backgroundColor: '#161F33', border: '1px solid #334155', padding: '12px 16px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                  <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#FFF' }}>🏷️ White Label Enterprise Account</div>
+                  <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#FFF' }}>️ White Label Enterprise Account</div>
                   <div style={{ fontSize: '11.5px', color: '#94A3B8' }}>Removes FoodyPay branding, activates custom domain &amp; dedicated app.</div>
                 </div>
                 <input

@@ -509,7 +509,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
                         </span>
                         {(order.paymentStatus === 'paid-razorpay' || order.paymentStatus === 'paid-upi' || order.paymentStatus === 'paid-cash' || order.paymentStatus === 'paid' || (order.paymentLabel && order.paymentLabel.toLowerCase().includes('paid')) || order.status === 'completed') && (
                           <span style={{ fontSize: '10.5px', backgroundColor: '#DCFCE7', color: '#15803D', fontWeight: 800, padding: '2px 8px', borderRadius: '6px', border: '1px solid #86EFAC' }}>
-                            ✓ PAID
+                             PAID
                           </span>
                         )}
                       </div>

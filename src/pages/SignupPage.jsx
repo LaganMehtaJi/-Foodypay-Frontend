@@ -769,7 +769,7 @@ export default function SignupPage({ onShowToast }) {
 
               {selectedPlan !== 'Starter Free' && (
                 <div style={{ marginTop: '6px', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '8px', padding: '6px 10px', fontSize: '11px', color: '#1E40AF', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span>🔒 Note: Account will register on <strong>Starter Free ($0)</strong>. Upgrade to {selectedPlan} via Razorpay payment inside Dashboard to unlock features.</span>
+                  <span> Note: Account will register on <strong>Starter Free ($0)</strong>. Upgrade to {selectedPlan} via Razorpay payment inside Dashboard to unlock features.</span>
                 </div>
               )}
             </div>
