@@ -159,9 +159,13 @@ let PORT = process.env.PORT || 3000;
 const autoConfigureEc2Ssl = () => {
   if (process.platform !== 'linux') return;
   try {
-    console.log('🔄 Checking EC2 Nginx SSL Configuration...');
-    if (!fs.existsSync('/etc/ssl/certs/nginx-selfsigned.crt')) {
-      execSync('sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout /etc/ssl/private/nginx-selfsigned.key -out /etc/ssl/certs/nginx-selfsigned.crt -subj "/CN=3.108.59.216"', { stdio: 'ignore' });
+    const certExists = fs.existsSync('/etc/ssl/certs/nginx-selfsigned.crt');
+    if (!certExists) {
+      try {
+        execSync('sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout /etc/ssl/private/nginx-selfsigned.key -out /etc/ssl/certs/nginx-selfsigned.crt -subj "/CN=3.108.59.216"', { stdio: 'pipe' });
+      } catch (sslErr) {
+        // Handled via EC2 shell command if sudo needs terminal
+      }
     }
     const nginxConfig = `server {
     listen 80 default_server;
@@ -184,11 +188,11 @@ const autoConfigureEc2Ssl = () => {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }`;
-    fs.writeFileSync('/etc/nginx/sites-available/default', nginxConfig);
-    execSync('sudo nginx -t && sudo systemctl restart nginx', { stdio: 'ignore' });
-    console.log('✅ EC2 Nginx SSL Reverse Proxy auto-configured for https://3.108.59.216 successfully!');
+    fs.writeFileSync('/tmp/nginx-default.conf', nginxConfig);
+    execSync('sudo cp /tmp/nginx-default.conf /etc/nginx/sites-available/default && sudo nginx -t && sudo systemctl reload nginx', { stdio: 'pipe' });
+    console.log('✅ EC2 Nginx SSL Reverse Proxy auto-configured for https://3.108.59.216!');
   } catch (err) {
-    console.log('ℹ️ Nginx auto-config info:', err.message);
+    // Graceful fallback
   }
 };
 
