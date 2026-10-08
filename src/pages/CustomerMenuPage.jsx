@@ -3222,7 +3222,8 @@ export default function CustomerMenuPage({ onShowToast }) {
                   );
                 })}
               </div>
-            )}
+            </div>
+          )}
 
           </div>
         )}
