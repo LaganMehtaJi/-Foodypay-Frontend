@@ -188,9 +188,10 @@ const autoConfigureEc2Ssl = () => {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 }`;
-    fs.writeFileSync('/tmp/nginx-default.conf', nginxConfig);
-    execSync('sudo cp /tmp/nginx-default.conf /etc/nginx/sites-available/default && sudo nginx -t && sudo systemctl reload nginx', { stdio: 'pipe' });
-    console.log('✅ EC2 Nginx SSL Reverse Proxy auto-configured for https://3.108.59.216!');
+    fs.writeFileSync('/tmp/nginx-foodypay.conf', nginxConfig);
+    execSync('sudo cp /tmp/nginx-foodypay.conf /etc/nginx/conf.d/foodypay.conf 2>/dev/null || sudo cp /tmp/nginx-foodypay.conf /etc/nginx/sites-available/default', { stdio: 'pipe' });
+    execSync('sudo nginx -t && sudo systemctl reload nginx', { stdio: 'pipe' });
+    console.log('✅ Amazon Linux / Ubuntu EC2 Nginx SSL Reverse Proxy auto-configured for https://3.108.59.216!');
   } catch (err) {
     // Graceful fallback
   }
