@@ -1,4 +1,4 @@
-export const PRIMARY_API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+export const PRIMARY_API_URL = import.meta.env.VITE_API_BASE_URL || 'https://server-foodypay.onrender.com/api';
 export const BACKUP_CLOUD_API_URL_1 = PRIMARY_API_URL;
 export const BACKUP_CLOUD_API_URL_2 = PRIMARY_API_URL;
 export const BACKUP_CLOUD_API_URL_3 = PRIMARY_API_URL;
