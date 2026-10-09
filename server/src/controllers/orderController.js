@@ -124,6 +124,8 @@ export const createPublicOrder = async (req, res, next) => {
       paymentMode: paymentMode || 'Cash',
       status: 'new',
       seen: false, // Unseen by merchant -> triggers sound notification
+      sentToKitchen: true, // Auto sent to Kitchen Display System
+      kitchenSeen: false, // Unseen by kitchen staff -> triggers alarm bell until acknowledged
       paymentStatus: paymentStatus || 'cash',
       paymentLabel: paymentLabel || 'Cash on Counter',
       items: items || [],
@@ -304,13 +306,28 @@ export const createOrder = async (req, res, next) => {
 };
 
 /**
+ * Helper to find order safely by Mongo _id or string orderId
+ */
+const findOrderByIdOrCode = async (idParam, userId = null) => {
+  const query = userId ? { user: userId } : {};
+  let order = null;
+  if (mongoose.Types.ObjectId.isValid(idParam)) {
+    order = await Order.findOne({ _id: idParam, ...query });
+  }
+  if (!order) {
+    order = await Order.findOne({ orderId: idParam, ...query });
+  }
+  return order;
+};
+
+/**
  * @desc    Update existing order (Items, Customer info, Payment, Totals)
  * @route   PUT /api/orders/:id
  * @access  Private
  */
 export const updateOrder = async (req, res, next) => {
   try {
-    const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
+    const order = await findOrderByIdOrCode(req.params.id, req.user._id);
 
     if (!order) {
       res.status(404);
@@ -322,7 +339,7 @@ export const updateOrder = async (req, res, next) => {
       throw new Error('Cannot edit order once cooking has started');
     }
 
-    const { type, table, customer, phone, items, note, paymentStatus, paymentLabel, subtotal, discount, tax, total, status } = req.body;
+    const { type, table, customer, phone, items, note, paymentStatus, paymentLabel, subtotal, discount, tax, total, status, sentToKitchen, kitchenSeen } = req.body;
 
     if (type) order.type = type;
     if (table) order.table = table;
@@ -337,6 +354,8 @@ export const updateOrder = async (req, res, next) => {
     if (tax !== undefined) order.tax = tax;
     if (total !== undefined) order.total = total;
     if (status) order.status = status;
+    if (sentToKitchen !== undefined) order.sentToKitchen = sentToKitchen;
+    if (kitchenSeen !== undefined) order.kitchenSeen = kitchenSeen;
 
     await order.save();
     const todayStats = await calculateTodayOrderStats(req.user._id);
@@ -358,8 +377,8 @@ export const updateOrder = async (req, res, next) => {
  */
 export const updateOrderStatus = async (req, res, next) => {
   try {
-    const { status, paymentStatus, paymentLabel } = req.body;
-    const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
+    const { status, paymentStatus, paymentLabel, sentToKitchen, kitchenSeen } = req.body;
+    const order = await findOrderByIdOrCode(req.params.id, req.user._id);
 
     if (!order) {
       res.status(404);
@@ -369,8 +388,14 @@ export const updateOrderStatus = async (req, res, next) => {
     if (status) order.status = status;
     if (paymentStatus) order.paymentStatus = paymentStatus;
     if (paymentLabel) order.paymentLabel = paymentLabel;
+    if (sentToKitchen !== undefined) order.sentToKitchen = sentToKitchen;
+    if (kitchenSeen !== undefined) order.kitchenSeen = kitchenSeen;
     if (status === 'completed' || status === 'preparing' || status === 'ready') {
       order.seen = true;
+      if (status === 'preparing') {
+        order.sentToKitchen = true;
+      }
+      order.kitchenSeen = true;
     }
 
     await order.save();
@@ -393,7 +418,7 @@ export const updateOrderStatus = async (req, res, next) => {
  */
 export const markOrderSeen = async (req, res, next) => {
   try {
-    const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
+    const order = await findOrderByIdOrCode(req.params.id, req.user._id);
     if (!order) {
       res.status(404);
       throw new Error('Order not found');
@@ -414,18 +439,102 @@ export const markOrderSeen = async (req, res, next) => {
 };
 
 /**
+ * @desc    Mark order as SEEN by kitchen staff (stops kitchen alarm bell)
+ * @route   PUT /api/orders/:id/kitchen-seen
+ * @access  Private
+ */
+export const markKitchenSeen = async (req, res, next) => {
+  try {
+    const order = await findOrderByIdOrCode(req.params.id, req.user._id);
+    if (!order) {
+      res.status(404);
+      throw new Error('Order not found');
+    }
+    order.kitchenSeen = true;
+    await order.save();
+
+    const todayStats = await calculateTodayOrderStats(req.user._id);
+
+    res.json({
+      success: true,
+      data: order,
+      todayStats,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Public status update for Kitchen Display System (unauthenticated KDS screen)
+ * @route   PUT /api/orders/public/:id/status
+ * @access  Public
+ */
+export const updatePublicOrderStatus = async (req, res, next) => {
+  try {
+    const { status, kitchenSeen, sentToKitchen } = req.body;
+    const order = await findOrderByIdOrCode(req.params.id);
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    if (status) order.status = status;
+    if (kitchenSeen !== undefined) order.kitchenSeen = kitchenSeen;
+    if (sentToKitchen !== undefined) order.sentToKitchen = sentToKitchen;
+    if (status === 'preparing' || status === 'ready' || status === 'completed') {
+      order.kitchenSeen = true;
+    }
+
+    await order.save();
+
+    res.json({
+      success: true,
+      data: order,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Public mark kitchen seen for Kitchen Display System
+ * @route   PUT /api/orders/public/:id/kitchen-seen
+ * @access  Public
+ */
+export const markPublicKitchenSeen = async (req, res, next) => {
+  try {
+    const order = await findOrderByIdOrCode(req.params.id);
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+    order.kitchenSeen = true;
+    await order.save();
+
+    res.json({
+      success: true,
+      data: order,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * @desc    Delete order
  * @route   DELETE /api/orders/:id
  * @access  Private
  */
 export const deleteOrder = async (req, res, next) => {
   try {
-    const order = await Order.findOneAndDelete({ _id: req.params.id, user: req.user._id });
+    const order = await findOrderByIdOrCode(req.params.id, req.user._id);
 
     if (!order) {
       res.status(404);
       throw new Error('Order not found');
     }
+
+    await order.deleteOne();
 
     const todayStats = await calculateTodayOrderStats(req.user._id);
 

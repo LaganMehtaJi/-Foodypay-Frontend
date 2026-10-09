@@ -285,30 +285,22 @@ export function playMilestoneCelebration() {
   });
 }
 
-// 8. Continuous Alarm Bell Loop (Rings until order is SEEN or PREPARING - max 4 rings limit)
+// 8. Continuous Alarm Bell Loop (Rings continuously until order is SEEN on POS Dashboard)
 let alarmTimer = null;
-let alarmRingCount = 0;
 
 export function startContinuousAlarm() {
   if (alarmTimer) return; // already active
-  alarmRingCount = 0;
   try {
     playCallWaiter();
-    alarmRingCount = 1;
   } catch (e) {}
 
   alarmTimer = setInterval(() => {
     try {
-      alarmRingCount++;
       playCallWaiter();
-      // Auto-stop after 4 rings to prevent infinite loop ringing
-      if (alarmRingCount >= 4) {
-        stopContinuousAlarm();
-      }
     } catch (e) {
       stopContinuousAlarm();
     }
-  }, 1500);
+  }, 2000);
 }
 
 export function stopContinuousAlarm() {
@@ -316,7 +308,31 @@ export function stopContinuousAlarm() {
     clearInterval(alarmTimer);
     alarmTimer = null;
   }
-  alarmRingCount = 0;
+}
+
+// 9. Kitchen Display System (KDS) Continuous Bell Alarm
+let kitchenAlarmTimer = null;
+
+export function startKitchenAlarm() {
+  if (kitchenAlarmTimer) return;
+  try {
+    playFoodPreparing();
+  } catch (e) {}
+
+  kitchenAlarmTimer = setInterval(() => {
+    try {
+      playFoodPreparing();
+    } catch (e) {
+      stopKitchenAlarm();
+    }
+  }, 2200);
+}
+
+export function stopKitchenAlarm() {
+  if (kitchenAlarmTimer) {
+    clearInterval(kitchenAlarmTimer);
+    kitchenAlarmTimer = null;
+  }
 }
 
 

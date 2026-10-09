@@ -41,11 +41,14 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
     if (e) e.preventDefault();
     setError('');
 
-    if (!email.trim() || !email.includes('@')) {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
+
+    if (!cleanEmail || !cleanEmail.includes('@')) {
       setError('Please enter a valid email address.');
       return;
     }
-    if (!password.trim()) {
+    if (!cleanPassword) {
       setError('Please enter your password.');
       return;
     }
@@ -53,31 +56,28 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
     setLoading(true);
 
     try {
-      let fbUser = null;
-      let fbToken = null;
-
-      try {
-        const fbRes = await loginWithFirebaseEmail(email.trim(), password.trim());
-        fbUser = fbRes.user;
-        fbToken = fbRes.token;
-      } catch (fbErr) {
-        // Continue to primary backend login even if Firebase fails
-      }
-
       let response = null;
-      if (fbUser) {
-        response = await firebaseAuthApi({
-          firebaseToken: fbToken,
-          uid: fbUser.uid,
-          email: fbUser.email,
-          name: fbUser.displayName || email.trim().split('@')[0],
-          emailVerified: fbUser.emailVerified,
-          providerId: 'password',
-        }).catch(() => null);
-      }
 
-      if (!response) {
-        response = await loginApi(email.trim(), password.trim());
+      // 1. Primary Authentication: Attempt MongoDB Backend login directly
+      try {
+        response = await loginApi(cleanEmail, cleanPassword);
+      } catch (dbErr) {
+        // 2. Fallback Attempt via Firebase Auth Sync
+        try {
+          const fbRes = await loginWithFirebaseEmail(cleanEmail, cleanPassword);
+          if (fbRes && fbRes.user) {
+            response = await firebaseAuthApi({
+              firebaseToken: fbRes.token,
+              uid: fbRes.user.uid,
+              email: fbRes.user.email,
+              name: fbRes.user.displayName || cleanEmail.split('@')[0],
+              emailVerified: fbRes.user.emailVerified,
+              providerId: 'password',
+            });
+          }
+        } catch (fbErr) {
+          throw dbErr;
+        }
       }
 
       if (response && response.success && response.data) {
@@ -88,8 +88,11 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
         }
 
         if (rememberMe) {
-          localStorage.setItem('foodypay_remember_email', email.trim());
-          localStorage.setItem('foodypay_remember_password', password.trim());
+          localStorage.setItem('foodypay_remember_email', cleanEmail);
+          localStorage.setItem('foodypay_remember_password', cleanPassword);
+        } else {
+          localStorage.removeItem('foodypay_remember_email');
+          localStorage.removeItem('foodypay_remember_password');
         }
 
         setSuccessUser(userData);

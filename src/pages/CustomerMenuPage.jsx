@@ -54,6 +54,7 @@ import {
 import { playOrderPlaced } from '../utils/soundEffects';
 import { QrCodeComponent } from '../utils/qrGenerator';
 import { fetchDishesApi, fetchPublicDishesApi, fetchPublicMerchantApi, fetchPublicCouponsApi, createReviewApi, createPublicOrderApi, createRazorpayOrderApi, verifyRazorpaySignatureApi, checkDeliveryAvailabilityApi, fetchAvailableProductsApi, calculateBikeDeliveryTime, calculateHaversineDistanceKm } from '../utils/api';
+import { SNACK_RACK_FULL_MENU } from '../data/snackRackMenuData';
 
 const AVAILABLE_COUPONS = [];
 
@@ -67,6 +68,12 @@ const HOME_IMAGE_CATEGORIES = [
   { id: 'Ice Cream', name: 'Ice Cream', image: 'https://images.unsplash.com/photo-1570197788417-0e82375c9371?w=300&auto=format&fit=crop&q=80', count: 'Chocolate & Vanilla' },
   { id: 'Snacks & Chips', name: 'Snacks & Chips', image: 'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=300&auto=format&fit=crop&q=80', count: 'Chips & Juice' }
 ];
+
+const SNACK_RACK_DEFAULT_DISHES = SNACK_RACK_FULL_MENU.map(d => ({
+  ...d,
+  foodypayId: 'FP-348330',
+  merchantId: 'FP-348330'
+}));
 
 const getFallbackFoodImage = (name = '', category = '') => {
   const n = (name || '').toLowerCase();
@@ -229,7 +236,8 @@ export default function CustomerMenuPage({ onShowToast }) {
   };
 
   const hasScannedTable = Boolean(tableId || restaurantSlug);
-  const rawRestName = formatSlug(restaurantSlug || (hasScannedTable ? 'FoodyPay Store' : ''));
+  const isSnackRackStore = (restaurantSlug || '').toLowerCase() === 'meenakshi' || (merchantId || '').toUpperCase() === 'FP-348330';
+  const rawRestName = isSnackRackStore ? 'Snack Rack' : formatSlug(restaurantSlug || (hasScannedTable ? 'FoodyPay Store' : ''));
   const rawTable = tableId ? formatSlug(tableId).replace(/tabel/gi, 'Table') : '';
   const effectiveMerchantId = merchantId || getFeaturedMerchantId();
 
@@ -305,7 +313,7 @@ export default function CustomerMenuPage({ onShowToast }) {
     } catch (e) {}
 
     return {
-      name: rawRestName,
+      name: isSnackRackStore ? 'Snack Rack' : rawRestName,
       merchantId: effectiveMerchantId,
       table: rawTable,
       logoUrl: '',
@@ -360,22 +368,27 @@ export default function CustomerMenuPage({ onShowToast }) {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [dietFilter, setDietFilter] = useState('all');
   const [menuPage, setMenuPage] = useState(1);
-  const ITEMS_PER_PAGE = 12;
+  const [itemsPerPage, setItemsPerPage] = useState(12);
+  const [catalogPaginationMode, setCatalogPaginationMode] = useState('paged'); // 'paged' | 'load_more'
+  const catalogHeaderRef = useRef(null);
 
   useEffect(() => {
     setMenuPage(1);
-  }, [selectedCategory, searchQuery]);
+  }, [selectedCategory, searchQuery, dietFilter, itemsPerPage]);
 
   useEffect(() => {
-    const handleScroll = () => {
-      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 450) {
-        setMenuPage((prev) => prev + 1);
-      }
-    };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+    if (catalogPaginationMode === 'load_more') {
+      const handleScroll = () => {
+        if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 450) {
+          setMenuPage((prev) => prev + 1);
+        }
+      };
+      window.addEventListener('scroll', handleScroll, { passive: true });
+      return () => window.removeEventListener('scroll', handleScroll);
+    }
+  }, [catalogPaginationMode]);
 
   // Payment Method Display & Options Config (Synced with POS Dashboard Settings)
   const [paymentConfig, setPaymentConfig] = useState(() => {
@@ -400,9 +413,7 @@ export default function CustomerMenuPage({ onShowToast }) {
       } catch (e) {}
     };
     window.addEventListener('storage', handlePaymentConfigSync);
-    return () => window.removeEventListener('storage', handlePaymentConfigSync);
   }, []);
-  const [dietFilter, setDietFilter] = useState('all');
 
   // Customer Profile & Saved Addresses State
   const [customerName, setCustomerName] = useState('');
@@ -673,31 +684,46 @@ export default function CustomerMenuPage({ onShowToast }) {
   }, []);
 
   // Load customer order history & active order live tracker
-  const loadCustomerOrders = () => {
+  const loadCustomerOrders = async () => {
     try {
-      const saved = localStorage.getItem('foodypay_crm_orders_v3');
       let allOrdersList = [];
-      if (saved) {
-        const list = JSON.parse(saved);
-        if (Array.isArray(list)) {
-          allOrdersList = list;
-          setCustomerOrders(list);
+      try {
+        const saved = localStorage.getItem('foodypay_crm_orders_v3');
+        if (saved) {
+          const list = JSON.parse(saved);
+          if (Array.isArray(list)) allOrdersList = list;
         }
-      }
+      } catch (e) {}
+
+      try {
+        const apiOrders = await fetchPublicOrdersApi(merchantId, effectiveMerchantId);
+        if (Array.isArray(apiOrders) && apiOrders.length > 0) {
+          const localMap = new Map(allOrdersList.map(o => [String(o._id || o.id || o.orderId), o]));
+          apiOrders.forEach(o => {
+            const key = String(o._id || o.id || o.orderId);
+            const existing = localMap.get(key);
+            localMap.set(key, existing ? { ...existing, ...o } : o);
+          });
+          allOrdersList = Array.from(localMap.values());
+        }
+      } catch (e) {}
+
+      setCustomerOrders(allOrdersList);
 
       // Active Tracker Banner ONLY appears when customer actively places an order in their session
       const currentSessionOrder = sessionStorage.getItem('foodypay_active_order');
       if (currentSessionOrder) {
         const parsedOrder = JSON.parse(currentSessionOrder);
+        const pCleanId = String(parsedOrder.id || parsedOrder._id || parsedOrder.orderId || '').replace(/[^0-9a-z]/gi, '').toLowerCase();
+
         const match = allOrdersList.find((o) => {
           if (!o) return false;
           if (parsedOrder.id && (o.id === parsedOrder.id || o.orderId === parsedOrder.id || o._id === parsedOrder.id)) return true;
           if (parsedOrder._id && (o._id === parsedOrder._id || o.id === parsedOrder._id)) return true;
           if (parsedOrder.orderId && (o.orderId === parsedOrder.orderId || o.id === parsedOrder.orderId)) return true;
-          
-          const cleanP = String(parsedOrder.id || parsedOrder.orderId || '').replace(/[^0-9]/g, '');
-          const cleanO = String(o.id || o.orderId || '').replace(/[^0-9]/g, '');
-          if (cleanP && cleanO && cleanP === cleanO) return true;
+
+          const oCleanId = String(o.id || o.orderId || o._id || '').replace(/[^0-9a-z]/gi, '').toLowerCase();
+          if (pCleanId && oCleanId && (pCleanId === oCleanId || pCleanId.endsWith(oCleanId) || oCleanId.endsWith(pCleanId))) return true;
           return false;
         });
 
@@ -719,13 +745,51 @@ export default function CustomerMenuPage({ onShowToast }) {
         setActivePlacedOrder(null);
       }
 
-      // Find any unpaid pending bill order for this customer/table
+      // Find any unpaid pending bill order for THIS specific active order or current table/session
       const unpaidMatch = allOrdersList.find((o) => {
-        if (!o || o.status === 'cancelled') return false;
+        if (!o || o.status === 'cancelled' || o.status === 'completed' || o.status === 'served' || o.status === 'delivered') {
+          return false;
+        }
+
+        // 1. Filter by current merchant ID if available
+        const currentStoreId = (effectiveMerchantId || storeInfo.merchantId || '').toUpperCase().trim();
+        const oStoreId = (o.foodypayId || o.merchantId || o.storeId || '').toUpperCase().trim();
+        if (currentStoreId && oStoreId && currentStoreId !== oStoreId) return false;
+
+        // 2. Filter by table if customer is on a specific table
+        const currentTable = (storeInfo.table || rawTable || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const orderTable = String(o.table || o.tableNo || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (currentTable && orderTable && !orderTable.includes(currentTable) && !currentTable.includes(orderTable)) {
+          return false;
+        }
+
+        // 3. Check if order is paid or completed
         const pStatus = String(o.paymentStatus || '').toLowerCase();
-        const isPaid = pStatus.includes('paid') || o.isPaid === true;
-        return !isPaid;
+        const pLabel = String(o.paymentLabel || '').toLowerCase();
+        const isPaid = o.isPaid === true ||
+                       pStatus.includes('paid') ||
+                       pStatus.includes('settled') ||
+                       pStatus === 'paid-cash' ||
+                       pStatus === 'paid-upi' ||
+                       pLabel.includes('paid') ||
+                       pLabel.includes('settled') ||
+                       pLabel.includes('received');
+
+        if (isPaid) return false;
+
+        // 4. Must match current active order in session if present
+        if (currentSessionOrder) {
+          try {
+            const pOrder = JSON.parse(currentSessionOrder);
+            const pId = String(pOrder.id || pOrder._id || pOrder.orderId || '').replace(/[^0-9a-z]/gi, '');
+            const oId = String(o.id || o._id || o.orderId || '').replace(/[^0-9a-z]/gi, '');
+            if (pId && oId && pId !== oId) return false;
+          } catch(e) {}
+        }
+
+        return true;
       });
+
       setPendingUnpaidOrder(unpaidMatch || null);
     } catch (e) {
       setActivePlacedOrder(null);
@@ -846,13 +910,14 @@ export default function CustomerMenuPage({ onShowToast }) {
 
       try {
         const merchantData = await fetchPublicMerchantApi(targetIdentifier);
+        const isSnackRack = (restaurantSlug || '').toLowerCase() === 'meenakshi' || (targetIdentifier || '').toUpperCase() === 'FP-348330' || (effectiveMerchantId || '').toUpperCase() === 'FP-348330';
         if (merchantData) {
           setStoreInfo((prev) => ({
             ...prev,
-            name: merchantData.businessName || merchantData.name || rawRestName,
+            name: isSnackRack ? 'Snack Rack' : (merchantData.businessName || merchantData.name || rawRestName),
             logoUrl: merchantData.logo?.url || prev.logoUrl,
             gstPercent: merchantData.gstPercent !== undefined ? merchantData.gstPercent : 5,
-            upiId: localStorage.getItem('foodypay_upi_id') || merchantData.upiId || merchantData.upi_id || prev.upiId || '7496888449@ptsbi',
+            upiId: merchantData.upiId || merchantData.upi_id || localStorage.getItem('foodypay_upi_id') || prev.upiId || 'merchant@icici',
           }));
           setStoreControls((prev) => ({
             ...prev,
@@ -860,44 +925,112 @@ export default function CustomerMenuPage({ onShowToast }) {
             deliveryStatus: merchantData.deliveryStatus !== undefined ? merchantData.deliveryStatus : prev.deliveryStatus,
             pickupStatus: merchantData.pickupStatus !== undefined ? merchantData.pickupStatus : prev.pickupStatus,
           }));
+        } else if (isSnackRack) {
+          setStoreInfo((prev) => ({
+            ...prev,
+            name: 'Snack Rack',
+          }));
         }
       } catch (e) {}
 
       const normalizeDishes = (list) => {
         if (!Array.isArray(list)) return [];
-        return list.map((item, idx) => ({
-          ...item,
-          id: String(item.id || item._id || `d_${idx}_${(item.name || 'dish').toLowerCase().replace(/[^a-z0-9]/g, '_')}`),
-          price: Number(item.price || item.comboPrice || 0),
-        }));
+        return list.map((item, idx) => {
+          const itemName = (item.name || '').toLowerCase();
+          const isFamousItem = item.isFamous || item.isBestseller || itemName.includes('chicken lollipop') || itemName.includes('malai chaap');
+          return {
+            ...item,
+            id: String(item.id || item._id || `d_${idx}_${(item.name || 'dish').toLowerCase().replace(/[^a-z0-9]/g, '_')}`),
+            price: Number(item.price || item.comboPrice || 0),
+            foodypayId: item.foodypayId || item.merchantId || item.storeId || '',
+            merchantId: item.merchantId || item.foodypayId || item.storeId || '',
+            isFamous: isFamousItem,
+            isBestseller: isFamousItem || item.isBestseller,
+          };
+        });
       };
 
-      if (locationState.lat && locationState.lng) {
-        try {
-          const locationRes = await fetchAvailableProductsApi(locationState.lat, locationState.lng, selectedCategory);
-          if (locationRes && locationRes.available === false) {
-            setDishes([]);
-          } else if (locationRes && Array.isArray(locationRes.dishes) && locationRes.dishes.length > 0) {
-            setDishes(normalizeDishes(locationRes.dishes));
-          } else {
-            const apiDishes = await fetchPublicDishesApi(merchantId, effectiveMerchantId);
-            if (Array.isArray(apiDishes)) {
-              setDishes(normalizeDishes(apiDishes));
+      let freshApiDishes = [];
+      try {
+        const apiDishes = await fetchPublicDishesApi(merchantId, effectiveMerchantId);
+        if (Array.isArray(apiDishes)) {
+          freshApiDishes = apiDishes;
+        }
+      } catch (err) {
+        console.warn('Catalog API fetch error:', err);
+      }
+
+      const isSnackRackStore = (restaurantSlug || '').toLowerCase() === 'meenakshi' || (targetIdentifier || '').toUpperCase() === 'FP-348330' || (effectiveMerchantId || '').toUpperCase() === 'FP-348330';
+      const activeStoreId = (effectiveMerchantId || merchantId || targetIdentifier || 'FP-348330').toUpperCase();
+
+      let combinedDishesList = [...freshApiDishes];
+
+      try {
+        const localSaved = localStorage.getItem('foodypay_crm_dishes_v3');
+        if (localSaved) {
+          const parsedLocal = JSON.parse(localSaved);
+          if (Array.isArray(parsedLocal)) {
+            // Filter local dishes to match current store to prevent cross-store product leak
+            const storeMatchedLocal = parsedLocal.filter((d) => {
+              if (!d) return false;
+              const dFpId = (d.foodypayId || d.merchantId || d.storeId || '').toUpperCase();
+              if (isSnackRackStore) {
+                return !dFpId || dFpId === 'FP-348330' || dFpId === 'MEENAKSHI';
+              }
+              return dFpId === activeStoreId;
+            });
+
+            if (storeMatchedLocal.length > 0) {
+              // Map local edited dishes by ID and by lowercase Name
+              const localEditsMap = new Map();
+              storeMatchedLocal.forEach((ld) => {
+                if (ld._id || ld.id) localEditsMap.set(String(ld._id || ld.id), ld);
+                const nameKey = (ld.name || '').toLowerCase().trim();
+                if (nameKey) localEditsMap.set(nameKey, ld);
+              });
+
+              // Apply local edits (price, image, inStock availability, description) over API dishes
+              combinedDishesList = combinedDishesList.map((apiDish) => {
+                const idKey = String(apiDish._id || apiDish.id);
+                const nameKey = (apiDish.name || '').toLowerCase().trim();
+                if (localEditsMap.has(idKey)) return { ...apiDish, ...localEditsMap.get(idKey) };
+                if (localEditsMap.has(nameKey)) return { ...apiDish, ...localEditsMap.get(nameKey) };
+                return apiDish;
+              });
+
+              // Add new local dishes that are not in API list
+              const existingKeys = new Set(combinedDishesList.flatMap((d) => [String(d._id || d.id), (d.name || '').toLowerCase().trim()]));
+              const newLocalDishes = storeMatchedLocal.filter((d) => {
+                const idKey = String(d._id || d.id);
+                const nameKey = (d.name || '').toLowerCase().trim();
+                return !existingKeys.has(idKey) && !existingKeys.has(nameKey);
+              });
+
+              combinedDishesList = [...combinedDishesList, ...newLocalDishes];
+
+              // If API returned empty array, use local dishes directly
+              if (freshApiDishes.length === 0) {
+                combinedDishesList = storeMatchedLocal;
+              }
             }
           }
-        } catch (locErr) {
-          try {
-            const apiDishes = await fetchPublicDishesApi(merchantId, effectiveMerchantId);
-            if (Array.isArray(apiDishes)) setDishes(normalizeDishes(apiDishes));
-          } catch (e) {}
         }
-      } else {
-        try {
-          const apiDishes = await fetchPublicDishesApi(merchantId, effectiveMerchantId);
-          if (Array.isArray(apiDishes)) {
-            setDishes(normalizeDishes(apiDishes));
+      } catch (e) {}
+
+      if (isSnackRackStore && combinedDishesList.length === 0) {
+        combinedDishesList = [...SNACK_RACK_DEFAULT_DISHES];
+      }
+
+      if (combinedDishesList.length > 0) {
+        // Final deduplication by lower-case dish name
+        const dishMap = new Map();
+        combinedDishesList.forEach((dish) => {
+          const key = (dish.name || '').toLowerCase().trim();
+          if (key && !dishMap.has(key)) {
+            dishMap.set(key, dish);
           }
-        } catch (err) {}
+        });
+        setDishes(normalizeDishes(Array.from(dishMap.values())));
       }
 
       const savedMeals = localStorage.getItem('foodypay_crm_meals_v1');
@@ -923,15 +1056,31 @@ export default function CustomerMenuPage({ onShowToast }) {
         }
       } catch (cpErr) {}
     } catch (e) {
-      setDishes([]);
-      setCombos([]);
+      console.warn('loadDynamicMenu error:', e);
     }
   };
 
   useEffect(() => {
     loadDynamicMenu();
     window.addEventListener('storage', loadDynamicMenu);
-    return () => window.removeEventListener('storage', loadDynamicMenu);
+    window.addEventListener('focus', loadDynamicMenu);
+    window.addEventListener('online', loadDynamicMenu);
+    window.addEventListener('foodypay_order_created', loadDynamicMenu);
+    window.addEventListener('foodypay_dishes_updated', loadDynamicMenu);
+
+    // Auto-poll catalog API every 3 seconds for fresh data
+    const catalogPollTimer = setInterval(() => {
+      loadDynamicMenu();
+    }, 3000);
+
+    return () => {
+      window.removeEventListener('storage', loadDynamicMenu);
+      window.removeEventListener('focus', loadDynamicMenu);
+      window.removeEventListener('online', loadDynamicMenu);
+      window.removeEventListener('foodypay_order_created', loadDynamicMenu);
+      window.removeEventListener('foodypay_dishes_updated', loadDynamicMenu);
+      clearInterval(catalogPollTimer);
+    };
   }, [restaurantSlug, merchantId, rawRestName, locationState.lat, locationState.lng, selectedCategory]);
 
   // Dynamic favicon & title
@@ -1072,7 +1221,7 @@ export default function CustomerMenuPage({ onShowToast }) {
           merchantId: mData.merchantId || parsed.merchant,
           logoUrl: mData.logo?.url || prev.logoUrl,
           gstPercent: mData.gstPercent !== undefined ? mData.gstPercent : 5,
-          upiId: localStorage.getItem('foodypay_upi_id') || mData.upiId || mData.upi_id || prev.upiId || '7496888449@ptsbi'
+          upiId: mData.upiId || mData.upi_id || localStorage.getItem('foodypay_upi_id') || prev.upiId || 'merchant@icici'
         }));
       }
     } catch (err) {}
@@ -1271,11 +1420,24 @@ export default function CustomerMenuPage({ onShowToast }) {
   const finalTotal = Math.round(taxableAmount + gstAmount);
 
   const filteredDishes = dishes.filter((dish) => {
-    const currentStoreId = (effectiveMerchantId || storeInfo.merchantId || '').toUpperCase();
-    const dishStoreId = (dish.foodypayId || dish.merchantId || '').toUpperCase();
-    if (dishStoreId && currentStoreId && dishStoreId !== currentStoreId) {
-      return false;
+    const currentStoreId = (effectiveMerchantId || storeInfo.merchantId || '').toUpperCase().trim();
+    const dishStoreId = (dish.foodypayId || dish.merchantId || dish.storeId || '').toUpperCase().trim();
+
+    // Check if there are specific products for this exact store ID in dishes dataset
+    const storeHasSpecificDishes = dishes.some((d) => {
+      const sId = (d.foodypayId || d.merchantId || d.storeId || '').toUpperCase().trim();
+      return sId && currentStoreId && sId === currentStoreId;
+    });
+
+    if (currentStoreId) {
+      if (dishStoreId) {
+        if (dishStoreId !== currentStoreId) return false;
+      } else if (storeHasSpecificDishes) {
+        // If this store has its own specific added products, exclude unassigned generic sample items
+        return false;
+      }
     }
+
     const matchesSearch =
       dish.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (dish.desc && dish.desc.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -1286,6 +1448,17 @@ export default function CustomerMenuPage({ onShowToast }) {
       (dietFilter === 'nonveg' && !dish.isVeg);
     return matchesSearch && matchesCat && matchesDiet;
   });
+
+  const catalogTotalPages = Math.ceil(filteredDishes.length / (itemsPerPage === 'All' ? (filteredDishes.length || 1) : Number(itemsPerPage))) || 1;
+  const safeCatalogPage = Math.min(Math.max(1, menuPage), catalogTotalPages);
+  const actualItemsPerPage = itemsPerPage === 'All' ? filteredDishes.length : Number(itemsPerPage);
+
+  const paginatedDishes = catalogPaginationMode === 'paged'
+    ? filteredDishes.slice((safeCatalogPage - 1) * actualItemsPerPage, safeCatalogPage * actualItemsPerPage)
+    : filteredDishes.slice(0, safeCatalogPage * actualItemsPerPage);
+
+  const catalogStartItem = filteredDishes.length === 0 ? 0 : (catalogPaginationMode === 'paged' ? (safeCatalogPage - 1) * actualItemsPerPage + 1 : 1);
+  const catalogEndItem = catalogPaginationMode === 'paged' ? Math.min(safeCatalogPage * actualItemsPerPage, filteredDishes.length) : Math.min(safeCatalogPage * actualItemsPerPage, filteredDishes.length);
 
   const getAssignedCouponsForUser = () => {
     let list = [];
@@ -1441,124 +1614,10 @@ export default function CustomerMenuPage({ onShowToast }) {
 
     if (paymentMode === 'upi' || paymentMode === 'razorpay') {
       setPendingOrderObj(newOrder);
-
-      const activeRoutingMode = localStorage.getItem('foodypay_payment_routing_mode') || 'foodypay_default';
-
-      // 1. Direct Merchant UPI QR Mode -> Open UPI Modal
-      if (activeRoutingMode === 'merchant_upi') {
-        setShowUpiModal(true);
-        setIsCartOpen(false);
-        setIsSubmittingOrder(false);
-        return;
-      }
-
-      // 2. FoodyPay Default Gateway OR Merchant Own Razorpay -> Open Razorpay Checkout Gateway
-      const loadRazorpayScript = () => {
-        return new Promise((resolve) => {
-          if (window.Razorpay) {
-            resolve(true);
-            return;
-          }
-          const script = document.createElement('script');
-          script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-          script.onload = () => resolve(true);
-          script.onerror = () => resolve(false);
-          document.body.appendChild(script);
-        });
-      };
-
-      try {
-        let activeRzpKey = 'rzp_live_TjBEt4gu2aUflB';
-        let activeRzpSecret = 'FPXDLXe3Vbh0NYSpCAXmXOA3';
-
-        if (activeRoutingMode === 'merchant_razorpay') {
-          activeRzpKey = localStorage.getItem('foodypay_rzp_key_id') || storeInfo.razorpayKeyId || 'rzp_live_TjBEt4gu2aUflB';
-          activeRzpSecret = localStorage.getItem('foodypay_rzp_key_secret') || storeInfo.razorpayKeySecret || 'FPXDLXe3Vbh0NYSpCAXmXOA3';
-        }
-
-        let razorpayOrderId = null;
-        try {
-          const rzpRes = await createRazorpayOrderApi({
-            amount: newOrder.total,
-            currency: 'INR',
-            merchantId: storeInfo.merchantId,
-            foodypayId: effectiveMerchantId,
-            orderId: newOrder.id,
-            razorpayKeyId: activeRzpKey,
-            razorpayKeySecret: activeRzpSecret,
-            paymentRoutingMode: activeRoutingMode,
-          });
-
-          if (rzpRes && rzpRes.routingMode === 'merchant_upi') {
-            setShowUpiModal(true);
-            setIsCartOpen(false);
-            setIsSubmittingOrder(false);
-            return;
-          }
-
-          if (rzpRes && rzpRes.razorpayOrderId) {
-            razorpayOrderId = rzpRes.razorpayOrderId;
-          }
-        } catch (apiErr) {
-          console.warn('Backend order API creation warning (proceeding with direct Razorpay SDK checkout):', apiErr);
-        }
-
-        const scriptLoaded = await loadRazorpayScript();
-        if (scriptLoaded && window.Razorpay) {
-          const options = {
-            key: activeRzpKey || 'rzp_live_TjBEt4gu2aUflB',
-            amount: Math.round(newOrder.total * 100),
-            currency: 'INR',
-            name: storeInfo.name || 'FoodyPay Order',
-            description: `Order ${newOrder.id} at ${storeInfo.name}`,
-            image: storeInfo.logoUrl || '/Logo.png',
-            ...(razorpayOrderId ? { order_id: razorpayOrderId } : {}),
-            handler: async function (response) {
-              try {
-                await verifyRazorpaySignatureApi({
-                  razorpayOrderId: response.razorpay_order_id,
-                  razorpayPaymentId: response.razorpay_payment_id,
-                  razorpaySignature: response.razorpay_signature,
-                  orderId: newOrder.id,
-                  merchantId: storeInfo.merchantId,
-                });
-              } catch (e) {}
-
-              const paidOrder = {
-                ...newOrder,
-                paymentStatus: 'paid-razorpay',
-                paymentLabel: 'Paid via Razorpay',
-              };
-              finalizeAndSaveOrder(paidOrder);
-            },
-            prefill: {
-              name: customerName,
-              contact: customerPhone,
-            },
-            theme: {
-              color: '#FF5E14',
-            },
-            modal: {
-              ondismiss: function () {
-                setIsSubmittingOrder(false);
-              }
-            }
-          };
-
-          const rzpInstance = new window.Razorpay(options);
-          rzpInstance.open();
-          setIsCartOpen(false);
-          setIsSubmittingOrder(false);
-          return;
-        }
-      } catch (err) {
-        console.error('Razorpay popup error:', err);
-      }
-
-      // Emergency fallback only if Razorpay CDN script completely fails to load
       setShowUpiModal(true);
       setIsCartOpen(false);
       setIsSubmittingOrder(false);
+      return;
     } else {
       finalizeAndSaveOrder(newOrder);
     }
@@ -2553,16 +2612,180 @@ export default function CustomerMenuPage({ onShowToast }) {
 
             {/* FULL PRODUCTS CATALOG GRID */}
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+              {/* Famous / Bestsellers Highlight Banner Section */}
+              {(() => {
+                const famousItems = filteredDishes.filter((d) => 
+                  d.isFamous || 
+                  d.isBestseller || 
+                  (d.name && (d.name.toLowerCase().includes('chicken lollipop') || d.name.toLowerCase().includes('malai chaap')))
+                );
+
+                if (famousItems.length === 0 || searchQuery.trim()) return null;
+
+                return (
+                  <div style={{
+                    background: 'linear-gradient(135deg, #1E1B4B 0%, #312E81 50%, #4338CA 100%)',
+                    borderRadius: '20px',
+                    padding: '18px 16px',
+                    color: '#FFFFFF',
+                    marginBottom: '20px',
+                    boxShadow: '0 10px 28px rgba(49, 46, 129, 0.3)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    position: 'relative',
+                    overflow: 'hidden'
+                  }}>
+                    {/* Background Decorative Glow */}
+                    <div style={{ position: 'absolute', top: '-40px', right: '-40px', width: '160px', height: '160px', background: 'radial-gradient(circle, rgba(245, 158, 11, 0.25) 0%, transparent 70%)', pointerEvents: 'none' }} />
+
+                    {/* Header Badge */}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ backgroundColor: '#F59E0B', color: '#0F172A', padding: '6px', borderRadius: '10px', display: 'flex', boxShadow: '0 2px 8px rgba(245, 158, 11, 0.4)' }}>
+                          <Sparkles size={20} />
+                        </div>
+                        <div>
+                          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#FFFFFF', letterSpacing: '0.3px' }}>
+                             Most Famous Foods of {storeInfo.name}
+                          </h3>
+                          <p style={{ margin: 0, fontSize: '12px', color: '#CBD5E1', fontWeight: 500 }}>
+                            Top customer favorites & signature house specialties
+                          </p>
+                        </div>
+                      </div>
+
+                      <span style={{ backgroundColor: 'rgba(245, 158, 11, 0.2)', color: '#FCD34D', border: '1px solid #F59E0B', padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                         MUST TRY DISHES
+                      </span>
+                    </div>
+
+                    {/* Famous Dish Cards Container */}
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: famousItems.length === 1 ? '1fr' : 'repeat(auto-fit, minmax(260px, 1fr))',
+                      gap: '14px'
+                    }}>
+                      {famousItems.map((dish) => {
+                        const qty = cart[dish.id] || 0;
+                        const isItemInStock = dish.inStock !== false && dish.stockStatus !== 'out_of_stock' && dish.isAvailable !== false && dish.available !== false;
+                        const imgUrl = getDishImageUrl(dish);
+
+                        return (
+                          <div
+                            key={dish.id}
+                            onClick={() => setSelectedProductModal(dish)}
+                            style={{
+                              backgroundColor: '#FFFFFF',
+                              borderRadius: '16px',
+                              padding: '12px',
+                              display: 'flex',
+                              gap: '12px',
+                              alignItems: 'center',
+                              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.15)',
+                              cursor: 'pointer',
+                              border: '1.5px solid #F59E0B',
+                              position: 'relative',
+                              filter: isItemInStock ? 'none' : 'grayscale(100%) opacity(0.55)',
+                              transition: 'all 0.2s ease'
+                            }}
+                          >
+                            {/* Dish Image */}
+                            <div style={{ position: 'relative', width: '95px', height: '95px', borderRadius: '12px', overflow: 'hidden', flexShrink: 0, backgroundColor: '#F1F5F9' }}>
+                              <img src={imgUrl} alt={dish.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              
+                              {!isItemInStock && (
+                                <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(15,23,42,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFF', fontSize: '9.5px', fontWeight: 900, textAlign: 'center', padding: '2px' }}>
+                                   OUT OF STOCK
+                                </div>
+                              )}
+
+                              <div style={{ position: 'absolute', top: '4px', left: '4px', backgroundColor: '#FFF', borderRadius: '4px', padding: '2px 4px', border: `1px solid ${dish.isVeg ? '#16A34A' : '#DC2626'}` }}>
+                                <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: dish.isVeg ? '#16A34A' : '#DC2626' }} />
+                              </div>
+                            </div>
+
+                            {/* Info & Action */}
+                            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '95px' }}>
+                              <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+                                  <span style={{ backgroundColor: '#FEF3C7', color: '#92400E', fontSize: '9.5px', fontWeight: 900, padding: '1px 6px', borderRadius: '6px', border: '1px solid #FDE68A' }}>
+                                     Famous Bestseller
+                                  </span>
+                                  <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#D97706', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                    ⭐ {dish.rating || 4.9}
+                                  </span>
+                                </div>
+                                <h4 style={{ margin: '0 0 2px', fontSize: '14.5px', fontWeight: 900, color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {dish.name}
+                                </h4>
+                                <p style={{ margin: 0, fontSize: '11px', color: '#64748B', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                  {dish.desc || dish.description || 'Famous specialty dish.'}
+                                </p>
+                              </div>
+
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
+                                <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                                  <span style={{ fontSize: '16px', fontWeight: 900, color: '#0F172A' }}>₹{dish.price}</span>
+                                  {dish.originalPrice && Number(dish.originalPrice) > Number(dish.price) && (
+                                    <span style={{ fontSize: '11px', color: '#94A3B8', textDecoration: 'line-through', fontWeight: 600 }}>₹{dish.originalPrice}</span>
+                                  )}
+                                </div>
+
+                                {!isItemInStock ? (
+                                  <button disabled={true} style={{ backgroundColor: '#E2E8F0', color: '#64748B', border: '1px solid #CBD5E1', borderRadius: '8px', padding: '4px 10px', fontSize: '11px', fontWeight: 800, cursor: 'not-allowed' }}>
+                                    OUT OF STOCK
+                                  </button>
+                                ) : qty === 0 ? (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateCartQty(dish.id, 1);
+                                    }}
+                                    style={{
+                                      backgroundColor: '#FF5E14',
+                                      color: '#FFFFFF',
+                                      border: 'none',
+                                      borderRadius: '8px',
+                                      padding: '5px 14px',
+                                      fontSize: '11.5px',
+                                      fontWeight: 900,
+                                      cursor: 'pointer',
+                                      boxShadow: '0 3px 8px rgba(255, 94, 20, 0.3)'
+                                    }}
+                                  >
+                                    + ADD
+                                  </button>
+                                ) : (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', backgroundColor: '#FF5E14', borderRadius: '8px', padding: '3px 7px' }}>
+                                    <button onClick={(e) => { e.stopPropagation(); updateCartQty(dish.id, -1); }} style={{ background: 'none', border: 'none', color: '#FFF', cursor: 'pointer', padding: 0 }}>
+                                      <Minus size={12} />
+                                    </button>
+                                    <span style={{ color: '#FFF', fontWeight: 900, fontSize: '12px' }}>{qty}</span>
+                                    <button onClick={(e) => { e.stopPropagation(); updateCartQty(dish.id, 1); }} style={{ background: 'none', border: 'none', color: '#FFF', cursor: 'pointer', padding: 0 }}>
+                                      <Plus size={12} />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div ref={catalogHeaderRef} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
                 <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900, color: '#0F172A' }}>
                   {searchQuery.trim() ? `Search Results for "${searchQuery}"` : (selectedCategory === 'All' ? 'All Menu & Dishes' : selectedCategory)}
                 </h3>
                 <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>{filteredDishes.length} Items</span>
               </div>
 
-              <div className="fp-desktop-grid">
-                {filteredDishes.slice(0, menuPage * ITEMS_PER_PAGE).map((dish) => {
+              <div className="fp-desktop-grid animate-fade-in" key={`${selectedCategory}_${safeCatalogPage}_${searchQuery}`}>
+                {paginatedDishes.map((dish) => {
                   const qty = cart[dish.id] || 0;
+                  const isItemInStock = dish.inStock !== false && dish.stockStatus !== 'out_of_stock' && dish.isAvailable !== false && dish.available !== false;
                   const imgUrl = getDishImageUrl(dish);
 
                   return (
@@ -2571,15 +2794,16 @@ export default function CustomerMenuPage({ onShowToast }) {
                       onClick={() => setSelectedProductModal(dish)}
                       className="fp-card-hover"
                       style={{
-                        backgroundColor: '#FFFFFF',
+                        backgroundColor: isItemInStock ? '#FFFFFF' : '#F8FAFC',
                         borderRadius: '16px',
-                        border: '1.5px solid #E2E8F0',
+                        border: isItemInStock ? '1.5px solid #E2E8F0' : '1.5px solid #CBD5E1',
                         padding: '10px',
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'space-between',
                         boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-                        cursor: 'pointer'
+                        cursor: 'pointer',
+                        filter: isItemInStock ? 'none' : 'grayscale(100%) opacity(0.6)'
                       }}
                     >
                       {/* Product Image & Veg Badge */}
@@ -2589,6 +2813,15 @@ export default function CustomerMenuPage({ onShowToast }) {
                           alt={dish.name}
                           style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                         />
+
+                        {!isItemInStock && (
+                          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3 }}>
+                            <span style={{ backgroundColor: '#DC2626', color: '#FFFFFF', padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 900, letterSpacing: '0.5px', boxShadow: '0 2px 8px rgba(220, 38, 38, 0.4)' }}>
+                              OUT OF STOCK
+                            </span>
+                          </div>
+                        )}
+
                         <div
                           style={{
                             position: 'absolute',
@@ -2601,14 +2834,15 @@ export default function CustomerMenuPage({ onShowToast }) {
                             alignItems: 'center',
                             gap: '4px',
                             boxShadow: '0 2px 4px rgba(0,0,0,0.12)',
-                            border: '1px solid #E2E8F0'
+                            border: '1px solid #E2E8F0',
+                            zIndex: 2
                           }}
                         >
-                          <div style={{ width: '10px', height: '10px', border: '1.5px solid #16A34A', padding: '1px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <div style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: '#16A34A' }} />
+                          <div style={{ width: '10px', height: '10px', border: `1.5px solid ${dish.isVeg !== false ? '#16A34A' : '#DC2626'}`, padding: '1px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: dish.isVeg !== false ? '#16A34A' : '#DC2626' }} />
                           </div>
-                          <span style={{ fontSize: '9px', fontWeight: 800, color: '#15803D' }}>
-                            VEG
+                          <span style={{ fontSize: '9px', fontWeight: 800, color: dish.isVeg !== false ? '#15803D' : '#B91C1C' }}>
+                            {dish.isVeg !== false ? 'VEG' : 'NON-VEG'}
                           </span>
                         </div>
 
@@ -2637,11 +2871,18 @@ export default function CustomerMenuPage({ onShowToast }) {
                       {/* Product Details */}
                       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                         <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+                            {dish.isFamous && (
+                              <span style={{ backgroundColor: '#FEF3C7', color: '#92400E', fontSize: '8.5px', fontWeight: 900, padding: '1px 5px', borderRadius: '4px', border: '1px solid #FDE68A' }}>
+                                ⭐ Famous Bestseller
+                              </span>
+                            )}
+                          </div>
                           <h4 style={{ margin: '0 0 3px', fontSize: '13.5px', fontWeight: 800, color: '#0F172A', lineHeight: '1.25' }}>
                             {dish.name}
                           </h4>
                           <p style={{ margin: '0 0 8px', fontSize: '11px', color: '#64748B', fontWeight: 400, lineHeight: '1.2' }}>
-                            {dish.description || 'Fresh quality product delivered fast.'}
+                            {dish.description || dish.desc || 'Fresh quality product delivered fast.'}
                           </p>
                         </div>
 
@@ -2659,7 +2900,24 @@ export default function CustomerMenuPage({ onShowToast }) {
                             )}
                           </div>
 
-                          {qty === 0 ? (
+                          {!isItemInStock ? (
+                            <button
+                              disabled={true}
+                              style={{
+                                backgroundColor: '#E2E8F0',
+                                color: '#64748B',
+                                border: '1.5px solid #CBD5E1',
+                                borderRadius: '8px',
+                                padding: '5px 12px',
+                                fontSize: '11px',
+                                fontWeight: 800,
+                                cursor: 'not-allowed',
+                                opacity: 0.8
+                              }}
+                            >
+                              OUT OF STOCK
+                            </button>
+                          ) : qty === 0 ? (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -2711,33 +2969,189 @@ export default function CustomerMenuPage({ onShowToast }) {
                 })}
               </div>
 
-              {/* Infinite Scroll & Pagination Controls */}
+              {/* Full Catalog Pagination Controls Bar */}
               {filteredDishes.length > 0 && (
-                <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ fontSize: '12.5px', color: '#64748B', fontWeight: 700 }}>
-                    Showing {Math.min(menuPage * ITEMS_PER_PAGE, filteredDishes.length)} of {filteredDishes.length} dishes
+                <div
+                  style={{
+                    marginTop: '24px',
+                    padding: '14px 18px',
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: '16px',
+                    border: '1.5px solid #E2E8F0',
+                    boxShadow: '0 4px 14px rgba(0,0,0,0.03)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+                    <div style={{ fontSize: '13px', color: '#475569', fontWeight: 700 }}>
+                      Showing {catalogStartItem} – {catalogEndItem} of {filteredDishes.length} items
+                      {catalogPaginationMode === 'paged' && catalogTotalPages > 1 && ` (Page ${safeCatalogPage} of ${catalogTotalPages})`}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>Show:</span>
+                        <select
+                          value={itemsPerPage}
+                          onChange={(e) => {
+                            const val = e.target.value === 'All' ? 'All' : Number(e.target.value);
+                            setItemsPerPage(val);
+                            setMenuPage(1);
+                          }}
+                          style={{
+                            padding: '5px 10px',
+                            borderRadius: '8px',
+                            border: '1.5px solid #CBD5E1',
+                            backgroundColor: '#F8FAFC',
+                            fontSize: '12px',
+                            fontWeight: 800,
+                            color: '#0F172A',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <option value={6}>6 per page</option>
+                          <option value={12}>12 per page</option>
+                          <option value={24}>24 per page</option>
+                          <option value={48}>48 per page</option>
+                          <option value="All">All items</option>
+                        </select>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#F1F5F9', borderRadius: '8px', padding: '2px' }}>
+                        <button
+                          type="button"
+                          onClick={() => setCatalogPaginationMode('paged')}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            border: 'none',
+                            backgroundColor: catalogPaginationMode === 'paged' ? '#FF5E14' : 'transparent',
+                            color: catalogPaginationMode === 'paged' ? '#FFFFFF' : '#64748B',
+                            fontSize: '11.5px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          Pages
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCatalogPaginationMode('load_more')}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            border: 'none',
+                            backgroundColor: catalogPaginationMode === 'load_more' ? '#FF5E14' : 'transparent',
+                            color: catalogPaginationMode === 'load_more' ? '#FFFFFF' : '#64748B',
+                            fontSize: '11.5px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          Infinite
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  {menuPage * ITEMS_PER_PAGE < filteredDishes.length && (
-                    <button
-                      type="button"
-                      onClick={() => setMenuPage((prev) => prev + 1)}
-                      style={{
-                        background: 'linear-gradient(135deg, #FF5E14, #E04D0B)',
-                        color: '#FFFFFF',
-                        border: 'none',
-                        padding: '10px 24px',
-                        borderRadius: '24px',
-                        fontSize: '13.5px',
-                        fontWeight: 800,
-                        cursor: 'pointer',
-                        boxShadow: '0 4px 14px rgba(255, 94, 20, 0.3)',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '8px'
-                      }}
-                    >
-                      <span>Load More Products </span>
-                    </button>
+
+                  {/* Page Buttons / Infinite Load More */}
+                  {catalogPaginationMode === 'paged' ? (
+                    catalogTotalPages > 1 && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', flexWrap: 'wrap', paddingTop: '8px', borderTop: '1px solid #F1F5F9' }}>
+                        <button
+                          type="button"
+                          disabled={safeCatalogPage === 1}
+                          onClick={() => {
+                            setMenuPage((p) => Math.max(1, p - 1));
+                            catalogHeaderRef.current?.scrollIntoView({ behavior: 'smooth' });
+                          }}
+                          style={{
+                            padding: '6px 14px',
+                            borderRadius: '10px',
+                            border: '1.5px solid #CBD5E1',
+                            backgroundColor: safeCatalogPage === 1 ? '#F1F5F9' : '#FFFFFF',
+                            color: safeCatalogPage === 1 ? '#94A3B8' : '#0F172A',
+                            fontWeight: 800,
+                            fontSize: '12.5px',
+                            cursor: safeCatalogPage === 1 ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          ◀ Prev
+                        </button>
+
+                        {Array.from({ length: catalogTotalPages }, (_, i) => i + 1).map((pageNum) => (
+                          <button
+                            key={pageNum}
+                            type="button"
+                            onClick={() => {
+                              setMenuPage(pageNum);
+                              catalogHeaderRef.current?.scrollIntoView({ behavior: 'smooth' });
+                            }}
+                            style={{
+                              width: '36px',
+                              height: '36px',
+                              borderRadius: '10px',
+                              border: safeCatalogPage === pageNum ? '2px solid #FF5E14' : '1.5px solid #E2E8F0',
+                              backgroundColor: safeCatalogPage === pageNum ? '#FF5E14' : '#FFFFFF',
+                              color: safeCatalogPage === pageNum ? '#FFFFFF' : '#1E293B',
+                              fontWeight: 900,
+                              fontSize: '13px',
+                              cursor: 'pointer',
+                              boxShadow: safeCatalogPage === pageNum ? '0 3px 8px rgba(255,94,20,0.3)' : 'none'
+                            }}
+                          >
+                            {pageNum}
+                          </button>
+                        ))}
+
+                        <button
+                          type="button"
+                          disabled={safeCatalogPage === catalogTotalPages}
+                          onClick={() => {
+                            setMenuPage((p) => Math.min(catalogTotalPages, p + 1));
+                            catalogHeaderRef.current?.scrollIntoView({ behavior: 'smooth' });
+                          }}
+                          style={{
+                            padding: '6px 14px',
+                            borderRadius: '10px',
+                            border: '1.5px solid #CBD5E1',
+                            backgroundColor: safeCatalogPage === catalogTotalPages ? '#F1F5F9' : '#FFFFFF',
+                            color: safeCatalogPage === catalogTotalPages ? '#94A3B8' : '#0F172A',
+                            fontWeight: 800,
+                            fontSize: '12.5px',
+                            cursor: safeCatalogPage === catalogTotalPages ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          Next ▶
+                        </button>
+                      </div>
+                    )
+                  ) : (
+                    catalogEndItem < filteredDishes.length && (
+                      <div style={{ display: 'flex', justifyContent: 'center', paddingTop: '8px' }}>
+                        <button
+                          type="button"
+                          onClick={() => setMenuPage((prev) => prev + 1)}
+                          style={{
+                            background: 'linear-gradient(135deg, #FF5E14, #E04D0B)',
+                            color: '#FFFFFF',
+                            border: 'none',
+                            padding: '10px 24px',
+                            borderRadius: '24px',
+                            fontSize: '13.5px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            boxShadow: '0 4px 14px rgba(255, 94, 20, 0.3)'
+                          }}
+                        >
+                          Load More Products ({filteredDishes.length - catalogEndItem} remaining)
+                        </button>
+                      </div>
+                    )
                   )}
                 </div>
               )}
@@ -2995,6 +3409,125 @@ export default function CustomerMenuPage({ onShowToast }) {
             {/* TABLE DINE-IN MENU PRODUCTS & CATEGORIES (ONLY DISPLAYED WHEN A TABLE HAS BEEN SCANNED) */}
             {hasScannedTable && (
               <div>
+                {/* Famous / Bestsellers Highlight Banner Section */}
+                {(() => {
+                  const famousItems = filteredDishes.filter((d) => 
+                    d.isFamous || 
+                    d.isBestseller || 
+                    (d.name && (d.name.toLowerCase().includes('chicken lollipop') || d.name.toLowerCase().includes('malai chaap')))
+                  );
+
+                  if (famousItems.length === 0 || searchQuery.trim()) return null;
+
+                  return (
+                    <div style={{
+                      background: 'linear-gradient(135deg, #1E1B4B 0%, #312E81 50%, #4338CA 100%)',
+                      borderRadius: '20px',
+                      padding: '16px 14px',
+                      color: '#FFFFFF',
+                      marginBottom: '16px',
+                      boxShadow: '0 8px 24px rgba(49, 46, 129, 0.25)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      position: 'relative',
+                      overflow: 'hidden'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{ backgroundColor: '#F59E0B', color: '#0F172A', padding: '5px', borderRadius: '8px', display: 'flex' }}>
+                            <Sparkles size={18} />
+                          </div>
+                          <div>
+                            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900, color: '#FFFFFF' }}>
+                               Most Famous Foods of {storeInfo.name}
+                            </h3>
+                            <p style={{ margin: 0, fontSize: '11px', color: '#CBD5E1' }}>
+                              Top customer favorites &amp; house specialties
+                            </p>
+                          </div>
+                        </div>
+
+                        <span style={{ backgroundColor: 'rgba(245, 158, 11, 0.2)', color: '#FCD34D', border: '1px solid #F59E0B', padding: '2px 8px', borderRadius: '10px', fontSize: '10px', fontWeight: 800 }}>
+                           MUST TRY
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: famousItems.length === 1 ? '1fr' : 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+                        {famousItems.map((dish) => {
+                          const qty = cart[dish.id] || 0;
+                          const isItemInStock = dish.inStock !== false && dish.stockStatus !== 'out_of_stock' && dish.isAvailable !== false && dish.available !== false;
+                          const imgUrl = getDishImageUrl(dish);
+
+                          return (
+                            <div
+                              key={dish.id}
+                              onClick={() => setSelectedProductModal(dish)}
+                              style={{
+                                backgroundColor: '#FFFFFF',
+                                borderRadius: '14px',
+                                padding: '10px',
+                                display: 'flex',
+                                gap: '10px',
+                                alignItems: 'center',
+                                cursor: 'pointer',
+                                border: '1.5px solid #F59E0B',
+                                position: 'relative',
+                                filter: isItemInStock ? 'none' : 'grayscale(100%) opacity(0.55)'
+                              }}
+                            >
+                              <div style={{ position: 'relative', width: '85px', height: '85px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, backgroundColor: '#F1F5F9' }}>
+                                <img src={imgUrl} alt={dish.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                {!isItemInStock && (
+                                  <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(15,23,42,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFF', fontSize: '9px', fontWeight: 900, textAlign: 'center' }}>
+                                     OUT OF STOCK
+                                  </div>
+                                )}
+                              </div>
+
+                              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '85px' }}>
+                                <div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+                                    <span style={{ backgroundColor: '#FEF3C7', color: '#92400E', fontSize: '9px', fontWeight: 900, padding: '1px 5px', borderRadius: '4px' }}>
+                                       Famous Bestseller
+                                    </span>
+                                  </div>
+                                  <h4 style={{ margin: '0 0 2px', fontSize: '13.5px', fontWeight: 900, color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {dish.name}
+                                  </h4>
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                  <span style={{ fontSize: '15px', fontWeight: 900, color: '#0F172A' }}>₹{dish.price}</span>
+                                  {!isItemInStock ? (
+                                    <button disabled={true} style={{ backgroundColor: '#E2E8F0', color: '#64748B', border: '1px solid #CBD5E1', borderRadius: '6px', padding: '3px 8px', fontSize: '10.5px', fontWeight: 800, cursor: 'not-allowed' }}>
+                                      OUT OF STOCK
+                                    </button>
+                                  ) : qty === 0 ? (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        updateCartQty(dish.id, 1);
+                                      }}
+                                      style={{ backgroundColor: '#FF5E14', color: '#FFF', border: 'none', borderRadius: '6px', padding: '4px 12px', fontSize: '11px', fontWeight: 900, cursor: 'pointer' }}
+                                    >
+                                      + ADD
+                                    </button>
+                                  ) : (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: '#FF5E14', borderRadius: '6px', padding: '2px 6px' }}>
+                                      <button onClick={(e) => { e.stopPropagation(); updateCartQty(dish.id, -1); }} style={{ background: 'none', border: 'none', color: '#FFF', cursor: 'pointer' }}><Minus size={11} /></button>
+                                      <span style={{ color: '#FFF', fontWeight: 900, fontSize: '11.5px' }}>{qty}</span>
+                                      <button onClick={(e) => { e.stopPropagation(); updateCartQty(dish.id, 1); }} style={{ background: 'none', border: 'none', color: '#FFF', cursor: 'pointer' }}><Plus size={11} /></button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
                 <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#0F172A' }}>
                   {storeInfo.name} Menu ({storeInfo.table})
@@ -3027,9 +3560,9 @@ export default function CustomerMenuPage({ onShowToast }) {
 
               {/* Table Products Grid */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '14px' }}>
-                {filteredDishes.map((dish) => {
+                {paginatedDishes.map((dish) => {
                   const qty = cart[dish.id] || 0;
-                  const inStock = dish.inStock !== false;
+                  const isItemInStock = dish.inStock !== false && dish.stockStatus !== 'out_of_stock' && dish.isAvailable !== false && dish.available !== false;
                   const imgUrl = getDishImageUrl(dish);
 
                   return (
@@ -3037,15 +3570,15 @@ export default function CustomerMenuPage({ onShowToast }) {
                       key={dish.id}
                       onClick={() => setSelectedProductModal(dish)}
                       style={{
-                        backgroundColor: '#FFFFFF',
+                        backgroundColor: isItemInStock ? '#FFFFFF' : '#F8FAFC',
                         borderRadius: '16px',
-                        border: '1px solid #E2E8F0',
+                        border: isItemInStock ? '1px solid #E2E8F0' : '1.5px solid #CBD5E1',
                         padding: '12px',
                         display: 'flex',
                         flexDirection: 'column',
                         justifyContent: 'space-between',
                         boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-                        opacity: inStock ? 1 : 0.6,
+                        filter: isItemInStock ? 'none' : 'grayscale(100%) opacity(0.55)',
                         cursor: 'pointer'
                       }}
                     >
@@ -3060,6 +3593,15 @@ export default function CustomerMenuPage({ onShowToast }) {
                           }}
                           style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                         />
+
+                        {!isItemInStock && (
+                          <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3 }}>
+                            <span style={{ backgroundColor: '#DC2626', color: '#FFFFFF', padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 900, letterSpacing: '0.5px', boxShadow: '0 2px 8px rgba(220, 38, 38, 0.4)' }}>
+                              OUT OF STOCK
+                            </span>
+                          </div>
+                        )}
+
                         <div
                           style={{
                             position: 'absolute',
@@ -3072,14 +3614,15 @@ export default function CustomerMenuPage({ onShowToast }) {
                             alignItems: 'center',
                             gap: '4px',
                             boxShadow: '0 2px 4px rgba(0,0,0,0.12)',
-                            border: '1px solid #E2E8F0'
+                            border: '1px solid #E2E8F0',
+                            zIndex: 2
                           }}
                         >
-                          <div style={{ width: '11px', height: '11px', border: `1.5px solid ${dish.isVeg ? '#16A34A' : '#DC2626'}`, padding: '1px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <div style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: dish.isVeg ? '#16A34A' : '#DC2626' }} />
+                          <div style={{ width: '11px', height: '11px', border: `1.5px solid ${dish.isVeg !== false ? '#16A34A' : '#DC2626'}`, padding: '1px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: dish.isVeg !== false ? '#16A34A' : '#DC2626' }} />
                           </div>
-                          <span style={{ fontSize: '9.5px', fontWeight: 700, color: dish.isVeg ? '#15803D' : '#B91C1C' }}>
-                            {dish.isVeg ? 'VEG' : 'NON-VEG'}
+                          <span style={{ fontSize: '9.5px', fontWeight: 700, color: dish.isVeg !== false ? '#15803D' : '#B91C1C' }}>
+                            {dish.isVeg !== false ? 'VEG' : 'NON-VEG'}
                           </span>
                         </div>
 
@@ -3108,11 +3651,18 @@ export default function CustomerMenuPage({ onShowToast }) {
                       {/* Product Details */}
                       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                         <div>
+                          {dish.isFamous && (
+                            <div style={{ marginBottom: '2px' }}>
+                              <span style={{ backgroundColor: '#FEF3C7', color: '#92400E', fontSize: '8.5px', fontWeight: 900, padding: '1px 5px', borderRadius: '4px', border: '1px solid #FDE68A' }}>
+                                ⭐ Famous Bestseller
+                              </span>
+                            </div>
+                          )}
                           <h4 style={{ margin: '0 0 4px', fontSize: '14px', fontWeight: 700, color: '#0F172A', lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                             {dish.name}
                           </h4>
                           <p style={{ margin: '0 0 10px', fontSize: '11.5px', color: '#64748B', fontWeight: 400, lineHeight: '1.3', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                            {dish.desc || 'Prepared fresh with high quality ingredients.'}
+                            {dish.desc || dish.description || 'Prepared fresh with high quality ingredients.'}
                           </p>
                         </div>
 
@@ -3130,8 +3680,23 @@ export default function CustomerMenuPage({ onShowToast }) {
                             )}
                           </div>
 
-                          {!inStock ? (
-                            <span style={{ fontSize: '10.5px', color: '#EF4444', fontWeight: 600 }}>Out of stock</span>
+                          {!isItemInStock ? (
+                            <button
+                              disabled={true}
+                              style={{
+                                backgroundColor: '#E2E8F0',
+                                color: '#64748B',
+                                border: '1.5px solid #CBD5E1',
+                                borderRadius: '8px',
+                                padding: '5px 12px',
+                                fontSize: '11px',
+                                fontWeight: 800,
+                                cursor: 'not-allowed',
+                                opacity: 0.8
+                              }}
+                            >
+                              OUT OF STOCK
+                            </button>
                           ) : qty === 0 ? (
                             <button
                               onClick={(e) => {
@@ -3183,6 +3748,33 @@ export default function CustomerMenuPage({ onShowToast }) {
                   );
                 })}
               </div>
+
+              {/* Table View Scanner Pagination Bar */}
+              {filteredDishes.length > 0 && catalogTotalPages > 1 && (
+                <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FFFFFF', padding: '10px 14px', borderRadius: '14px', border: '1px solid #E2E8F0', flexWrap: 'wrap', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>
+                    Page {safeCatalogPage} of {catalogTotalPages} ({catalogStartItem}-{catalogEndItem} of {filteredDishes.length})
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <button
+                      type="button"
+                      disabled={safeCatalogPage === 1}
+                      onClick={() => setMenuPage((p) => Math.max(1, p - 1))}
+                      style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', background: safeCatalogPage === 1 ? '#F1F5F9' : '#FFF', color: safeCatalogPage === 1 ? '#94A3B8' : '#0F172A', fontWeight: 700, fontSize: '11.5px', cursor: safeCatalogPage === 1 ? 'not-allowed' : 'pointer' }}
+                    >
+                      ◀ Prev
+                    </button>
+                    <button
+                      type="button"
+                      disabled={safeCatalogPage === catalogTotalPages}
+                      onClick={() => setMenuPage((p) => Math.min(catalogTotalPages, p + 1))}
+                      style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', background: safeCatalogPage === catalogTotalPages ? '#F1F5F9' : '#FFF', color: safeCatalogPage === catalogTotalPages ? '#94A3B8' : '#0F172A', fontWeight: 700, fontSize: '11.5px', cursor: safeCatalogPage === catalogTotalPages ? 'not-allowed' : 'pointer' }}
+                    >
+                      Next ▶
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -4171,20 +4763,25 @@ export default function CustomerMenuPage({ onShowToast }) {
 
               <button
                 type="submit"
-                disabled={storeControls.storeStatus === false || (navTab === 'home' && storeControls.deliveryStatus === false)}
+                disabled={isSubmittingOrder || storeControls.storeStatus === false || (navTab === 'home' && storeControls.deliveryStatus === false)}
                 style={{
                   width: '100%',
-                  backgroundColor: (storeControls.storeStatus === false || (navTab === 'home' && storeControls.deliveryStatus === false)) ? '#94A3B8' : '#FF5E14',
+                  backgroundColor: (isSubmittingOrder || storeControls.storeStatus === false || (navTab === 'home' && storeControls.deliveryStatus === false)) ? '#94A3B8' : '#FF5E14',
                   color: '#FFF',
                   border: 'none',
                   borderRadius: '12px',
                   padding: '12px',
                   fontWeight: 600,
                   fontSize: '14.5px',
-                  cursor: (storeControls.storeStatus === false || (navTab === 'home' && storeControls.deliveryStatus === false)) ? 'not-allowed' : 'pointer'
+                  cursor: (isSubmittingOrder || storeControls.storeStatus === false || (navTab === 'home' && storeControls.deliveryStatus === false)) ? 'not-allowed' : 'pointer'
                 }}
               >
-                {storeControls.storeStatus === false
+                {isSubmittingOrder ? (
+                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                    <span className="spinner-icon-fast" />
+                    <span>Processing Order...</span>
+                  </span>
+                ) : storeControls.storeStatus === false
                   ? 'Restaurant Outlet Closed'
                   : (navTab === 'home' && storeControls.deliveryStatus === false)
                     ? 'Direct Delivery Unavailable'
@@ -4209,7 +4806,9 @@ export default function CustomerMenuPage({ onShowToast }) {
           padding: '16px'
         }}>
           {(() => {
-            const currentUpiId = localStorage.getItem('foodypay_upi_id') || storeInfo.upiId || '7496888449@ptsbi';
+            const currentUpiId = (storeInfo.upiId && storeInfo.upiId.trim())
+              ? storeInfo.upiId.trim()
+              : (localStorage.getItem('foodypay_upi_id') || 'merchant@icici');
             const displayTotal = (pendingOrderObj && Number(pendingOrderObj.total) > 0)
               ? Number(pendingOrderObj.total)
               : (finalTotal > 0 ? finalTotal : subtotal > 0 ? subtotal : 0);
@@ -4839,7 +5438,23 @@ export default function CustomerMenuPage({ onShowToast }) {
                   </div>
                 </div>
 
-                {cart[selectedProductModal.id] ? (
+                {selectedProductModal.inStock === false || selectedProductModal.stockStatus === 'out_of_stock' ? (
+                  <button
+                    disabled={true}
+                    style={{
+                      backgroundColor: '#E2E8F0',
+                      color: '#64748B',
+                      border: '1.5px solid #CBD5E1',
+                      borderRadius: '12px',
+                      padding: '12px 24px',
+                      fontSize: '14px',
+                      fontWeight: 800,
+                      cursor: 'not-allowed'
+                    }}
+                  >
+                     Currently Out of Stock
+                  </button>
+                ) : cart[selectedProductModal.id] ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#FF5E14', borderRadius: '12px', padding: '8px 16px', boxShadow: '0 4px 12px rgba(255,94,20,0.3)' }}>
                     <button
                       onClick={() => updateCartQty(selectedProductModal.id, -1)}

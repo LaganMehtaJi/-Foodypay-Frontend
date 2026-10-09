@@ -7,7 +7,10 @@ import {
   getPublicOrders,
   updateOrder,
   updateOrderStatus,
+  updatePublicOrderStatus,
   markOrderSeen,
+  markKitchenSeen,
+  markPublicKitchenSeen,
   deleteOrder,
 } from '../controllers/orderController.js';
 import { protect } from '../middlewares/authMiddleware.js';
@@ -17,6 +20,8 @@ const router = express.Router();
 // Public route for QR code table ordering and Kitchen KDS
 router.get('/public', getPublicOrders);
 router.post('/public', createPublicOrder);
+router.put('/public/:id/status', updatePublicOrderStatus);
+router.put('/public/:id/kitchen-seen', markPublicKitchenSeen);
 
 router.use(protect);
 
@@ -31,6 +36,9 @@ router.route('/:id/status')
 
 router.route('/:id/seen')
   .put(markOrderSeen);
+
+router.route('/:id/kitchen-seen')
+  .put(markKitchenSeen);
 
 router.route('/:id')
   .put(updateOrder)

@@ -53,6 +53,14 @@ const orderSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    sentToKitchen: {
+      type: Boolean,
+      default: false,
+    },
+    kitchenSeen: {
+      type: Boolean,
+      default: false,
+    },
     paymentStatus: {
       type: String,
       default: 'cash',

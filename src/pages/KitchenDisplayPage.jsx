@@ -19,8 +19,9 @@ import {
   Play,
   RotateCcw
 } from 'lucide-react';
-import { playFoodPreparing, playFoodReady } from '../utils/soundEffects';
-import { fetchOrdersApi, fetchPublicOrdersApi, updateOrderStatusApi } from '../utils/api';
+import { playFoodPreparing, playFoodReady, startKitchenAlarm, stopKitchenAlarm } from '../utils/soundEffects';
+import { fetchOrdersApi, fetchPublicOrdersApi, updateOrderStatusApi, markKitchenSeenApi } from '../utils/api';
+import { validateKitchenLogin, getPartnerCredentials } from '../utils/partnerAuth';
 
 export default function KitchenDisplayPage({ onShowToast }) {
   const { restaurantSlug, merchantId } = useParams();
@@ -41,6 +42,46 @@ export default function KitchenDisplayPage({ onShowToast }) {
   const [kitchenTabFilter, setKitchenTabFilter] = useState('active'); // 'active' | 'completed' | 'all'
   const [currentTime, setCurrentTime] = useState('');
   const [isCounterOrderModalOpen, setIsCounterOrderModalOpen] = useState(false);
+  const [actionLoadingSet, setActionLoadingSet] = useState(new Set());
+
+  // Kitchen KDS Login Authentication State
+  const [isKitchenAuth, setIsKitchenAuth] = useState(() => {
+    try {
+      return localStorage.getItem('foodypay_kitchen_logged_in') === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
+  const [kInput, setKInput] = useState(() => merchantId || 'FP-348330');
+  const [kPass, setKPass] = useState('');
+  const [kError, setKError] = useState('');
+
+  useEffect(() => {
+    if (merchantId) setKInput(merchantId);
+  }, [merchantId]);
+
+  const handleKitchenLoginSubmit = (e) => {
+    e.preventDefault();
+    setKError('');
+    const cleanIn = (kInput || effectiveMerchantId || 'FP-348330').trim();
+    const cleanPa = kPass.trim();
+
+    if (!cleanPa) {
+      setKError('Please enter Kitchen Password.');
+      return;
+    }
+
+    const res = validateKitchenLogin(cleanIn, cleanPa, effectiveMerchantId);
+    const isSnackRackPass = cleanPa === 'SnackRack400' || cleanPa.toLowerCase() === 'snackrack400';
+    if ((res && res.valid) || isSnackRackPass) {
+      localStorage.setItem('foodypay_kitchen_logged_in', 'true');
+      localStorage.setItem('foodypay_kitchen_role', (res && res.role) || 'Kitchen Chef');
+      setIsKitchenAuth(true);
+      if (onShowToast) onShowToast(`Kitchen KDS Authenticated for Store ${effectiveMerchantId}!`);
+    } else {
+      setKError('Invalid Kitchen Password. Use password SnackRack400 or store password.');
+    }
+  };
 
   // KDS Enabled toggle setting check
   const [isKdsEnabled, setIsKdsEnabled] = useState(() => {
@@ -72,6 +113,36 @@ export default function KitchenDisplayPage({ onShowToast }) {
       return {};
     }
   });
+
+  // Continuous KDS Bell Alarm Controller
+  useEffect(() => {
+    const rawKdsSeen = (() => {
+      try {
+        const raw = localStorage.getItem('foodypay_kds_seen_orders');
+        return raw ? new Set(JSON.parse(raw)) : new Set();
+      } catch (e) {
+        return new Set();
+      }
+    })();
+
+    const hasUnseenKitchen = (orders || []).some((o) => {
+      if (!o) return false;
+      const oId = String(o._id || o.id || o.orderId);
+      const isUnseen = !o.kitchenSeen && !rawKdsSeen.has(oId);
+      const isPendingKitchen = Boolean(o.sentToKitchen || o.status === 'preparing');
+      return isPendingKitchen && isUnseen;
+    });
+
+    if (hasUnseenKitchen) {
+      startKitchenAlarm();
+    } else {
+      stopKitchenAlarm();
+    }
+
+    return () => {
+      stopKitchenAlarm();
+    };
+  }, [orders]);
 
   // Counter POS Quick Order Form
   const [counterForm, setCounterForm] = useState({
@@ -178,51 +249,114 @@ export default function KitchenDisplayPage({ onShowToast }) {
     } catch (e) {}
   };
 
-  // Order Status Updates (No bell alarm triggered on Kitchen Tab)
-  const updateOrderStatus = (orderId, newStatus) => {
-    if (orderId) {
-      try {
-        const raw = localStorage.getItem('foodypay_seen_order_ids');
-        const seenSet = raw ? new Set(JSON.parse(raw)) : new Set();
-        seenSet.add(String(orderId));
-        localStorage.setItem('foodypay_seen_order_ids', JSON.stringify(Array.from(seenSet)));
-      } catch (e) {}
-    }
+  // Order Status Updates with Debouncing & Non-Interactability state during API calls
+  const updateOrderStatus = async (orderId, newStatus) => {
+    if (!orderId) return;
+    const oIdStr = String(orderId);
+    if (actionLoadingSet.has(oIdStr)) return; // Prevent double/triple rapid clicks
 
-    const updated = orders.map((o) => {
-      const currentId = o._id || o.id || o.orderId;
-      if (currentId === orderId || String(currentId) === String(orderId)) {
-        return {
-          ...o,
-          status: newStatus,
-          seen: true,
-          updatedAt: new Date().toISOString(),
-        };
-      }
-      return o;
-    });
+    stopKitchenAlarm();
 
-    setOrders(updated);
     try {
-      localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updated));
-      window.dispatchEvent(new Event('foodypay_order_created'));
-      const bc = new BroadcastChannel('foodypay_live_orders_channel');
-      bc.postMessage({ type: 'ORDER_UPDATED', orders: updated });
-      bc.close();
+      const raw = localStorage.getItem('foodypay_kds_seen_orders');
+      const seenSet = raw ? new Set(JSON.parse(raw)) : new Set();
+      seenSet.add(oIdStr);
+      localStorage.setItem('foodypay_kds_seen_orders', JSON.stringify(Array.from(seenSet)));
+
+      const rawDash = localStorage.getItem('foodypay_seen_order_ids');
+      const dashSet = rawDash ? new Set(JSON.parse(rawDash)) : new Set();
+      dashSet.add(oIdStr);
+      localStorage.setItem('foodypay_seen_order_ids', JSON.stringify(Array.from(dashSet)));
     } catch (e) {}
 
-    if (newStatus === 'ready' || newStatus === 'completed') {
-      try {
-        playFoodReady();
-      } catch (e) {}
-      if (onShowToast) onShowToast(`️ Order ${orderId} marked Ready to Serve!`);
-    }
+    setActionLoadingSet((prev) => new Set(prev).add(oIdStr));
 
-    const token = localStorage.getItem('foodypay_token');
-    if (token && orderId) {
-      const targetObj = orders.find((o) => (o._id || o.id || o.orderId) === orderId || String(o._id || o.id || o.orderId) === String(orderId));
+    try {
+      const updated = orders.map((o) => {
+        const currentId = o._id || o.id || o.orderId;
+        if (currentId === orderId || String(currentId) === oIdStr) {
+          return {
+            ...o,
+            status: newStatus,
+            seen: true,
+            kitchenSeen: true,
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        return o;
+      });
+
+      setOrders(updated);
+      try {
+        localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updated));
+        window.dispatchEvent(new Event('foodypay_order_created'));
+        window.dispatchEvent(new Event('storage'));
+        const bc = new BroadcastChannel('foodypay_live_orders_channel');
+        bc.postMessage({ type: 'ORDER_UPDATED', orderId, newStatus, orders: updated });
+        bc.close();
+      } catch (e) {}
+
+      if (newStatus === 'preparing') {
+        try {
+          playFoodPreparing();
+        } catch (e) {}
+        if (onShowToast) onShowToast(`Chef started cooking Order ${orderId}!`);
+      } else if (newStatus === 'ready') {
+        try {
+          playFoodReady();
+        } catch (e) {}
+        if (onShowToast) onShowToast(`Order ${orderId} marked Ready to Serve!`);
+      } else if (newStatus === 'completed') {
+        try {
+          playFoodReady();
+        } catch (e) {}
+        if (onShowToast) onShowToast(`Order ${orderId} marked Completed & Served!`);
+      }
+
+      const token = localStorage.getItem('foodypay_token');
+      const targetObj = orders.find((o) => (o._id || o.id || o.orderId) === orderId || String(o._id || o.id || o.orderId) === oIdStr);
       const targetId = (targetObj && targetObj._id) || orderId;
-      updateOrderStatusApi(token, targetId, newStatus).catch(() => {});
+      await updateOrderStatusApi(token, targetId, newStatus);
+    } catch (err) {
+      console.error('Error updating status:', err);
+    } finally {
+      setActionLoadingSet((prev) => {
+        const next = new Set(prev);
+        next.delete(oIdStr);
+        return next;
+      });
+    }
+  };
+
+  // Mark Kitchen Order Seen (Stops Alarm Bell for Kitchen Staff & syncs DB)
+  const handleMarkKitchenSeen = async (orderId) => {
+    stopKitchenAlarm();
+    if (!orderId) return;
+    const oIdStr = String(orderId);
+    try {
+      const raw = localStorage.getItem('foodypay_kds_seen_orders');
+      const seenSet = raw ? new Set(JSON.parse(raw)) : new Set();
+      seenSet.add(oIdStr);
+      localStorage.setItem('foodypay_kds_seen_orders', JSON.stringify(Array.from(seenSet)));
+    } catch (e) {}
+
+    setOrders((prev) =>
+      prev.map((o) => {
+        const idStr = String(o._id || o.id || o.orderId);
+        if (idStr === oIdStr || String(o._id) === oIdStr || String(o.id) === oIdStr || String(o.orderId) === oIdStr) {
+          return { ...o, kitchenSeen: true };
+        }
+        return o;
+      })
+    );
+
+    try {
+      const token = localStorage.getItem('foodypay_token');
+      const targetObj = orders.find((o) => (o._id || o.id || o.orderId) === orderId || String(o._id || o.id || o.orderId) === oIdStr);
+      const targetId = (targetObj && targetObj._id) || orderId;
+      await markKitchenSeenApi(token, targetId);
+    } catch (e) {
+      console.error('Failed to mark kitchen order seen on server:', e);
     }
   };
 
@@ -247,6 +381,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
       note: counterForm.note.trim(),
       status: 'preparing',
       seen: true,
+      kitchenSeen: true,
       time: 'Just now',
       timestamp: Date.now(),
       paymentStatus: 'cash',
@@ -266,17 +401,135 @@ export default function KitchenDisplayPage({ onShowToast }) {
   };
 
   // Active Kitchen Queue Filters:
-  // Active queue: status === 'new' or status === 'preparing'
-  // Completed history: status === 'ready' or status === 'completed'
-  const activeOrders = orders.filter((o) => o.status === 'new' || o.status === 'preparing');
-  const completedOrders = orders.filter((o) => o.status === 'ready' || o.status === 'completed');
+  // Active queue: sentToKitchen === true or status is active ('new' | 'preparing' | 'ready')
+  // Completed history: status === 'completed' or status === 'cancelled'
+  const activeOrders = (orders || []).filter((o) => o && (o.sentToKitchen || o.status === 'preparing' || o.status === 'new' || o.status === 'ready') && o.status !== 'completed' && o.status !== 'cancelled');
+  const completedOrders = (orders || []).filter((o) => o && (o.status === 'completed' || o.status === 'cancelled'));
 
   const displayedOrders =
     kitchenTabFilter === 'active'
       ? activeOrders
       : kitchenTabFilter === 'completed'
       ? completedOrders
-      : orders;
+      : (orders || []).filter((o) => o && (o.sentToKitchen || o.status === 'preparing' || o.status === 'ready' || o.status === 'completed'));
+
+  if (!isKitchenAuth) {
+    const creds = getPartnerCredentials();
+    return (
+      <div style={{
+        minHeight: '100vh',
+        backgroundColor: '#0F172A',
+        color: '#F8FAFC',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px',
+        fontFamily: 'system-ui, -apple-system, sans-serif'
+      }}>
+        <div style={{
+          backgroundColor: '#1E293B',
+          padding: '36px 32px',
+          borderRadius: '24px',
+          border: '1.5px solid #334155',
+          maxWidth: '420px',
+          width: '100%',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.5)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+            <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: '#FF5E14', color: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(255,94,20,0.4)' }}>
+              <ChefHat size={28} />
+            </div>
+            <div>
+              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 900, color: '#FFF' }}>Kitchen KDS Staff Login</h2>
+              <span style={{ fontSize: '12px', color: '#94A3B8' }}>{storeName}</span>
+            </div>
+          </div>
+
+          <p style={{ fontSize: '13px', color: '#CBD5E1', marginBottom: '20px', lineHeight: '1.4' }}>
+            Store ID <b>{effectiveMerchantId}</b> is pre-filled. Enter Kitchen Password (e.g. <b>SnackRack400</b>) to access live kitchen orders.
+          </p>
+
+          {kError && (
+            <div style={{ background: '#451A1A', border: '1px solid #7F1D1D', color: '#FCA5A5', padding: '10px 14px', borderRadius: '10px', fontSize: '12.5px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <AlertCircle size={16} color="#EF4444" />
+              <span>{kError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleKitchenLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#E2E8F0', marginBottom: '4px' }}>
+                Store FoodyPay ID / Kitchen ID
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. FP-348330"
+                value={kInput}
+                onChange={(e) => setKInput(e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', color: '#60A5FA', fontWeight: 700, fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#E2E8F0', marginBottom: '4px' }}>
+                Kitchen Password
+              </label>
+              <input
+                type="password"
+                required
+                autoFocus
+                placeholder="Enter password (e.g. SnackRack400)"
+                value={kPass}
+                onChange={(e) => setKPass(e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', color: '#FFF', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="active-scale"
+              style={{
+                marginTop: '6px',
+                padding: '12px',
+                borderRadius: '12px',
+                background: 'linear-gradient(135deg, #FF5E14 0%, #D97706 100%)',
+                color: '#FFF',
+                fontWeight: 900,
+                fontSize: '14.5px',
+                border: 'none',
+                cursor: 'pointer',
+                boxShadow: '0 6px 16px rgba(255,94,20,0.3)'
+              }}
+            >
+              Enter Kitchen Display System
+            </button>
+          </form>
+
+          <div style={{ marginTop: '20px', background: '#0F172A', padding: '10px 12px', borderRadius: '10px', border: '1px dashed #334155', fontSize: '11.5px', color: '#94A3B8', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div><b>Store Kitchen Pass:</b> <code style={{ color: '#F59E0B' }}>SnackRack400</code></div>
+            <button
+              type="button"
+              onClick={() => {
+                setKInput(effectiveMerchantId || 'FP-348330');
+                setKPass('SnackRack400');
+              }}
+              style={{ background: 'none', border: 'none', color: '#60A5FA', fontSize: '11px', fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              Auto-fill Password
+            </button>
+          </div>
+
+          <div style={{ marginTop: '16px', textAlign: 'center' }}>
+            <Link to="/login" style={{ fontSize: '12px', color: '#94A3B8', textDecoration: 'none' }}>
+              Back to Store Dashboard Login ↗
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!isKdsEnabled) {
     return (
@@ -472,9 +725,25 @@ export default function KitchenDisplayPage({ onShowToast }) {
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
             {displayedOrders.map((order) => {
-              const orderIdStr = order._id || order.id || order.orderId;
+              const orderIdStr = String(order._id || order.id || order.orderId);
               const isReady = order.status === 'ready' || order.status === 'completed';
               const isPreparing = order.status === 'preparing';
+
+              const rawKdsSeen = (() => {
+                try {
+                  const raw = localStorage.getItem('foodypay_kds_seen_orders');
+                  return raw ? new Set(JSON.parse(raw)) : new Set();
+                } catch (e) {
+                  return new Set();
+                }
+              })();
+
+              const isKitchenSeen = Boolean(
+                order.kitchenSeen ||
+                rawKdsSeen.has(orderIdStr) ||
+                (order._id && rawKdsSeen.has(String(order._id))) ||
+                (order.id && rawKdsSeen.has(String(order.id)))
+              );
 
               return (
                 <div
@@ -482,8 +751,8 @@ export default function KitchenDisplayPage({ onShowToast }) {
                   style={{
                     backgroundColor: '#1E293B',
                     borderRadius: '16px',
-                    border: isReady ? '1px solid #10B981' : isPreparing ? '1.5px solid #FF5E14' : '1px solid #334155',
-                    boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+                    border: isReady ? '1px solid #10B981' : isPreparing ? '1.5px solid #FF5E14' : !isKitchenSeen ? '2px solid #2563EB' : '1px solid #334155',
+                    boxShadow: !isKitchenSeen ? '0 0 16px rgba(37,99,235,0.4)' : '0 4px 14px rgba(0,0,0,0.25)',
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'space-between',
@@ -492,7 +761,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
                 >
                   {/* Order Card Header */}
                   <div style={{
-                    backgroundColor: isReady ? 'rgba(16,185,129,0.15)' : isPreparing ? 'rgba(255,94,20,0.15)' : '#0F172A',
+                    backgroundColor: isReady ? 'rgba(16,185,129,0.15)' : isPreparing ? 'rgba(255,94,20,0.15)' : !isKitchenSeen ? 'rgba(37,99,235,0.15)' : '#0F172A',
                     padding: '12px 14px',
                     borderBottom: '1px solid #334155',
                     display: 'flex',
@@ -518,16 +787,51 @@ export default function KitchenDisplayPage({ onShowToast }) {
                       </div>
                     </div>
 
-                    <span style={{
-                      fontSize: '10.5px',
-                      fontWeight: 600,
-                      padding: '3px 8px',
-                      borderRadius: '6px',
-                      backgroundColor: isReady ? '#10B981' : isPreparing ? '#FF5E14' : '#334155',
-                      color: '#FFF'
-                    }}>
-                      {isReady ? ' READY' : isPreparing ? ' COOKING' : '⏳ NEW'}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleMarkKitchenSeen(orderIdStr)}
+                        disabled={isKitchenSeen}
+                        style={{
+                          backgroundColor: isKitchenSeen ? '#334155' : '#2563EB',
+                          color: '#FFF',
+                          border: 'none',
+                          padding: '5px 10px',
+                          borderRadius: '8px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          cursor: isKitchenSeen ? 'default' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          boxShadow: isKitchenSeen ? 'none' : '0 0 10px rgba(37,99,235,0.6)'
+                        }}
+                        title={isKitchenSeen ? "Bell alarm stopped" : "Stop Kitchen Bell Alarm & Acknowledge Order"}
+                      >
+                        {isKitchenSeen ? (
+                          <>
+                            <Check size={13} />
+                            <span>SEEN (BELL STOPPED)</span>
+                          </>
+                        ) : (
+                          <>
+                            <Bell size={13} style={{ animation: 'foodypay-spin 1.2s ease infinite' }} />
+                            <span>SEEN (STOP BELL)</span>
+                          </>
+                        )}
+                      </button>
+
+                      <span style={{
+                        fontSize: '10.5px',
+                        fontWeight: 600,
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        backgroundColor: isReady ? '#10B981' : isPreparing ? '#FF5E14' : '#334155',
+                        color: '#FFF'
+                      }}>
+                        {isReady ? ' READY' : isPreparing ? ' COOKING' : '⏳ NEW'}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Order Items List with Per-Item Start Cooking Status */}
@@ -605,43 +909,146 @@ export default function KitchenDisplayPage({ onShowToast }) {
                       Payment: <strong style={{ color: '#CBD5E1', fontWeight: 500 }}>{order.paymentLabel || 'Cash'}</strong>
                     </span>
 
-                    {!isReady ? (
+                    {order.status === 'new' || (!isPreparing && !isReady && order.status !== 'completed') ? (
+                      <button
+                        onClick={() => updateOrderStatus(orderIdStr, 'preparing')}
+                        disabled={actionLoadingSet.has(orderIdStr)}
+                        style={{
+                          backgroundColor: '#FF5E14',
+                          color: '#FFF',
+                          border: 'none',
+                          padding: '8px 16px',
+                          borderRadius: '8px',
+                          fontWeight: 700,
+                          fontSize: '12.5px',
+                          cursor: actionLoadingSet.has(orderIdStr) ? 'not-allowed' : 'pointer',
+                          opacity: actionLoadingSet.has(orderIdStr) ? 0.7 : 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        {actionLoadingSet.has(orderIdStr) ? (
+                          <>
+                            <RefreshCw size={14} style={{ animation: 'foodypay-spin 0.8s linear infinite' }} />
+                            <span>Starting...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Flame size={15} />
+                            <span>Accept & Start Cooking</span>
+                          </>
+                        )}
+                      </button>
+                    ) : isPreparing ? (
                       <button
                         onClick={() => updateOrderStatus(orderIdStr, 'ready')}
+                        disabled={actionLoadingSet.has(orderIdStr)}
                         style={{
                           backgroundColor: '#10B981',
                           color: '#FFF',
                           border: 'none',
                           padding: '8px 16px',
                           borderRadius: '8px',
-                          fontWeight: 600,
+                          fontWeight: 700,
                           fontSize: '12.5px',
-                          cursor: 'pointer',
+                          cursor: actionLoadingSet.has(orderIdStr) ? 'not-allowed' : 'pointer',
+                          opacity: actionLoadingSet.has(orderIdStr) ? 0.7 : 1,
                           display: 'flex',
                           alignItems: 'center',
                           gap: '6px'
                         }}
                       >
-                        ️ Ready to Serve
+                        {actionLoadingSet.has(orderIdStr) ? (
+                          <>
+                            <RefreshCw size={14} style={{ animation: 'foodypay-spin 0.8s linear infinite' }} />
+                            <span>Updating...</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 size={15} />
+                            <span>Mark Ready to Serve</span>
+                          </>
+                        )}
                       </button>
+                    ) : order.status === 'ready' ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                          onClick={() => updateOrderStatus(orderIdStr, 'completed')}
+                          disabled={actionLoadingSet.has(orderIdStr)}
+                          style={{
+                            backgroundColor: '#059669',
+                            color: '#FFF',
+                            border: 'none',
+                            padding: '8px 14px',
+                            borderRadius: '8px',
+                            fontWeight: 700,
+                            fontSize: '12px',
+                            cursor: actionLoadingSet.has(orderIdStr) ? 'not-allowed' : 'pointer',
+                            opacity: actionLoadingSet.has(orderIdStr) ? 0.7 : 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}
+                        >
+                          {actionLoadingSet.has(orderIdStr) ? (
+                            <>
+                              <RefreshCw size={14} style={{ animation: 'foodypay-spin 0.8s linear infinite' }} />
+                              <span>Ending...</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 size={14} />
+                              <span>Complete & End Order</span>
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => updateOrderStatus(orderIdStr, 'preparing')}
+                          disabled={actionLoadingSet.has(orderIdStr)}
+                          style={{
+                            backgroundColor: '#334155',
+                            color: '#94A3B8',
+                            border: '1px solid #475569',
+                            padding: '7px 10px',
+                            borderRadius: '8px',
+                            fontWeight: 500,
+                            fontSize: '11px',
+                            cursor: actionLoadingSet.has(orderIdStr) ? 'not-allowed' : 'pointer',
+                            opacity: actionLoadingSet.has(orderIdStr) ? 0.7 : 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                          title="Move Back to Active Cooking"
+                        >
+                          {actionLoadingSet.has(orderIdStr) ? (
+                            <RefreshCw size={12} style={{ animation: 'foodypay-spin 0.8s linear infinite' }} />
+                          ) : (
+                            <RotateCcw size={12} />
+                          )}
+                          <span>Back</span>
+                        </button>
+                      </div>
                     ) : (
                       <button
-                        onClick={() => updateOrderStatus(orderIdStr, 'preparing')}
+                        disabled={true}
                         style={{
-                          backgroundColor: '#334155',
-                          color: '#94A3B8',
-                          border: '1px solid #475569',
-                          padding: '6px 12px',
+                          backgroundColor: '#1E293B',
+                          color: '#10B981',
+                          border: '1px solid #10B981',
+                          padding: '7px 14px',
                           borderRadius: '8px',
-                          fontWeight: 500,
-                          fontSize: '11.5px',
-                          cursor: 'pointer',
+                          fontWeight: 700,
+                          fontSize: '12px',
+                          cursor: 'not-allowed',
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '4px'
+                          gap: '6px'
                         }}
                       >
-                        <RotateCcw size={12} /> Move Back to Active
+                        <CheckCircle2 size={14} />
+                        <span>Completed / Served</span>
                       </button>
                     )}
                   </div>

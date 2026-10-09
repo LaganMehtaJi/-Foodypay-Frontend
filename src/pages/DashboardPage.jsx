@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import {
@@ -56,6 +56,7 @@ import {
   MapPin,
   Compass,
   Save,
+  RefreshCw,
 } from 'lucide-react';
 import {
   playOrderPlaced,
@@ -71,6 +72,7 @@ import {
   fetchOrdersApi,
   fetchOrderStatsApi,
   markOrderSeenApi,
+  sendToKitchenApi,
   createOrderApi,
   updateOrderApi,
   updateOrderStatusApi,
@@ -107,11 +109,20 @@ import {
   assignZonesToStoreApi,
   calculateBikeDeliveryTime,
   calculateHaversineDistanceKm,
+  ALL_CONFIGURED_APIS,
+  TOTAL_AVAILABLE_APIS_COUNT,
 } from '../utils/api';
+import { SNACK_RACK_FULL_MENU } from '../data/snackRackMenuData';
 import './Dashboard.css';
 
-// Initial Mock Datasets (Cleared as requested)
-const INITIAL_DISHES = [];
+const DEFAULT_SNACK_RACK_DISHES = SNACK_RACK_FULL_MENU.map((d) => ({
+  ...d,
+  foodypayId: 'FP-348330',
+  merchantId: 'FP-348330',
+}));
+
+// Initial Mock Datasets
+const INITIAL_DISHES = DEFAULT_SNACK_RACK_DISHES;
 
 const INITIAL_ORDERS = [];
 
@@ -198,12 +209,22 @@ export default function DashboardPage({ onShowToast }) {
   // Datasets - default to empty array if user token is present, otherwise fallback
   const [orders, setOrders] = useState([]);
   const [todayStats, setTodayStats] = useState(null);
-  const [dishes, setDishes] = useState([]);
+  const [dishes, setDishes] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_crm_dishes_v3');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return DEFAULT_SNACK_RACK_DISHES;
+  });
   const [customers, setCustomers] = useState([]);
   const [custSearch, setCustSearch] = useState('');
   const [coupons, setCoupons] = useState([]);
   const [tables, setTables] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
+  const [actionLoadingSet, setActionLoadingSet] = useState(new Set());
   const [cardsPerRow, setCardsPerRow] = useState(3);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -304,6 +325,25 @@ export default function DashboardPage({ onShowToast }) {
       window.dispatchEvent(new Event('storage'));
     } catch (e) {}
   }, [storeControls]);
+
+  useEffect(() => {
+    const syncPartnerStoreLocks = () => {
+      try {
+        const rawCtrl = localStorage.getItem('foodypay_store_controls');
+        if (rawCtrl) {
+          const parsed = JSON.parse(rawCtrl);
+          setStoreControls((prev) => ({ ...prev, ...parsed }));
+        }
+      } catch (e) {}
+    };
+
+    window.addEventListener('storage', syncPartnerStoreLocks);
+    window.addEventListener('foodypay_store_controls_updated', syncPartnerStoreLocks);
+    return () => {
+      window.removeEventListener('storage', syncPartnerStoreLocks);
+      window.removeEventListener('foodypay_store_controls_updated', syncPartnerStoreLocks);
+    };
+  }, []);
 
   // Customer Groups Cohorts State for Telemetry & Targeted Campaigns
   const [customerGroups, setCustomerGroups] = useState(() => {
@@ -519,6 +559,15 @@ export default function DashboardPage({ onShowToast }) {
 
   const [catalogPage, setCatalogPage] = useState(1);
   const [catalogPerPage, setCatalogPerPage] = useState(10);
+
+  const [customersPage, setCustomersPage] = useState(1);
+  const [customersPerPage, setCustomersPerPage] = useState(10);
+
+  const [reviewsPage, setReviewsPage] = useState(1);
+  const [reviewsPerPage, setReviewsPerPage] = useState(10);
+
+  const [posPage, setPosPage] = useState(1);
+  const [posPerPage, setPosPerPage] = useState(12);
 
   const [notifyChannel, setNotifyChannel] = useState('push_whatsapp'); // 'push_whatsapp' | 'whatsapp_only' | 'push_only'
 
@@ -1497,41 +1546,152 @@ export default function DashboardPage({ onShowToast }) {
   const handleMarkOrderSeen = async (orderId) => {
     stopContinuousAlarm();
     if (!orderId) return;
+    const oIdStr = String(orderId);
+    if (actionLoadingSet.has(oIdStr)) return;
+
+    setActionLoadingSet((prev) => new Set(prev).add(oIdStr));
 
     try {
-      const raw = localStorage.getItem('foodypay_seen_order_ids');
-      const seenSet = raw ? new Set(JSON.parse(raw)) : new Set();
-      seenSet.add(String(orderId));
-      localStorage.setItem('foodypay_seen_order_ids', JSON.stringify(Array.from(seenSet)));
-    } catch (e) {}
+      try {
+        const raw = localStorage.getItem('foodypay_seen_order_ids');
+        const seenSet = raw ? new Set(JSON.parse(raw)) : new Set();
+        seenSet.add(oIdStr);
+        localStorage.setItem('foodypay_seen_order_ids', JSON.stringify(Array.from(seenSet)));
+      } catch (e) {}
 
-    setOrders((prev) =>
-      prev.map((o) => {
-        const oId = o._id || o.id || o.orderId;
-        if (oId === orderId || String(oId) === String(orderId)) {
-          return { ...o, seen: true };
+      setOrders((prev) =>
+        prev.map((o) => {
+          const oId = o._id || o.id || o.orderId;
+          if (oId === orderId || String(oId) === oIdStr) {
+            return { ...o, seen: true };
+          }
+          return o;
+        })
+      );
+      if (token) {
+        const orderObj = orders.find((o) => (o._id || o.id || o.orderId) === orderId || String(o._id || o.id || o.orderId) === oIdStr);
+        const targetId = (orderObj && orderObj._id) || orderId;
+        if (targetId && !String(targetId).startsWith('ord_')) {
+          try {
+            const res = await markOrderSeenApi(token, targetId);
+            if (res && res.todayStats) setTodayStats(res.todayStats);
+          } catch (err) {}
+        }
+      }
+
+      try {
+        const bc = new BroadcastChannel('foodypay_live_orders_channel');
+        bc.postMessage({ type: 'ORDER_SEEN', orderId });
+        bc.close();
+      } catch (e) {}
+
+      addToast('Order marked as SEEN! Alarm bell stopped.', <Check size={18} />);
+    } finally {
+      setActionLoadingSet((prev) => {
+        const next = new Set(prev);
+        next.delete(oIdStr);
+        return next;
+      });
+    }
+  };
+
+  const handleSendToKitchen = async (orderId) => {
+    if (!orderId) return;
+    const oIdStr = String(orderId);
+    if (actionLoadingSet.has(oIdStr)) return;
+
+    stopContinuousAlarm();
+
+    setActionLoadingSet((prev) => new Set(prev).add(oIdStr));
+
+    try {
+      const targetObj = orders.find(
+        (o) =>
+          o._id === orderId ||
+          o.id === orderId ||
+          o.orderId === orderId ||
+          String(o._id) === oIdStr ||
+          String(o.id) === oIdStr ||
+          String(o.orderId) === oIdStr
+      );
+
+      try {
+        const raw = localStorage.getItem('foodypay_seen_order_ids');
+        const seenSet = raw ? new Set(JSON.parse(raw)) : new Set();
+        seenSet.add(oIdStr);
+        if (targetObj) {
+          if (targetObj._id) seenSet.add(String(targetObj._id));
+          if (targetObj.id) seenSet.add(String(targetObj.id));
+          if (targetObj.orderId) seenSet.add(String(targetObj.orderId));
+        }
+        localStorage.setItem('foodypay_seen_order_ids', JSON.stringify(Array.from(seenSet)));
+
+        const rawKds = localStorage.getItem('foodypay_kds_seen_orders');
+        const kdsSet = rawKds ? new Set(JSON.parse(rawKds)) : new Set();
+        kdsSet.delete(oIdStr);
+        if (targetObj) {
+          if (targetObj._id) kdsSet.delete(String(targetObj._id));
+          if (targetObj.id) kdsSet.delete(String(targetObj.id));
+          if (targetObj.orderId) kdsSet.delete(String(targetObj.orderId));
+        }
+        localStorage.setItem('foodypay_kds_seen_orders', JSON.stringify(Array.from(kdsSet)));
+      } catch (e) {}
+
+      const updated = orders.map((o) => {
+        const match =
+          o._id === orderId ||
+          o.id === orderId ||
+          o.orderId === orderId ||
+          String(o._id) === oIdStr ||
+          String(o.id) === oIdStr ||
+          String(o.orderId) === oIdStr;
+        if (match) {
+          return {
+            ...o,
+            seen: true,
+            sentToKitchen: true,
+            status: 'preparing', // Moves order into Kitchen Cooking status
+            kitchenSeen: false, // Triggers KDS alarm
+            updatedAt: new Date().toISOString(),
+          };
         }
         return o;
-      })
-    );
-    if (token) {
-      const orderObj = orders.find((o) => (o._id || o.id || o.orderId) === orderId);
-      const targetId = (orderObj && orderObj._id) || orderId;
-      if (targetId && !String(targetId).startsWith('ord_')) {
-        try {
-          const res = await markOrderSeenApi(token, targetId);
-          if (res && res.todayStats) setTodayStats(res.todayStats);
-        } catch (err) {}
+      });
+
+      setOrders(updated);
+      try {
+        localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updated));
+        window.dispatchEvent(new Event('foodypay_order_created'));
+        window.dispatchEvent(new Event('storage'));
+        const bc = new BroadcastChannel('foodypay_live_orders_channel');
+        bc.postMessage({ type: 'KITCHEN_ORDER_SENT', orderId, newStatus: 'preparing', orders: updated });
+        bc.close();
+      } catch (e) {}
+
+      try {
+        playFoodPreparing();
+      } catch (e) {}
+
+      addToast(`Order ${orderId} sent to Kitchen Display System (KDS)!`, <ChefHat size={18} />);
+
+      if (token) {
+        const targetId = (targetObj && targetObj._id) || orderId;
+        if (targetId && !String(targetId).startsWith('ord_')) {
+          try {
+            await updateOrderStatusApi(token, targetId, 'preparing');
+            await sendToKitchenApi(token, targetId);
+          } catch (e) {
+            console.warn('API error sending to kitchen:', e);
+          }
+        }
       }
+    } finally {
+      setActionLoadingSet((prev) => {
+        const next = new Set(prev);
+        next.delete(oIdStr);
+        return next;
+      });
     }
-
-    try {
-      const bc = new BroadcastChannel('foodypay_live_orders_channel');
-      bc.postMessage({ type: 'ORDER_SEEN', orderId });
-      bc.close();
-    } catch (e) {}
-
-    addToast('️ Order marked as SEEN! Alarm bell stopped.', <Check size={18} />);
   };
 
   const handleMarkAllSeen = async () => {
@@ -1612,8 +1772,25 @@ export default function DashboardPage({ onShowToast }) {
           }
         } else setOrders(INITIAL_ORDERS);
 
-        if (dishesRes.status === 'fulfilled' && Array.isArray(dishesRes.value)) setDishes(dishesRes.value);
-        else setDishes(INITIAL_DISHES);
+        if (dishesRes.status === 'fulfilled' && Array.isArray(dishesRes.value) && dishesRes.value.length > 0) {
+          setDishes(dishesRes.value);
+        } else {
+          try {
+            const saved = localStorage.getItem('foodypay_crm_dishes_v3');
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setDishes(parsed);
+              } else {
+                setDishes(DEFAULT_SNACK_RACK_DISHES);
+              }
+            } else {
+              setDishes(DEFAULT_SNACK_RACK_DISHES);
+            }
+          } catch (e) {
+            setDishes(DEFAULT_SNACK_RACK_DISHES);
+          }
+        }
 
         if (reviewsRes.status === 'fulfilled' && Array.isArray(reviewsRes.value)) setReviews(reviewsRes.value);
 
@@ -1677,6 +1854,7 @@ export default function DashboardPage({ onShowToast }) {
   useEffect(() => {
     try {
       localStorage.setItem('foodypay_crm_dishes_v3', JSON.stringify(dishes));
+      window.dispatchEvent(new CustomEvent('foodypay_dishes_updated', { detail: dishes }));
     } catch {}
   }, [dishes]);
 
@@ -1711,18 +1889,22 @@ export default function DashboardPage({ onShowToast }) {
   const [manualPhone, setManualPhone] = useState('');
   const [manualItems, setManualItems] = useState({});
   const [manualPaymentMode, setManualPaymentMode] = useState('Cash on Counter');
+  const [isSubmittingManualOrder, setIsSubmittingManualOrder] = useState(false);
+  const [duplicateOrderConfirm, setDuplicateOrderConfirm] = useState(null);
   
   // New manual order states
   const [manualSearch, setManualSearch] = useState('');
   const [manualCategory, setManualCategory] = useState('All');
   const [manualGstEnabled, setManualGstEnabled] = useState(false);
   const [manualDiscount, setManualDiscount] = useState('');
+  const [manualDiscountType, setManualDiscountType] = useState('₹'); // '₹' | '%'
   const [manualCoupon, setManualCoupon] = useState('');
 
   // Bill Settlement & UPI QR Scanner states
   const [activeBillSettlementOrder, setActiveBillSettlementOrder] = useState(null);
   const [showUpiQrModal, setShowUpiQrModal] = useState(false);
   const [settleDiscount, setSettleDiscount] = useState('');
+  const [settleDiscountType, setSettleDiscountType] = useState('₹'); // '₹' | '%'
   const [settleCouponInput, setSettleCouponInput] = useState('');
   const [settleCouponApplied, setSettleCouponApplied] = useState(null);
 
@@ -1918,97 +2100,132 @@ export default function DashboardPage({ onShowToast }) {
   };
 
   const manualSubtotal = Object.values(manualItems).reduce((sum, item) => sum + item.price * item.qty, 0);
-  const mDiscountAmt = Number(manualDiscount) || 0;
+  const rawMDisc = Number(manualDiscount) || 0;
+  const mDiscountAmt = Math.round(manualDiscountType === '%' ? (manualSubtotal * rawMDisc) / 100 : rawMDisc);
   const manualTax = manualGstEnabled ? Math.round((manualSubtotal - mDiscountAmt) * 0.05) : 0;
   const manualTotal = Math.max(0, manualSubtotal - mDiscountAmt + manualTax);
 
-  const handleCreateManualOrderSubmit = async (e) => {
-    e.preventDefault();
+  const handleCreateManualOrderSubmit = async (e, forceConfirm = false) => {
+    if (e) e.preventDefault();
+    if (isSubmittingManualOrder) return;
+
     if (manualSubtotal <= 0) {
       addToast('Please select at least 1 food item for the order.', <Utensils size={18} />);
       return;
     }
 
-    const formattedItems = Object.values(manualItems).map((it) => {
-      let displayName = it.name;
-      const extras = [];
-      if (it.sizeName) extras.push(it.sizeName);
-      if (it.bunName) extras.push(it.bunName);
-      if (it.toppings && it.toppings.length > 0) extras.push(...it.toppings);
-      if (extras.length > 0) displayName += ` [${extras.join(', ')}]`;
+    // Check for recent duplicate order (same table/customer and same total within last 30 seconds)
+    if (!editingOrderId && !forceConfirm) {
+      const targetTable = manualOrderType === 'Dine-In' ? manualTable : manualOrderType === 'Takeaway' ? 'Counter 1' : 'Home Delivery';
+      const targetCust = manualCustomer.trim() || 'Walk-in Guest';
+      const recentDuplicate = (orders || []).find((o) => {
+        if (!o) return false;
+        const timeDiff = Date.now() - (o.timestamp || new Date(o.createdAt || o.updatedAt || 0).getTime() || 0);
+        const isRecent = timeDiff < 30000;
+        const matchTable = (o.table || '') === targetTable;
+        const matchCust = (o.customer || '') === targetCust;
+        const matchTotal = Math.abs((o.total || 0) - manualTotal) < 1;
+        return isRecent && matchTable && matchCust && matchTotal;
+      });
 
-      return {
-        name: displayName,
-        qty: it.qty,
-        price: it.price,
-        isVeg: it.isVeg,
-      };
-    });
-
-    const newOrderPayload = {
-      type: manualOrderType,
-      table: manualOrderType === 'Dine-In' ? manualTable : manualOrderType === 'Takeaway' ? 'Counter 1' : 'Home Delivery',
-      customer: manualCustomer.trim() || 'Walk-in Guest',
-      phone: manualPhone.trim() || '',
-      paymentStatus: manualPaymentMode.includes('UPI') ? 'paid-upi' : 'cash',
-      paymentLabel: manualPaymentMode,
-      items: formattedItems,
-      note: manualCoupon ? `Applied Coupon: ${manualCoupon}` : editingOrderId ? 'Order items updated from counter' : 'Manual Order Created from Counter',
-      subtotal: manualSubtotal,
-      discount: mDiscountAmt,
-      tax: manualTax,
-      total: manualTotal,
-    };
-
-    if (editingOrderId) {
-      // Edit existing order
-      if (token) {
-        try {
-          const updated = await updateOrderApi(token, editingOrderId, newOrderPayload);
-          setOrders((prev) => prev.map((o) => (o._id === editingOrderId || o.id === editingOrderId ? updated : o)));
-        } catch (err) {
-          console.warn('API error updating order:', err);
-        }
-      } else {
-        setOrders((prev) =>
-          prev.map((o) => (o.id === editingOrderId || o._id === editingOrderId ? { ...o, ...newOrderPayload } : o))
-        );
+      if (recentDuplicate) {
+        setDuplicateOrderConfirm(recentDuplicate);
+        return;
       }
-      addToast(`Order ${editingOrderId} updated successfully!`, <Check size={18} />);
-    } else {
-      // Create new order
-      const nextId = `#FP-${1080 + orders.length + 1}`;
-      if (token) {
-        try {
-          const createdOrder = await createOrderApi(token, newOrderPayload);
-          setOrders((prev) => [{ ...createdOrder, seen: true }, ...prev]);
-          const updatedCustomers = await fetchCustomersApi(token);
-          setCustomers(updatedCustomers || []);
-          const stats = await fetchOrderStatsApi(token);
-          if (stats) setTodayStats(stats);
-        } catch (err) {
-          console.warn('API error creating order:', err);
-        }
-      } else {
-        const newOrder = {
-          ...newOrderPayload,
-          id: nextId,
-          _id: 'ord_' + Date.now(),
-          time: 'Just now',
-          timestamp: Date.now(),
-          status: 'new',
-          seen: true, // Auto-seen for manual orders
-        };
-        setOrders((prev) => [newOrder, ...prev]);
-      }
-
-      triggerSound(playOrderPlaced);
-      confetti({ particleCount: 75, spread: 75, origin: { y: 0.3 } });
-      addToast(`Manual Order ${nextId} created!`, <Check size={18} />);
     }
 
-    setIsManualOrderOpen(false);
-    setEditingOrderId(null);
+    setIsSubmittingManualOrder(true);
+    setDuplicateOrderConfirm(null);
+
+    try {
+      const formattedItems = Object.values(manualItems).map((it) => {
+        let displayName = it.name;
+        const extras = [];
+        if (it.sizeName) extras.push(it.sizeName);
+        if (it.bunName) extras.push(it.bunName);
+        if (it.toppings && it.toppings.length > 0) extras.push(...it.toppings);
+        if (extras.length > 0) displayName += ` [${extras.join(', ')}]`;
+
+        return {
+          name: displayName,
+          qty: it.qty,
+          price: it.price,
+          isVeg: it.isVeg,
+        };
+      });
+
+      const newOrderPayload = {
+        type: manualOrderType,
+        table: manualOrderType === 'Dine-In' ? manualTable : manualOrderType === 'Takeaway' ? 'Counter 1' : 'Home Delivery',
+        customer: manualCustomer.trim() || 'Walk-in Guest',
+        phone: manualPhone.trim() || '',
+        paymentStatus: manualPaymentMode.includes('UPI') ? 'paid-upi' : 'cash',
+        paymentLabel: manualPaymentMode,
+        items: formattedItems,
+        note: manualCoupon ? `Applied Coupon: ${manualCoupon}` : editingOrderId ? 'Order items updated from counter' : 'Manual Order Created from Counter',
+        subtotal: manualSubtotal,
+        discount: mDiscountAmt,
+        tax: manualTax,
+        total: manualTotal,
+      };
+
+      if (editingOrderId) {
+        // Edit existing order
+        if (token) {
+          try {
+            const updated = await updateOrderApi(token, editingOrderId, newOrderPayload);
+            setOrders((prev) => prev.map((o) => (o._id === editingOrderId || o.id === editingOrderId ? updated : o)));
+          } catch (err) {
+            console.warn('API error updating order:', err);
+          }
+        } else {
+          setOrders((prev) =>
+            prev.map((o) => (o.id === editingOrderId || o._id === editingOrderId ? { ...o, ...newOrderPayload } : o))
+          );
+        }
+        addToast(`Order ${editingOrderId} updated successfully!`, <Check size={18} />);
+      } else {
+        // Create new order
+        const nextId = `#FP-${1080 + orders.length + 1}`;
+        if (token) {
+          try {
+            const createdOrder = await createOrderApi(token, newOrderPayload);
+            setOrders((prev) => [{ ...createdOrder, seen: true }, ...prev]);
+            const updatedCustomers = await fetchCustomersApi(token);
+            setCustomers(updatedCustomers || []);
+            const stats = await fetchOrderStatsApi(token);
+            if (stats) setTodayStats(stats);
+          } catch (err) {
+            console.warn('API error creating order:', err);
+          }
+        } else {
+          const newOrder = {
+            ...newOrderPayload,
+            id: nextId,
+            _id: 'ord_' + Date.now(),
+            time: 'Just now',
+            timestamp: Date.now(),
+            status: 'new',
+            seen: true, // Auto-seen for manual orders
+          };
+          setOrders((prev) => [newOrder, ...prev]);
+        }
+
+        try {
+          localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(orders));
+          window.dispatchEvent(new Event('foodypay_order_created'));
+        } catch (e) {}
+
+        triggerSound(playOrderPlaced);
+        confetti({ particleCount: 75, spread: 75, origin: { y: 0.3 } });
+        addToast(`Manual Order ${nextId} created!`, <Check size={18} />);
+      }
+
+      setIsManualOrderOpen(false);
+      setEditingOrderId(null);
+    } finally {
+      setIsSubmittingManualOrder(false);
+    }
   };
 
   // Bill Settlement Handlers
@@ -2016,6 +2233,7 @@ export default function DashboardPage({ onShowToast }) {
     setActiveBillSettlementOrder(order);
     setShowUpiQrModal(false);
     setSettleDiscount('');
+    setSettleDiscountType('₹');
     setSettleCouponInput('');
     setSettleCouponApplied(null);
   };
@@ -2023,7 +2241,8 @@ export default function DashboardPage({ onShowToast }) {
   const getSettleCalculations = () => {
     if (!activeBillSettlementOrder) return { subtotal: 0, discountVal: 0, finalTotal: 0 };
     const subtotal = activeBillSettlementOrder.total || 0;
-    let discountVal = Number(settleDiscount) || 0;
+    const rawDisc = Number(settleDiscount) || 0;
+    let discountVal = settleDiscountType === '%' ? (subtotal * rawDisc) / 100 : rawDisc;
 
     if (settleCouponApplied) {
       if (typeof settleCouponApplied.discount === 'number') {
@@ -2042,8 +2261,8 @@ export default function DashboardPage({ onShowToast }) {
     }
 
     discountVal = Math.min(discountVal, subtotal);
-    const finalTotal = Math.max(0, subtotal - discountVal);
-    return { subtotal, discountVal, finalTotal };
+    const finalTotal = Math.max(0, Math.round(subtotal - discountVal));
+    return { subtotal, discountVal: Math.round(discountVal), finalTotal };
   };
 
   const handleApplySettleCoupon = () => {
@@ -2068,17 +2287,25 @@ export default function DashboardPage({ onShowToast }) {
     const orderId = activeBillSettlementOrder._id || activeBillSettlementOrder.id;
     const { finalTotal } = getSettleCalculations();
 
-    setOrders((prev) =>
-      prev.map((ord) =>
-        ord.id === orderId || ord._id === orderId
-          ? { ...ord, total: finalTotal, status: 'completed', seen: true, paymentStatus: 'cash', paymentLabel: 'Cash on Counter' }
-          : ord
-      )
+    const updatedList = orders.map((ord) =>
+      ord.id === orderId || ord._id === orderId
+        ? { ...ord, total: finalTotal, status: 'completed', isPaid: true, seen: true, paymentStatus: 'paid-cash', paymentLabel: 'Cash Received (Paid)' }
+        : ord
     );
+    setOrders(updatedList);
+
+    try {
+      localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updatedList));
+      window.dispatchEvent(new Event('foodypay_order_created'));
+      window.dispatchEvent(new Event('storage'));
+      const bc = new BroadcastChannel('foodypay_live_orders_channel');
+      bc.postMessage({ type: 'ORDER_SETTLED', orderId, status: 'completed', paymentStatus: 'paid-cash' });
+      bc.close();
+    } catch (e) {}
 
     if (token) {
       try {
-        await updateOrderApi(token, orderId, { ...activeBillSettlementOrder, total: finalTotal, status: 'completed', seen: true, paymentStatus: 'cash' });
+        await updateOrderApi(token, orderId, { ...activeBillSettlementOrder, total: finalTotal, status: 'completed', isPaid: true, seen: true, paymentStatus: 'paid-cash' });
         const stats = await fetchOrderStatsApi(token);
         if (stats) setTodayStats(stats);
       } catch (err) {}
@@ -2095,17 +2322,25 @@ export default function DashboardPage({ onShowToast }) {
     const orderId = activeBillSettlementOrder._id || activeBillSettlementOrder.id;
     const { finalTotal } = getSettleCalculations();
 
-    setOrders((prev) =>
-      prev.map((ord) =>
-        ord.id === orderId || ord._id === orderId
-          ? { ...ord, total: finalTotal, status: 'completed', seen: true, paymentStatus: 'paid-upi', paymentLabel: 'Paid via UPI QR' }
-          : ord
-      )
+    const updatedList = orders.map((ord) =>
+      ord.id === orderId || ord._id === orderId
+        ? { ...ord, total: finalTotal, status: 'completed', isPaid: true, seen: true, paymentStatus: 'paid-upi', paymentLabel: 'Paid via UPI QR' }
+        : ord
     );
+    setOrders(updatedList);
+
+    try {
+      localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updatedList));
+      window.dispatchEvent(new Event('foodypay_order_created'));
+      window.dispatchEvent(new Event('storage'));
+      const bc = new BroadcastChannel('foodypay_live_orders_channel');
+      bc.postMessage({ type: 'ORDER_SETTLED', orderId, status: 'completed', paymentStatus: 'paid-upi' });
+      bc.close();
+    } catch (e) {}
 
     if (token) {
       try {
-        await updateOrderApi(token, orderId, { ...activeBillSettlementOrder, total: finalTotal, status: 'completed', seen: true, paymentStatus: 'paid-upi' });
+        await updateOrderApi(token, orderId, { ...activeBillSettlementOrder, total: finalTotal, status: 'completed', isPaid: true, seen: true, paymentStatus: 'paid-upi' });
         const stats = await fetchOrderStatsApi(token);
         if (stats) setTodayStats(stats);
       } catch (err) {}
@@ -2118,73 +2353,99 @@ export default function DashboardPage({ onShowToast }) {
     setActiveBillSettlementOrder(null);
   };
 
-  // Status Progression
+  // Status Progression with Debouncing & Action Loading Lock
   const handleUpdateOrderStatus = async (orderId, newStatus) => {
     stopContinuousAlarm();
-    if (orderId) {
+    if (!orderId) return;
+    const oIdStr = String(orderId);
+    if (actionLoadingSet.has(oIdStr)) return;
+
+    setActionLoadingSet((prev) => new Set(prev).add(oIdStr));
+
+    try {
       try {
         const raw = localStorage.getItem('foodypay_seen_order_ids');
         const seenSet = raw ? new Set(JSON.parse(raw)) : new Set();
-        seenSet.add(String(orderId));
+        seenSet.add(oIdStr);
         localStorage.setItem('foodypay_seen_order_ids', JSON.stringify(Array.from(seenSet)));
       } catch (e) {}
-    }
 
-    setOrders((prev) => {
-      const updated = prev.map((ord) => {
-        const ordId = ord._id || ord.id || ord.orderId;
-        if (ordId === orderId || String(ordId) === String(orderId)) {
-          return { ...ord, seen: true, status: newStatus, updatedAt: new Date().toISOString() };
-        }
-        return ord;
+      setOrders((prev) => {
+        const updated = prev.map((ord) => {
+          const ordId = ord._id || ord.id || ord.orderId;
+          if (ordId === orderId || String(ordId) === oIdStr) {
+            return {
+              ...ord,
+              seen: true,
+              status: newStatus,
+              sentToKitchen: newStatus === 'preparing' ? true : ord.sentToKitchen,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          return ord;
+        });
+        try {
+          localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
       });
-      try {
-        localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updated));
-      } catch (e) {}
-      return updated;
-    });
 
-    if (token) {
-      try {
-        const orderObj = orders.find((o) => (o._id || o.id || o.orderId) === orderId || String(o._id || o.id || o.orderId) === String(orderId));
-        const targetId = (orderObj && orderObj._id) || orderId;
-        await updateOrderStatusApi(token, targetId, newStatus);
-      } catch (err) {
-        console.warn('API error updating status:', err);
+      if (token) {
+        try {
+          const orderObj = orders.find((o) => (o._id || o.id || o.orderId) === orderId || String(o._id || o.id || o.orderId) === oIdStr);
+          const targetId = (orderObj && orderObj._id) || orderId;
+          await updateOrderStatusApi(token, targetId, newStatus);
+        } catch (err) {
+          console.warn('API error updating status:', err);
+        }
       }
-    }
 
-    try {
-      const bc = new BroadcastChannel('foodypay_live_orders_channel');
-      bc.postMessage({ type: 'ORDER_UPDATED', orderId, newStatus });
-      bc.close();
-      window.dispatchEvent(new Event('foodypay_order_created'));
-      window.dispatchEvent(new Event('storage'));
-    } catch (e) {}
+      try {
+        const bc = new BroadcastChannel('foodypay_live_orders_channel');
+        bc.postMessage({ type: 'ORDER_UPDATED', orderId, newStatus });
+        bc.close();
+        window.dispatchEvent(new Event('foodypay_order_created'));
+        window.dispatchEvent(new Event('storage'));
+      } catch (e) {}
 
-    if (newStatus === 'preparing') {
-      triggerSound(playFoodPreparing);
-      addToast(`Order ${orderId} is being prepared in the kitchen.`, <ChefHat size={18} />);
-    } else if (newStatus === 'ready') {
-      triggerSound(playFoodReady);
-      addToast(`Order ${orderId} is Ready for Serving!`, <Bell size={18} />);
-    } else if (newStatus === 'completed') {
-      triggerSound(playBillPaid);
-      addToast(`Order ${orderId} settled and delivered!`, <Check size={18} />);
+      if (newStatus === 'preparing') {
+        triggerSound(playFoodPreparing);
+        addToast(`Order ${orderId} is being prepared in the kitchen.`, <ChefHat size={18} />);
+      } else if (newStatus === 'ready') {
+        triggerSound(playFoodReady);
+        addToast(`Order ${orderId} is Ready for Serving!`, <Bell size={18} />);
+      } else if (newStatus === 'completed') {
+        triggerSound(playBillPaid);
+        addToast(`Order ${orderId} settled and delivered!`, <Check size={18} />);
+      }
+    } finally {
+      setActionLoadingSet((prev) => {
+        const next = new Set(prev);
+        next.delete(oIdStr);
+        return next;
+      });
     }
   };
 
   // ==========================================================================
   // 2. CATALOG & PRODUCTS
   // ==========================================================================
-  const [selectedCategory, setSelectedCategory] = useState('Fast Food');
+  const [selectedCategory, setSelectedCategory] = useState('All');
   const [catalogSearch, setCatalogSearch] = useState('');
   const [isAddProductModalOpen, setIsAddProductModalOpen] = useState(false);
   const [isEditProductModalOpen, setIsEditProductModalOpen] = useState(false);
   const [showEditUrlInput, setShowEditUrlInput] = useState(false);
   const [showAddUrlInput, setShowAddUrlInput] = useState(false);
   const [editProductForm, setEditProductForm] = useState(null);
-  const [allCategories, setAllCategories] = useState(['Fast Food', 'Starters', 'Main Course', 'Breads', 'Beverages', 'Desserts']);
+  const [customCategories, setCustomCategories] = useState([]);
+
+  // Dynamic categories extracted strictly from user's actual dishes + custom created categories (no sample data)
+  const allCategories = useMemo(() => {
+    const dishCats = (dishes || [])
+      .map((d) => (d && d.category ? String(d.category).trim() : ''))
+      .filter(Boolean);
+    return Array.from(new Set([...dishCats, ...customCategories]));
+  }, [dishes, customCategories]);
 
   const [productLogoFile, setProductLogoFile] = useState(null);
   const [productLogoPreview, setProductLogoPreview] = useState(null);
@@ -2193,7 +2454,7 @@ export default function DashboardPage({ onShowToast }) {
 
   const [newProductForm, setNewProductForm] = useState({
     name: '',
-    category: 'Fast Food',
+    category: '',
     price: '',
     originalPrice: '',
     showDiscountTag: true,
@@ -2274,7 +2535,7 @@ export default function DashboardPage({ onShowToast }) {
     const trimmed = customCategoryInput.trim();
     if (trimmed) {
       if (!allCategories.includes(trimmed)) {
-        setAllCategories((prev) => [...prev, trimmed]);
+        setCustomCategories((prev) => [...prev, trimmed]);
       }
       setNewProductForm((prev) => ({ ...prev, category: trimmed }));
       setCustomCategoryInput('');
@@ -2341,8 +2602,11 @@ export default function DashboardPage({ onShowToast }) {
         }
 
         const createdDish = await createDishApi(token, formData);
+        const storeFpId = storeControls.foodypayId || currentUser.foodypayId || 'FP-985569';
         const fullCreatedDish = {
           ...(createdDish || {}),
+          foodypayId: createdDish?.foodypayId || storeFpId,
+          merchantId: createdDish?.merchantId || storeFpId,
           images: rawImages,
           image: finalImage,
         };
@@ -2351,9 +2615,12 @@ export default function DashboardPage({ onShowToast }) {
         console.warn('API error creating dish:', err);
       }
     } else {
+      const storeFpId = storeControls.foodypayId || currentUser.foodypayId || 'FP-985569';
       const newDish = {
         id: 'p_' + Date.now(),
         _id: 'p_' + Date.now(),
+        foodypayId: storeFpId,
+        merchantId: storeFpId,
         name: newProductForm.name.trim().toUpperCase(),
         category: newProductForm.category,
         price: Number(newProductForm.price),
@@ -3493,10 +3760,10 @@ export default function DashboardPage({ onShowToast }) {
               <div className="crm-submenu-list">
                 <button
                   type="button"
-                  className={`crm-submenu-item ${activeTab === 'catalog' && selectedCategory === 'Fast Food' ? 'active' : ''}`}
+                  className={`crm-submenu-item ${activeTab === 'catalog' ? 'active' : ''}`}
                   onClick={() => {
                     setActiveTab('catalog');
-                    setSelectedCategory('Fast Food');
+                    setSelectedCategory('All');
                   }}
                 >
                   <span>Products</span>
@@ -3927,7 +4194,7 @@ export default function DashboardPage({ onShowToast }) {
             VIEW 1: HOME / ORDERS
             ========================================================================== */}
         {activeTab === 'home_orders' && (
-          <div className="crm-orders-page-wrap">
+          <div className="crm-orders-page-wrap animate-fade-in" key={activeTab}>
             {/* DATE RANGE & DAY-WISE CALENDAR SELECTION HEADER BAR (Ref: User Screenshot) */}
             {(() => {
               const periodOrdersList = (orders || []).filter((o) => isOrderInDateRange(o, dateRangeFilter, customStartDate, customEndDate));
@@ -4469,25 +4736,64 @@ export default function DashboardPage({ onShowToast }) {
                             <button
                               type="button"
                               className="crm-btn-action"
-                              disabled={order.seen}
+                              disabled={order.seen || actionLoadingSet.has(String(order._id || order.id))}
                               style={{
                                 backgroundColor: order.seen ? '#64748B' : '#2563EB',
                                 color: '#FFF',
                                 fontWeight: 800,
-                                opacity: order.seen ? 0.8 : 1,
-                                cursor: order.seen ? 'not-allowed' : 'pointer',
+                                opacity: order.seen || actionLoadingSet.has(String(order._id || order.id)) ? 0.8 : 1,
+                                cursor: order.seen || actionLoadingSet.has(String(order._id || order.id)) ? 'not-allowed' : 'pointer',
                                 border: order.seen ? '1px solid #475569' : 'none',
                               }}
-                              onClick={() => !order.seen && handleMarkOrderSeen(order._id || order.id)}
+                              onClick={() => !order.seen && !actionLoadingSet.has(String(order._id || order.id)) && handleMarkOrderSeen(order._id || order.id)}
                               title={order.seen ? "Order Acknowledged (Bell Stopped)" : "Acknowledge Order & Stop Bell Alarm"}
                             >
-                              {order.seen ? <Check size={16} /> : <Eye size={16} />}
-                              <span>{order.seen ? ' SEEN (BELL STOPPED)' : '️ SEEN (STOP BELL)'}</span>
+                              {actionLoadingSet.has(String(order._id || order.id)) ? (
+                                <RefreshCw size={16} style={{ animation: 'foodypay-spin 0.8s linear infinite' }} />
+                              ) : order.seen ? (
+                                <Check size={16} />
+                              ) : (
+                                <Eye size={16} />
+                              )}
+                              <span>{actionLoadingSet.has(String(order._id || order.id)) ? ' Updating...' : order.seen ? ' SEEN (BELL STOPPED)' : ' SEEN (STOP BELL)'}</span>
                             </button>
+
+                             <button
+                              type="button"
+                              className="crm-btn-action fire"
+                              disabled={Boolean(order.sentToKitchen) || actionLoadingSet.has(String(order._id || order.id))}
+                              style={{
+                                backgroundColor: order.sentToKitchen ? '#059669' : '#FF5E14',
+                                color: '#FFF',
+                                fontWeight: 800,
+                                opacity: Boolean(order.sentToKitchen) || actionLoadingSet.has(String(order._id || order.id)) ? 0.75 : 1,
+                                cursor: Boolean(order.sentToKitchen) || actionLoadingSet.has(String(order._id || order.id)) ? 'not-allowed' : 'pointer',
+                                border: order.sentToKitchen ? '1px solid #047857' : 'none',
+                              }}
+                              onClick={() => !order.sentToKitchen && !actionLoadingSet.has(String(order._id || order.id)) && handleSendToKitchen(order._id || order.id)}
+                              title={order.sentToKitchen ? "Sent to Kitchen (Active in KDS)" : "Send Order directly to KDS Kitchen Tab & Ring Kitchen Alarm"}
+                            >
+                              {actionLoadingSet.has(String(order._id || order.id)) ? (
+                                <RefreshCw size={16} style={{ animation: 'foodypay-spin 0.8s linear infinite' }} />
+                              ) : order.sentToKitchen ? (
+                                <Check size={16} />
+                              ) : (
+                                <ChefHat size={16} />
+                              )}
+                              <span>
+                                {actionLoadingSet.has(String(order._id || order.id))
+                                  ? ' Sending...'
+                                  : order.sentToKitchen
+                                  ? ' Sent to Kitchen'
+                                  : ' Send to Kitchen'}
+                              </span>
+                            </button>
+
                             <button
                               type="button"
                               className="crm-btn-action fire"
-                              onClick={() => handleStartPreparingOrder(order._id || order.id)}
+                              disabled={actionLoadingSet.has(String(order._id || order.id))}
+                              onClick={() => !actionLoadingSet.has(String(order._id || order.id)) && handleUpdateOrderStatus(order._id || order.id, 'preparing')}
                               title="Start Cooking in Kitchen"
                             >
                               <ChefHat size={16} />
@@ -4496,7 +4802,8 @@ export default function DashboardPage({ onShowToast }) {
                             <button
                               type="button"
                               className="crm-btn-action edit"
-                              onClick={() => handleEditOrder(order)}
+                              disabled={actionLoadingSet.has(String(order._id || order.id))}
+                              onClick={() => !actionLoadingSet.has(String(order._id || order.id)) && handleEditOrder(order)}
                               title="Edit Order items before cooking"
                             >
                               <Edit3 size={16} />
@@ -4505,7 +4812,8 @@ export default function DashboardPage({ onShowToast }) {
                             <button
                               type="button"
                               className="crm-btn-action settle"
-                              onClick={() => handleOpenBillSettlement(order)}
+                              disabled={actionLoadingSet.has(String(order._id || order.id))}
+                              onClick={() => !actionLoadingSet.has(String(order._id || order.id)) && handleOpenBillSettlement(order)}
                               title="Settle Bill Cash/UPI"
                             >
                               <CreditCard size={16} />
@@ -4524,17 +4832,23 @@ export default function DashboardPage({ onShowToast }) {
                               <button
                                 type="button"
                                 className="crm-btn-action ready-btn"
-                                style={{ flex: 1 }}
-                                onClick={() => handleUpdateOrderStatus(order._id || order.id, 'ready')}
+                                style={{ flex: 1, opacity: actionLoadingSet.has(String(order._id || order.id)) ? 0.7 : 1, cursor: actionLoadingSet.has(String(order._id || order.id)) ? 'not-allowed' : 'pointer' }}
+                                disabled={actionLoadingSet.has(String(order._id || order.id))}
+                                onClick={() => !actionLoadingSet.has(String(order._id || order.id)) && handleUpdateOrderStatus(order._id || order.id, 'ready')}
                               >
-                                <Bell size={16} />
-                                <span>Food is Ready</span>
+                                {actionLoadingSet.has(String(order._id || order.id)) ? (
+                                  <RefreshCw size={16} style={{ animation: 'foodypay-spin 0.8s linear infinite' }} />
+                                ) : (
+                                  <Bell size={16} />
+                                )}
+                                <span>{actionLoadingSet.has(String(order._id || order.id)) ? ' Updating...' : ' Food is Ready'}</span>
                               </button>
                               <button
                                 type="button"
                                 className="crm-btn-action settle"
-                                style={{ flex: 1 }}
-                                onClick={() => handleOpenBillSettlement(order)}
+                                style={{ flex: 1, opacity: actionLoadingSet.has(String(order._id || order.id)) ? 0.7 : 1, cursor: actionLoadingSet.has(String(order._id || order.id)) ? 'not-allowed' : 'pointer' }}
+                                disabled={actionLoadingSet.has(String(order._id || order.id))}
+                                onClick={() => !actionLoadingSet.has(String(order._id || order.id)) && handleOpenBillSettlement(order)}
                               >
                                 <CreditCard size={16} />
                                 <span>Settle Bill</span>
@@ -4545,15 +4859,15 @@ export default function DashboardPage({ onShowToast }) {
 
                         {(order.status === 'ready' || order.status === 'out_for_delivery' || order.status === 'dispatched') && (
                           <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                            {(isDeliveryOrder || storeControls.workflowMode === 'delivery') && order.status === 'ready' && (
+                            {order.status === 'ready' && (
                               <button
                                 type="button"
                                 className="crm-btn-action fire full-w"
-                                style={{ background: 'linear-gradient(135deg, #F59E0B, #D97706)', color: '#000', fontWeight: 900 }}
+                                style={{ background: 'linear-gradient(135deg, #FF5E14, #D97706)', color: '#FFF', fontWeight: 900 }}
                                 onClick={() => handleUpdateOrderStatus(order._id || order.id, 'out_for_delivery')}
                               >
-                                <Truck size={17} />
-                                <span>Out for Delivery</span>
+                                {isDeliveryOrder ? <Truck size={17} /> : <Utensils size={17} />}
+                                <span>{isDeliveryOrder ? 'Out for Delivery' : 'Start Serving'}</span>
                               </button>
                             )}
 
@@ -4627,55 +4941,102 @@ export default function DashboardPage({ onShowToast }) {
             </div>
 
             {/* Orders Pagination Controls */}
-            {(filteredOrders || []).length > 0 && (
-              <div style={{ marginTop: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#FFFFFF', padding: '14px 20px', borderRadius: '16px', border: '1.5px solid #E2E8F0', flexWrap: 'wrap', gap: '12px' }}>
-                <div style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>
-                  Showing {Math.min((ordersPage - 1) * ordersPerPage + 1, (filteredOrders || []).length)} - {Math.min(ordersPage * ordersPerPage, (filteredOrders || []).length)} of {(filteredOrders || []).length} orders
+            {(() => {
+              const totalOrders = (filteredOrders || []).length;
+              const actualOrdersPerPage = ordersPerPage === 'All' ? totalOrders || 1 : Number(ordersPerPage);
+              const totalOrderPages = Math.ceil(totalOrders / actualOrdersPerPage) || 1;
+              const safeOrdersPage = Math.min(Math.max(1, ordersPage), totalOrderPages);
+              const startOrderIdx = totalOrders === 0 ? 0 : (safeOrdersPage - 1) * actualOrdersPerPage + 1;
+              const endOrderIdx = Math.min(safeOrdersPage * actualOrdersPerPage, totalOrders);
+
+              return totalOrders > 0 ? (
+                <div style={{ marginTop: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#FFFFFF', padding: '14px 20px', borderRadius: '16px', border: '1.5px solid #E2E8F0', flexWrap: 'wrap', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>
+                      Showing {startOrderIdx} – {endOrderIdx} of {totalOrders} orders (Page {safeOrdersPage} of {totalOrderPages})
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>Orders per page:</span>
+                      <select
+                        value={ordersPerPage}
+                        onChange={(e) => {
+                          const val = e.target.value === 'All' ? 'All' : Number(e.target.value);
+                          setOrdersPerPage(val);
+                          setOrdersPage(1);
+                        }}
+                        style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '12px', fontWeight: 700 }}
+                      >
+                        <option value={6}>6</option>
+                        <option value={12}>12</option>
+                        <option value={24}>24</option>
+                        <option value={48}>48</option>
+                        <option value={100}>100</option>
+                        <option value="All">All orders</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      disabled={safeOrdersPage === 1}
+                      onClick={() => setOrdersPage((p) => Math.max(1, p - 1))}
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '8px',
+                        border: '1.5px solid #CBD5E1',
+                        background: safeOrdersPage === 1 ? '#F1F5F9' : '#FFFFFF',
+                        color: safeOrdersPage === 1 ? '#94A3B8' : '#0F172A',
+                        fontWeight: 800,
+                        fontSize: '12.5px',
+                        cursor: safeOrdersPage === 1 ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      ◀ Prev
+                    </button>
+
+                    {Array.from({ length: totalOrderPages }, (_, i) => i + 1).map((pageNum) => (
+                      <button
+                        key={pageNum}
+                        type="button"
+                        onClick={() => setOrdersPage(pageNum)}
+                        style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '8px',
+                          border: safeOrdersPage === pageNum ? '2px solid #1D4ED8' : '1px solid #CBD5E1',
+                          background: safeOrdersPage === pageNum ? '#1D4ED8' : '#FFFFFF',
+                          color: safeOrdersPage === pageNum ? '#FFFFFF' : '#0F172A',
+                          fontWeight: 800,
+                          fontSize: '12.5px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {pageNum}
+                      </button>
+                    ))}
+
+                    <button
+                      type="button"
+                      disabled={safeOrdersPage === totalOrderPages}
+                      onClick={() => setOrdersPage((p) => Math.min(totalOrderPages, p + 1))}
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '8px',
+                        border: '1.5px solid #CBD5E1',
+                        background: safeOrdersPage === totalOrderPages ? '#F1F5F9' : '#FFFFFF',
+                        color: safeOrdersPage === totalOrderPages ? '#94A3B8' : '#0F172A',
+                        fontWeight: 800,
+                        fontSize: '12.5px',
+                        cursor: safeOrdersPage === totalOrderPages ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      Next ▶
+                    </button>
+                  </div>
                 </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <button
-                    type="button"
-                    disabled={ordersPage === 1}
-                    onClick={() => setOrdersPage((p) => Math.max(1, p - 1))}
-                    style={{
-                      padding: '6px 14px',
-                      borderRadius: '8px',
-                      border: '1.5px solid #CBD5E1',
-                      background: ordersPage === 1 ? '#F1F5F9' : '#FFFFFF',
-                      color: ordersPage === 1 ? '#94A3B8' : '#0F172A',
-                      fontWeight: 800,
-                      fontSize: '12.5px',
-                      cursor: ordersPage === 1 ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    ◀ Prev
-                  </button>
-
-                  <span style={{ fontSize: '13px', fontWeight: 800, color: '#1D4ED8', padding: '4px 10px', background: '#EFF6FF', borderRadius: '6px' }}>
-                    Page {ordersPage} of {Math.ceil((filteredOrders || []).length / ordersPerPage) || 1}
-                  </span>
-
-                  <button
-                    type="button"
-                    disabled={ordersPage * ordersPerPage >= (filteredOrders || []).length}
-                    onClick={() => setOrdersPage((p) => p + 1)}
-                    style={{
-                      padding: '6px 14px',
-                      borderRadius: '8px',
-                      border: '1.5px solid #CBD5E1',
-                      background: ordersPage * ordersPerPage >= (filteredOrders || []).length ? '#F1F5F9' : '#FFFFFF',
-                      color: ordersPage * ordersPerPage >= (filteredOrders || []).length ? '#94A3B8' : '#0F172A',
-                      fontWeight: 800,
-                      fontSize: '12.5px',
-                      cursor: ordersPage * ordersPerPage >= (filteredOrders || []).length ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    Next ▶
-                  </button>
-                </div>
-              </div>
-            )}
+              ) : null;
+            })()}
           </div>
         )}
 
@@ -4683,7 +5044,7 @@ export default function DashboardPage({ onShowToast }) {
             VIEW 1.5: KITCHEN DISPLAY SYSTEM (KDS)
             ========================================================================== */}
         {activeTab === 'kitchen' && (
-          <div style={{ padding: '24px 36px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div className="animate-fade-in" key={activeTab} style={{ padding: '24px 36px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#0F172A', color: '#FFF', padding: '20px 24px', borderRadius: '18px', boxShadow: '0 8px 24px rgba(15,23,42,0.2)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                 <div style={{ width: '48px', height: '48px', borderRadius: '14px', backgroundColor: '#FF5E14', color: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -4721,8 +5082,9 @@ export default function DashboardPage({ onShowToast }) {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
               {(orders || []).filter((o) => {
                 if (!o || o.status === 'completed' || o.status === 'cancelled') return false;
+                if (!o.sentToKitchen && o.status === 'new') return false;
                 if (kitchenFilter === 'all') return true;
-                if (kitchenFilter === 'new') return o.status === 'new' || !o.seen;
+                if (kitchenFilter === 'new') return o.status === 'new' && o.sentToKitchen;
                 if (kitchenFilter === 'preparing') return o.status === 'preparing';
                 if (kitchenFilter === 'ready') return o.status === 'ready';
                 return true;
@@ -4846,21 +5208,42 @@ export default function DashboardPage({ onShowToast }) {
             VIEW 2: CATALOG / PRODUCTS (Ref: Image 2 with Real Food Images)
             ========================================================================== */}
         {activeTab === 'catalog' && (
-          <div className="crm-catalog-split-view">
+          <div className="crm-catalog-split-view animate-fade-in" key={activeTab}>
             {/* LEFT COLUMN: ALL CATEGORIES */}
             <aside className="crm-categories-sidebar">
               <div className="crm-cat-sidebar-header">ALL CATEGORIES</div>
-              {allCategories.map((cat) => (
-                <button
-                  key={cat}
-                  type="button"
-                  className={`crm-cat-item-btn ${selectedCategory === cat ? 'active' : ''}`}
-                  onClick={() => setSelectedCategory(cat)}
-                >
-                  <span>{cat}</span>
-                  <MoreVertical size={16} className="crm-cat-dots" />
-                </button>
-              ))}
+              {allCategories.length === 0 ? (
+                <div style={{ padding: '20px 12px', fontSize: '13px', color: '#6B7280', textAlign: 'center', lineHeight: '1.5' }}>
+                  No categories found.<br />Add dishes to create categories.
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className={`crm-cat-item-btn ${selectedCategory === 'All' ? 'active' : ''}`}
+                    onClick={() => {
+                      setSelectedCategory('All');
+                      setCatalogPage(1);
+                    }}
+                  >
+                    <span>All Items ({dishes.length})</span>
+                  </button>
+                  {allCategories.map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      className={`crm-cat-item-btn ${selectedCategory === cat ? 'active' : ''}`}
+                      onClick={() => {
+                        setSelectedCategory(cat);
+                        setCatalogPage(1);
+                      }}
+                    >
+                      <span>{cat}</span>
+                      <MoreVertical size={16} className="crm-cat-dots" />
+                    </button>
+                  ))}
+                </>
+              )}
             </aside>
 
             {/* CENTER COLUMN: PRODUCTS TABLE WITH FOOD IMAGES */}
@@ -4868,7 +5251,7 @@ export default function DashboardPage({ onShowToast }) {
               <div className="crm-selected-cat-header">
                 <div className="crm-selected-cat-title">
                   <Utensils size={20} color="#1D4ED8" />
-                  <span>{selectedCategory}</span>
+                  <span>{selectedCategory === 'All' ? 'All Products' : selectedCategory}</span>
                 </div>
                 <button
                   type="button"
@@ -4881,260 +5264,294 @@ export default function DashboardPage({ onShowToast }) {
               </div>
 
               {/* Products Table with Real Photos */}
-              <table className="crm-product-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: '40%' }}>Product Name</th>
-                    <th style={{ width: '15%' }}>Category</th>
-                    <th style={{ width: '15%' }}>Price</th>
-                    <th style={{ width: '15%' }}>Stock</th>
-                    <th style={{ width: '15%', textAlign: 'right' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(filteredDishes || []).slice((catalogPage - 1) * catalogPerPage, catalogPage * catalogPerPage).map((dish, idx) => {
-                    const dishKey = dish._id || dish.id || `dish_${idx}`;
-                    const dishImgUrl = (Array.isArray(dish.images) && dish.images[0])
-                      ? dish.images[0]
-                      : (typeof dish.image === 'string' ? dish.image : (dish.image?.url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80'));
-                    const hasMultiPhotos = Array.isArray(dish.images) && dish.images.length > 1;
+              {(() => {
+                const totalItems = (filteredDishes || []).length;
+                const actualPerPage = catalogPerPage === 'All' ? totalItems || 1 : Number(catalogPerPage);
+                const totalPages = Math.ceil(totalItems / actualPerPage) || 1;
+                const safePage = Math.min(Math.max(1, catalogPage), totalPages);
+                const startIdx = totalItems === 0 ? 0 : (safePage - 1) * actualPerPage + 1;
+                const endIdx = Math.min(safePage * actualPerPage, totalItems);
+                const displayedDishes = (filteredDishes || []).slice((safePage - 1) * actualPerPage, safePage * actualPerPage);
 
-                    return (
-                      <tr key={dishKey}>
-                        <td>
-                          <div className="crm-product-info-cell">
-                            {/* Real Food Image Thumbnail */}
-                            <div className="crm-prod-thumb-box" style={{ position: 'relative' }}>
-                              <img
-                                src={dishImgUrl}
-                                alt={dish.name}
-                                className="crm-prod-thumb-img"
-                                loading="lazy"
-                              />
-                              {hasMultiPhotos && (
-                                <span style={{ position: 'absolute', bottom: '2px', right: '2px', background: 'rgba(15,23,42,0.85)', color: '#FFF', fontSize: '9px', fontWeight: 800, padding: '1px 4px', borderRadius: '4px' }}>
-                                   {dish.images.length}
-                                </span>
-                              )}
-                            </div>
-                          <div>
-                            <div className="crm-prod-name-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span>{dish.name}</span>
-                              {(dish.isSpecial || dish.isPinned) && (
-                                <span style={{ fontSize: '11px', background: '#FFF7ED', color: '#EA580C', border: '1px solid #FFEDD5', padding: '2px 7px', borderRadius: '10px', fontWeight: 800 }}>
-                                  ⭐ Special
-                                </span>
-                              )}
-                              {hasMultiPhotos && (
-                                <span style={{ fontSize: '10.5px', background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', padding: '1px 6px', borderRadius: '8px', fontWeight: 700 }}>
-                                  {dish.images.length} Photos
-                                </span>
-                              )}
-                            </div>
-                            {dish.desc && (
-                              <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px', maxWidth: '300px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {dish.desc}
+                return (
+                  <>
+                    <table className="crm-product-table">
+                      <thead>
+                        <tr>
+                          <th style={{ width: '40%' }}>Product Name</th>
+                          <th style={{ width: '15%' }}>Category</th>
+                          <th style={{ width: '15%' }}>Price</th>
+                          <th style={{ width: '15%' }}>Stock</th>
+                          <th style={{ width: '15%', textAlign: 'right' }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayedDishes.map((dish, idx) => {
+                          const dishKey = dish._id || dish.id || `dish_${idx}`;
+                          const dishImgUrl = (Array.isArray(dish.images) && dish.images[0])
+                            ? dish.images[0]
+                            : (typeof dish.image === 'string' ? dish.image : (dish.image?.url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80'));
+                          const hasMultiPhotos = Array.isArray(dish.images) && dish.images.length > 1;
+
+                          return (
+                            <tr key={dishKey}>
+                              <td>
+                                <div className="crm-product-info-cell">
+                                  {/* Real Food Image Thumbnail */}
+                                  <div className="crm-prod-thumb-box" style={{ position: 'relative' }}>
+                                    <img
+                                      src={dishImgUrl}
+                                      alt={dish.name}
+                                      className="crm-prod-thumb-img"
+                                      loading="lazy"
+                                    />
+                                    {hasMultiPhotos && (
+                                      <span style={{ position: 'absolute', bottom: '2px', right: '2px', background: 'rgba(15,23,42,0.85)', color: '#FFF', fontSize: '9px', fontWeight: 800, padding: '1px 4px', borderRadius: '4px' }}>
+                                         {dish.images.length}
+                                      </span>
+                                    )}
+                                  </div>
+                                <div>
+                                  <div className="crm-prod-name-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span>{dish.name}</span>
+                                    {(dish.isSpecial || dish.isPinned) && (
+                                      <span style={{ fontSize: '11px', background: '#FFF7ED', color: '#EA580C', border: '1px solid #FFEDD5', padding: '2px 7px', borderRadius: '10px', fontWeight: 800 }}>
+                                        ⭐ Special
+                                      </span>
+                                    )}
+                                    {hasMultiPhotos && (
+                                      <span style={{ fontSize: '10.5px', background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', padding: '1px 6px', borderRadius: '8px', fontWeight: 700 }}>
+                                        {dish.images.length} Photos
+                                      </span>
+                                    )}
+                                  </div>
+                                  {dish.desc && (
+                                    <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px', maxWidth: '300px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {dish.desc}
+                                    </div>
+                                  )}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
+                                    <span className="crm-prod-variants-badge">
+                                      View {dish.variantsCount || 1} variants
+                                    </span>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditProductForm({
+                                          ...dish,
+                                          sizes: dish.sizes && dish.sizes.length > 0 ? dish.sizes : [{ name: 'Regular', price: dish.price, qty: 100 }],
+                                          images: dish.images && dish.images.length > 0 ? dish.images : (dishImgUrl ? [dishImgUrl] : [])
+                                        });
+                                        setIsEditProductModalOpen(true);
+                                      }}
+                                      style={{
+                                        padding: '3px 10px',
+                                        borderRadius: '12px',
+                                        border: '1.5px solid #3B82F6',
+                                        background: '#EFF6FF',
+                                        color: '#1D4ED8',
+                                        fontSize: '11.5px',
+                                        fontWeight: 800,
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px'
+                                      }}
+                                      title="Edit Product Details & Images"
+                                    >
+                                      <Edit3 size={13} color="#1D4ED8" /> Edit Product
+                                    </button>
+                                  </div>
+                                </div>
                               </div>
-                            )}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
-                              <span className="crm-prod-variants-badge">
-                                View {dish.variantsCount || 1} variants
-                              </span>
+                            </td>
+                            <td>
+                              <div style={{ fontWeight: 600, color: '#475569', fontSize: '13px', background: '#F1F5F9', display: 'inline-block', padding: '4px 10px', borderRadius: '6px' }}>
+                                {dish.category || 'Uncategorized'}
+                              </div>
+                            </td>
+                            <td>
+                              <div className="crm-prod-price" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{ fontWeight: 800, color: '#0F172A', fontSize: '15px' }}>₹{dish.price}</span>
+                                  {dish.showDiscountTag !== false && Number(dish.originalPrice) > Number(dish.price) && (
+                                    <span style={{ textDecoration: 'line-through', color: '#94A3B8', fontSize: '12px' }}>
+                                      ₹{dish.originalPrice}
+                                    </span>
+                                  )}
+                                </div>
+                                {dish.showDiscountTag !== false && Number(dish.originalPrice) > Number(dish.price) ? (
+                                  <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#059669', background: '#ECFDF5', border: '1px solid #A7F3D0', padding: '1px 6px', borderRadius: '6px', width: 'fit-content' }}>
+                                     {Math.round(((Number(dish.originalPrice) - Number(dish.price)) / Number(dish.originalPrice)) * 100)}% OFF
+                                  </span>
+                                ) : dish.showDiscountTag === false && Number(dish.originalPrice) > Number(dish.price) ? (
+                                  <span style={{ fontSize: '10px', color: '#94A3B8', fontStyle: 'italic' }}>
+                                    (Discount tag hidden)
+                                  </span>
+                                ) : null}
+                              </div>
+                            </td>
+                            <td>
+                              <label className="crm-blue-switch">
+                                <input
+                                  type="checkbox"
+                                  checked={dish.inStock}
+                                  onChange={() => handleToggleProductStock(dish._id || dish.id)}
+                                />
+                                <span className="crm-blue-slider" />
+                              </label>
+                            </td>
+                            <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                <button 
+                                  type="button"
+                                  style={{
+                                    padding: '6px 14px',
+                                    borderRadius: '10px',
+                                    border: '1.5px solid #93C5FD',
+                                    background: '#EFF6FF',
+                                    color: '#1D4ED8',
+                                    fontSize: '12.5px',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    boxShadow: '0 2px 4px rgba(29, 78, 216, 0.08)'
+                                  }}
+                                  title="Edit Product Details & Photos"
+                                  onClick={() => {
+                                    setEditProductForm({
+                                      ...dish,
+                                      sizes: dish.sizes && dish.sizes.length > 0 ? dish.sizes : [{ name: 'Regular', price: dish.price, qty: 100 }],
+                                      images: dish.images && dish.images.length > 0 ? dish.images : (dishImgUrl ? [dishImgUrl] : [])
+                                    });
+                                    setIsEditProductModalOpen(true);
+                                  }}
+                                >
+                                  <Edit3 size={15} color="#1D4ED8" />
+                                  <span>Edit</span>
+                                </button>
+                                <button 
+                                  type="button"
+                                  style={{
+                                    padding: '6px 10px',
+                                    borderRadius: '10px',
+                                    border: '1.5px solid #FECACA',
+                                    background: '#FEF2F2',
+                                    color: '#DC2626',
+                                    fontSize: '12.5px',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px'
+                                  }}
+                                  title="Delete Dish"
+                                  onClick={() => handleDeleteDish(dish._id || dish.id)}
+                                >
+                                  <Trash2 size={15} color="#DC2626" />
+                                  <span>Delete</span>
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
 
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditProductForm({
-                                    ...dish,
-                                    sizes: dish.sizes && dish.sizes.length > 0 ? dish.sizes : [{ name: 'Regular', price: dish.price, qty: 100 }],
-                                    images: dish.images && dish.images.length > 0 ? dish.images : (dishImgUrl ? [dishImgUrl] : [])
-                                  });
-                                  setIsEditProductModalOpen(true);
-                                }}
-                                style={{
-                                  padding: '3px 10px',
-                                  borderRadius: '12px',
-                                  border: '1.5px solid #3B82F6',
-                                  background: '#EFF6FF',
-                                  color: '#1D4ED8',
-                                  fontSize: '11.5px',
-                                  fontWeight: 800,
-                                  cursor: 'pointer',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px'
-                                }}
-                                title="Edit Product Details & Images"
-                              >
-                                <Edit3 size={13} color="#1D4ED8" /> Edit Product
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <div style={{ fontWeight: 600, color: '#475569', fontSize: '13px', background: '#F1F5F9', display: 'inline-block', padding: '4px 10px', borderRadius: '6px' }}>
-                          {dish.category || 'Uncategorized'}
-                        </div>
-                      </td>
-                      <td>
-                        <div className="crm-prod-price" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    {/* Catalog Table Pagination Controls */}
+                    {totalItems > 0 && (
+                      <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#F8FAFC', padding: '12px 18px', borderRadius: '12px', border: '1.5px solid #E2E8F0', flexWrap: 'wrap', gap: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#475569' }}>
+                            Showing {startIdx} – {endIdx} of {totalItems} dishes (Page {safePage} of {totalPages})
+                          </span>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ fontWeight: 800, color: '#0F172A', fontSize: '15px' }}>₹{dish.price}</span>
-                            {dish.showDiscountTag !== false && Number(dish.originalPrice) > Number(dish.price) && (
-                              <span style={{ textDecoration: 'line-through', color: '#94A3B8', fontSize: '12px' }}>
-                                ₹{dish.originalPrice}
-                              </span>
-                            )}
+                            <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>Rows per page:</span>
+                            <select
+                              value={catalogPerPage}
+                              onChange={(e) => {
+                                const val = e.target.value === 'All' ? 'All' : Number(e.target.value);
+                                setCatalogPerPage(val);
+                                setCatalogPage(1);
+                              }}
+                              style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '12px', fontWeight: 700 }}
+                            >
+                              <option value={10}>10</option>
+                              <option value={20}>20</option>
+                              <option value={50}>50</option>
+                              <option value={100}>100</option>
+                              <option value="All">All items</option>
+                            </select>
                           </div>
-                          {dish.showDiscountTag !== false && Number(dish.originalPrice) > Number(dish.price) ? (
-                            <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#059669', background: '#ECFDF5', border: '1px solid #A7F3D0', padding: '1px 6px', borderRadius: '6px', width: 'fit-content' }}>
-                               {Math.round(((Number(dish.originalPrice) - Number(dish.price)) / Number(dish.originalPrice)) * 100)}% OFF
-                            </span>
-                          ) : dish.showDiscountTag === false && Number(dish.originalPrice) > Number(dish.price) ? (
-                            <span style={{ fontSize: '10px', color: '#94A3B8', fontStyle: 'italic' }}>
-                              (Discount tag hidden)
-                            </span>
-                          ) : null}
                         </div>
-                      </td>
-                      <td>
-                        <label className="crm-blue-switch">
-                          <input
-                            type="checkbox"
-                            checked={dish.inStock}
-                            onChange={() => handleToggleProductStock(dish._id || dish.id)}
-                          />
-                          <span className="crm-blue-slider" />
-                        </label>
-                      </td>
-                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                          <button 
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          <button
                             type="button"
+                            disabled={safePage === 1}
+                            onClick={() => setCatalogPage((p) => Math.max(1, p - 1))}
                             style={{
-                              padding: '6px 14px',
-                              borderRadius: '10px',
-                              border: '1.5px solid #93C5FD',
-                              background: '#EFF6FF',
-                              color: '#1D4ED8',
-                              fontSize: '12.5px',
+                              padding: '5px 12px',
+                              borderRadius: '8px',
+                              border: '1.5px solid #CBD5E1',
+                              background: safePage === 1 ? '#F1F5F9' : '#FFFFFF',
+                              color: safePage === 1 ? '#94A3B8' : '#0F172A',
                               fontWeight: 800,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              boxShadow: '0 2px 4px rgba(29, 78, 216, 0.08)'
-                            }}
-                            title="Edit Product Details & Photos"
-                            onClick={() => {
-                              setEditProductForm({
-                                ...dish,
-                                sizes: dish.sizes && dish.sizes.length > 0 ? dish.sizes : [{ name: 'Regular', price: dish.price, qty: 100 }],
-                                images: dish.images && dish.images.length > 0 ? dish.images : (dishImgUrl ? [dishImgUrl] : [])
-                              });
-                              setIsEditProductModalOpen(true);
+                              fontSize: '12px',
+                              cursor: safePage === 1 ? 'not-allowed' : 'pointer'
                             }}
                           >
-                            <Edit3 size={15} color="#1D4ED8" />
-                            <span>Edit</span>
+                            ◀ Prev
                           </button>
-                          <button 
+
+                          {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+                            <button
+                              key={pageNum}
+                              type="button"
+                              onClick={() => setCatalogPage(pageNum)}
+                              style={{
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '8px',
+                                border: safePage === pageNum ? '2px solid #1D4ED8' : '1px solid #CBD5E1',
+                                background: safePage === pageNum ? '#1D4ED8' : '#FFFFFF',
+                                color: safePage === pageNum ? '#FFFFFF' : '#0F172A',
+                                fontWeight: 800,
+                                fontSize: '12px',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {pageNum}
+                            </button>
+                          ))}
+
+                          <button
                             type="button"
+                            disabled={safePage === totalPages}
+                            onClick={() => setCatalogPage((p) => Math.min(totalPages, p + 1))}
                             style={{
-                              padding: '6px 10px',
-                              borderRadius: '10px',
-                              border: '1.5px solid #FECACA',
-                              background: '#FEF2F2',
-                              color: '#DC2626',
-                              fontSize: '12.5px',
+                              padding: '5px 12px',
+                              borderRadius: '8px',
+                              border: '1.5px solid #CBD5E1',
+                              background: safePage === totalPages ? '#F1F5F9' : '#FFFFFF',
+                              color: safePage === totalPages ? '#94A3B8' : '#0F172A',
                               fontWeight: 800,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '6px'
+                              fontSize: '12px',
+                              cursor: safePage === totalPages ? 'not-allowed' : 'pointer'
                             }}
-                            title="Delete Dish"
-                            onClick={() => handleDeleteDish(dish._id || dish.id)}
                           >
-                            <Trash2 size={15} color="#DC2626" />
-                            <span>Delete</span>
+                            Next ▶
                           </button>
                         </div>
-                      </td>
-                    </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-
-              {/* Catalog Table Pagination Controls */}
-              {(filteredDishes || []).length > 0 && (
-                <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#F8FAFC', padding: '12px 18px', borderRadius: '12px', border: '1.5px solid #E2E8F0', flexWrap: 'wrap', gap: '10px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#475569' }}>
-                      Showing {Math.min((catalogPage - 1) * catalogPerPage + 1, (filteredDishes || []).length)} - {Math.min(catalogPage * catalogPerPage, (filteredDishes || []).length)} of {(filteredDishes || []).length} dishes
-                    </span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>Rows:</span>
-                      <select
-                        value={catalogPerPage}
-                        onChange={(e) => {
-                          setCatalogPerPage(Number(e.target.value));
-                          setCatalogPage(1);
-                        }}
-                        style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '12px', fontWeight: 700 }}
-                      >
-                        <option value={10}>10</option>
-                        <option value={20}>20</option>
-                        <option value={50}>50</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <button
-                      type="button"
-                      disabled={catalogPage === 1}
-                      onClick={() => setCatalogPage((p) => Math.max(1, p - 1))}
-                      style={{
-                        padding: '5px 12px',
-                        borderRadius: '8px',
-                        border: '1.5px solid #CBD5E1',
-                        background: catalogPage === 1 ? '#F1F5F9' : '#FFFFFF',
-                        color: catalogPage === 1 ? '#94A3B8' : '#0F172A',
-                        fontWeight: 800,
-                        fontSize: '12px',
-                        cursor: catalogPage === 1 ? 'not-allowed' : 'pointer'
-                      }}
-                    >
-                      ◀ Prev
-                    </button>
-
-                    <span style={{ fontSize: '12.5px', fontWeight: 800, color: '#1D4ED8', padding: '3px 8px', background: '#EFF6FF', borderRadius: '6px' }}>
-                      Page {catalogPage} of {Math.ceil((filteredDishes || []).length / catalogPerPage) || 1}
-                    </span>
-
-                    <button
-                      type="button"
-                      disabled={catalogPage * catalogPerPage >= (filteredDishes || []).length}
-                      onClick={() => setCatalogPage((p) => p + 1)}
-                      style={{
-                        padding: '5px 12px',
-                        borderRadius: '8px',
-                        border: '1.5px solid #CBD5E1',
-                        background: catalogPage * catalogPerPage >= (filteredDishes || []).length ? '#F1F5F9' : '#FFFFFF',
-                        color: catalogPage * catalogPerPage >= (filteredDishes || []).length ? '#94A3B8' : '#0F172A',
-                        fontWeight: 800,
-                        fontSize: '12px',
-                        cursor: catalogPage * catalogPerPage >= (filteredDishes || []).length ? 'not-allowed' : 'pointer'
-                      }}
-                    >
-                      Next ▶
-                    </button>
-                  </div>
-                </div>
-              )}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </section>
 
             {/* RIGHT COLUMN: ACTION PILLS (Ref: Image 2 with Lucide Icons) */}
@@ -5192,7 +5609,7 @@ export default function DashboardPage({ onShowToast }) {
             VIEW 2.5: CATALOG THEMES & BRANDING CUSTOMIZER
             ========================================================================== */}
         {activeTab === 'catalog_themes' && (
-          <div style={{ padding: '32px 42px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
+          <div className="animate-fade-in" key={activeTab} style={{ padding: '32px 42px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
             {/* Header Banner */}
             <div style={{ background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)', borderRadius: '20px', padding: '28px 32px', color: '#FFFFFF', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px', boxShadow: '0 10px 25px -5px rgba(15,23,42,0.2)' }}>
               <div>
@@ -5469,7 +5886,7 @@ export default function DashboardPage({ onShowToast }) {
             VIEW 2.6: CATALOG COLLECTIONS & STEAL DEALS BANNER MANAGER
             ========================================================================== */}
         {activeTab === 'catalog_collections' && (
-          <div style={{ padding: '32px 42px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
+          <div className="animate-fade-in" key={activeTab} style={{ padding: '32px 42px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
             {/* Header Banner */}
             <div style={{ background: 'linear-gradient(135deg, #FF5E14 0%, #D94400 100%)', borderRadius: '20px', padding: '28px 32px', color: '#FFFFFF', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px', boxShadow: '0 10px 25px -5px rgba(255,94,20,0.3)' }}>
               <div>
@@ -5664,7 +6081,7 @@ export default function DashboardPage({ onShowToast }) {
             VIEW 3: GROW / BUSINESS TELEMETRY & CUSTOMER GROUPS
             ========================================================================== */}
         {activeTab === 'grow' && (
-          <div style={{ padding: '32px 42px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
+          <div className="animate-fade-in" key={activeTab} style={{ padding: '32px 42px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
             {/* 1. TELEMETRY HIGHLIGHT CARDS (Top Dish, Top Combo, AOV, Repeat Rate) */}
             <div className="crm-kpi-banner-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
               <div className="crm-kpi-card" style={{ background: '#FFFFFF', border: '1.5px solid #E2E8F0' }}>
@@ -5892,7 +6309,7 @@ export default function DashboardPage({ onShowToast }) {
             VIEW 4: UTILITIES (Table QR Generator with 3 Themes & Custom Colors)
             ========================================================================== */}
         {activeTab === 'utilities' && (
-          <div style={{ padding: '32px 42px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div className="animate-fade-in" key={activeTab} style={{ padding: '32px 42px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h2 style={{ fontSize: '20px', fontWeight: 800, margin: '0 0 6px 0' }}>
@@ -6088,7 +6505,7 @@ export default function DashboardPage({ onShowToast }) {
             VIEW 5: MARKETING & BIRTHDAY PUSH NOTIFICATIONS
             ========================================================================== */}
         {activeTab === 'marketing' && (
-          <div style={{ padding: '32px 42px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div className="animate-fade-in" key={activeTab} style={{ padding: '32px 42px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <div className="crm-marketing-container">
             {/* 1. TODAY'S BIRTHDAY CUSTOMERS BANNER WITH CAKE ICON & AUTO-SEND TOGGLE */}
             <div className="crm-birthday-alert-card" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -6486,7 +6903,7 @@ export default function DashboardPage({ onShowToast }) {
             VIEW: DATABASE-DRIVEN DELIVERY ZONES & STORE MANAGEMENT
             ========================================================================== */}
         {activeTab === 'delivery_zones' && (
-          <div style={{ padding: '32px 42px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div className="animate-fade-in" key={activeTab} style={{ padding: '32px 42px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
             {/* Header Banner */}
             <div style={{ background: 'linear-gradient(135deg, #1E40AF 0%, #3B82F6 100%)', borderRadius: '20px', padding: '28px 32px', color: '#FFFFFF', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px', boxShadow: '0 10px 25px -5px rgba(30,64,175,0.3)' }}>
               <div>
@@ -6865,7 +7282,7 @@ export default function DashboardPage({ onShowToast }) {
             VIEW 6: CUSTOMERS CRM (Ref: Image 4 with Lucide Icons)
             ========================================================================== */}
         {activeTab === 'customers' && (
-          <div className="crm-customers-container">
+          <div className="crm-customers-container animate-fade-in" key={activeTab}>
             <div className="crm-customers-stats-banner">
               <div className="crm-cust-stat-item">
                 <span className="crm-cust-stat-label">Total Customers</span>
@@ -6907,105 +7324,189 @@ export default function DashboardPage({ onShowToast }) {
               </div>
             </div>
 
-            <table className="crm-cust-table">
-              <thead>
-                <tr>
-                  <th>Contact | Customer Name</th>
-                  <th>Orders</th>
-                  <th>Sale</th>
-                  <th>Birthday</th>
-                  <th>Last Ordered / Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {((customers || []).filter((c) => {
-                  if (!c) return false;
-                  const q = (custSearch || '').toLowerCase();
-                  return (c.name || '').toLowerCase().includes(q) || (c.phone || '').toLowerCase().includes(q);
-                })).map((c, idx) => (
-                  <tr key={c._id || c.id || idx}>
-                    <td>
-                      <div style={{ fontWeight: 800, color: '#0F172A' }}>{c.name}</div>
-                      <div style={{ fontSize: '13px', color: '#64748B', marginTop: '2px' }}>{c.phone}</div>
-                    </td>
-                    <td>
-                      <b>{c.ordersCount || 1}</b>
-                    </td>
-                    <td>
-                      <b style={{ color: '#1D4ED8' }}>₹{(c.totalSales || 0).toLocaleString()}</b>
-                    </td>
-                    <td>
-                      {c.isBirthdayToday ? (
-                        <span className="crm-bday-tag">
-                          <Gift size={13} />
-                          <span>Birthday Today!</span>
-                        </span>
-                      ) : (
-                        <span style={{ color: '#64748B' }}>{c.birthday || 'Not Set'}</span>
-                      )}
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: '13px', color: '#475569', fontWeight: 600 }}>
-                          {c.lastOrdered || 'Recently'}
+            {(() => {
+              const filteredCustomersList = (customers || []).filter((c) => {
+                if (!c) return false;
+                const q = (custSearch || '').toLowerCase();
+                return (c.name || '').toLowerCase().includes(q) || (c.phone || '').toLowerCase().includes(q);
+              });
+              const totalCusts = filteredCustomersList.length;
+              const actualCustsPerPage = customersPerPage === 'All' ? totalCusts || 1 : Number(customersPerPage);
+              const totalCustPages = Math.ceil(totalCusts / actualCustsPerPage) || 1;
+              const safeCustPage = Math.min(Math.max(1, customersPage), totalCustPages);
+              const startCustIdx = totalCusts === 0 ? 0 : (safeCustPage - 1) * actualCustsPerPage + 1;
+              const endCustIdx = Math.min(safeCustPage * actualCustsPerPage, totalCusts);
+              const displayedCustomers = filteredCustomersList.slice((safeCustPage - 1) * actualCustsPerPage, safeCustPage * actualCustsPerPage);
+
+              return (
+                <>
+                  <table className="crm-cust-table">
+                    <thead>
+                      <tr>
+                        <th>Contact | Customer Name</th>
+                        <th>Orders</th>
+                        <th>Sale</th>
+                        <th>Birthday</th>
+                        <th>Last Ordered / Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayedCustomers.map((c, idx) => (
+                        <tr key={c._id || c.id || idx}>
+                          <td>
+                            <div style={{ fontWeight: 800, color: '#0F172A' }}>{c.name}</div>
+                            <div style={{ fontSize: '13px', color: '#64748B', marginTop: '2px' }}>{c.phone}</div>
+                          </td>
+                          <td>
+                            <b>{c.ordersCount || 1}</b>
+                          </td>
+                          <td>
+                            <b style={{ color: '#1D4ED8' }}>₹{(c.totalSales || 0).toLocaleString()}</b>
+                          </td>
+                          <td>
+                            {c.isBirthdayToday ? (
+                              <span className="crm-bday-tag">
+                                <Gift size={13} />
+                                <span>Birthday Today!</span>
+                              </span>
+                            ) : (
+                              <span style={{ color: '#64748B' }}>{c.birthday || 'Not Set'}</span>
+                            )}
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'space-between' }}>
+                              <span style={{ fontSize: '13px', color: '#475569', fontWeight: 600 }}>
+                                {c.lastOrdered || 'Recently'}
+                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenCreateCoupon(c)}
+                                  style={{
+                                    background: '#FFF7ED',
+                                    border: '1px solid #FFEDD5',
+                                    color: '#FF5E14',
+                                    padding: '4px 10px',
+                                    borderRadius: '6px',
+                                    fontSize: '12px',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                  }}
+                                  title={`Assign Personal Coupon to ${c.name} (${c.phone})`}
+                                >
+                                  <Tag size={13} color="#FF5E14" />
+                                  <span>Assign Coupon</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedCustId(c.id || c._id);
+                                    setNotifyAudienceMode('specific_user');
+                                    setNotifyTitle(` Special Personal Offer for ${c.name}`);
+                                    setNotifyMessage(`Hi ${c.name}! We have an exclusive offer for you at ${storeControls.restName || 'our store'}. Use code FEST20 for 20% OFF!`);
+                                    setIsCustomNotifyModalOpen(true);
+                                  }}
+                                  style={{
+                                    background: '#EFF6FF',
+                                    border: '1px solid #BFDBFE',
+                                    color: '#1D4ED8',
+                                    padding: '4px 10px',
+                                    borderRadius: '6px',
+                                    fontSize: '12px',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                  }}
+                                  title={`Send Personal Notification to ${c.name}`}
+                                >
+                                  <Bell size={13} />
+                                  <span>Notify</span>
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  {/* Customer CRM Pagination Controls */}
+                  {totalCusts > 0 && (
+                    <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#F8FAFC', padding: '12px 18px', borderRadius: '12px', border: '1.5px solid #E2E8F0', flexWrap: 'wrap', gap: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#475569' }}>
+                          Showing {startCustIdx} – {endCustIdx} of {totalCusts} customers (Page {safeCustPage} of {totalCustPages})
                         </span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenCreateCoupon(c)}
-                            style={{
-                              background: '#FFF7ED',
-                              border: '1px solid #FFEDD5',
-                              color: '#FF5E14',
-                              padding: '4px 10px',
-                              borderRadius: '6px',
-                              fontSize: '12px',
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
+                          <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>Rows:</span>
+                          <select
+                            value={customersPerPage}
+                            onChange={(e) => {
+                              const val = e.target.value === 'All' ? 'All' : Number(e.target.value);
+                              setCustomersPerPage(val);
+                              setCustomersPage(1);
                             }}
-                            title={`Assign Personal Coupon to ${c.name} (${c.phone})`}
+                            style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '12px', fontWeight: 700 }}
                           >
-                            <Tag size={13} color="#FF5E14" />
-                            <span>Assign Coupon</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedCustId(c.id || c._id);
-                              setNotifyAudienceMode('specific_user');
-                              setNotifyTitle(` Special Personal Offer for ${c.name}`);
-                              setNotifyMessage(`Hi ${c.name}! We have an exclusive offer for you at ${storeControls.restName || 'our store'}. Use code FEST20 for 20% OFF!`);
-                              setIsCustomNotifyModalOpen(true);
-                            }}
-                            style={{
-                              background: '#EFF6FF',
-                              border: '1px solid #BFDBFE',
-                              color: '#1D4ED8',
-                              padding: '4px 10px',
-                              borderRadius: '6px',
-                              fontSize: '12px',
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                            }}
-                            title={`Send Personal Notification to ${c.name}`}
-                          >
-                            <Bell size={13} />
-                            <span>Notify</span>
-                          </button>
+                            <option value={10}>10</option>
+                            <option value={20}>20</option>
+                            <option value={50}>50</option>
+                            <option value="All">All customers</option>
+                          </select>
                         </div>
                       </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          disabled={safeCustPage === 1}
+                          onClick={() => setCustomersPage((p) => Math.max(1, p - 1))}
+                          style={{ padding: '5px 12px', borderRadius: '8px', border: '1.5px solid #CBD5E1', background: safeCustPage === 1 ? '#F1F5F9' : '#FFFFFF', color: safeCustPage === 1 ? '#94A3B8' : '#0F172A', fontWeight: 800, fontSize: '12px', cursor: safeCustPage === 1 ? 'not-allowed' : 'pointer' }}
+                        >
+                          ◀ Prev
+                        </button>
+
+                        {Array.from({ length: totalCustPages }, (_, i) => i + 1).map((pageNum) => (
+                          <button
+                            key={pageNum}
+                            type="button"
+                            onClick={() => setCustomersPage(pageNum)}
+                            style={{
+                              width: '32px',
+                              height: '32px',
+                              borderRadius: '8px',
+                              border: safeCustPage === pageNum ? '2px solid #0D9488' : '1px solid #CBD5E1',
+                              background: safeCustPage === pageNum ? '#0D9488' : '#FFFFFF',
+                              color: safeCustPage === pageNum ? '#FFFFFF' : '#0F172A',
+                              fontWeight: 800,
+                              fontSize: '12px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {pageNum}
+                          </button>
+                        ))}
+
+                        <button
+                          type="button"
+                          disabled={safeCustPage === totalCustPages}
+                          onClick={() => setCustomersPage((p) => Math.min(totalCustPages, p + 1))}
+                          style={{ padding: '5px 12px', borderRadius: '8px', border: '1.5px solid #CBD5E1', background: safeCustPage === totalCustPages ? '#F1F5F9' : '#FFFFFF', color: safeCustPage === totalCustPages ? '#94A3B8' : '#0F172A', fontWeight: 800, fontSize: '12px', cursor: safeCustPage === totalCustPages ? 'not-allowed' : 'pointer' }}
+                        >
+                          Next ▶
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
 
@@ -7016,7 +7517,18 @@ export default function DashboardPage({ onShowToast }) {
             VIEW 7: STORE CONTROLS & SECURITY LOCKS
             ========================================================================== */}
         {activeTab === 'store_controls' && (
-          <div className="crm-store-controls-page" style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1000px' }}>
+          <div className="crm-store-controls-page animate-fade-in" key={activeTab} style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1000px' }}>
+            {Boolean(storeControls.lockSettingsPanel || storeControls.lockSettings) && (
+              <div style={{ background: '#FEF2F2', border: '2px solid #FCA5A5', padding: '16px 20px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: '0 4px 12px rgba(220,38,38,0.1)' }}>
+                <Lock size={26} color="#DC2626" />
+                <div>
+                  <div style={{ fontSize: '15px', fontWeight: 900, color: '#991B1B' }}>🔒 STORE SETTINGS LOCKED BY PARTNER ADMIN</div>
+                  <div style={{ fontSize: '12.5px', color: '#7F1D1D', fontWeight: 700, marginTop: '2px' }}>
+                    Dashboard Settings, UPI Configuration, and merchant profile controls are locked by Enterprise Admin. Store users cannot modify settings until unlocked via Admin.
+                  </div>
+                </div>
+              </div>
+            )}
             {/* Store Operations & Status */}
             <div className="crm-control-section-card">
               <div className="crm-control-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -7609,144 +8121,87 @@ export default function DashboardPage({ onShowToast }) {
               </div>
             </div>
 
-            {/* Payment Routing & Razorpay Gateway Section */}
+            {/* Direct Merchant UPI Payment Settings (No Razorpay) */}
             <div className="crm-control-section-card" style={{ marginTop: '20px' }}>
               <div className="crm-control-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <CreditCard size={20} color="#10B981" /> Payment Gateway & Routing Controls
+                <CreditCard size={20} color="#10B981" /> Direct Merchant UPI Payment Settings
               </div>
 
-              <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '16px' }}>
-                Select how customer order payments are collected and routed at checkout.
+              <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '16px', lineHeight: 1.5 }}>
+                Directly receive customer order payments into your Google Pay / PhonePe / Paytm account. Diners scan your QR code or tap to pay via their UPI app during checkout.
               </div>
 
-              {/* 3 Routing Modes */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px', marginBottom: '20px' }}>
-                {/* Mode 1: FoodyPay Gateway (Default) */}
-                <div
-                  onClick={() => setStoreControls((prev) => ({ ...prev, paymentRoutingMode: 'foodypay_default' }))}
-                  style={{
-                    padding: '16px',
-                    borderRadius: '12px',
-                    border: storeControls.paymentRoutingMode === 'foodypay_default' ? '2px solid #FF5E14' : '1px solid #CBD5E1',
-                    backgroundColor: storeControls.paymentRoutingMode === 'foodypay_default' ? '#FFF0EB' : '#FFFFFF',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                  }}
-                >
-                  <div style={{ fontWeight: 800, fontSize: '14px', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span> FoodyPay Gateway (Default)</span>
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '6px', lineHeight: 1.4 }}>
-                    Zero-config instant Razorpay payment collection via FoodyPay default gateway.
-                  </div>
-                </div>
-
-                {/* Mode 2: Merchant Own Razorpay */}
-                <div
-                  onClick={() => setStoreControls((prev) => ({ ...prev, paymentRoutingMode: 'merchant_razorpay' }))}
-                  style={{
-                    padding: '16px',
-                    borderRadius: '12px',
-                    border: storeControls.paymentRoutingMode === 'merchant_razorpay' ? '2px solid #1D4ED8' : '1px solid #CBD5E1',
-                    backgroundColor: storeControls.paymentRoutingMode === 'merchant_razorpay' ? '#EFF6FF' : '#FFFFFF',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                  }}
-                >
-                  <div style={{ fontWeight: 800, fontSize: '14px', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span> Merchant Own Razorpay</span>
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '6px', lineHeight: 1.4 }}>
-                    Directly collect funds into your own Razorpay merchant account using API keys.
-                  </div>
-                </div>
-
-                {/* Mode 3: Direct Merchant UPI QR */}
-                <div
-                  onClick={() => setStoreControls((prev) => ({ ...prev, paymentRoutingMode: 'merchant_upi' }))}
-                  style={{
-                    padding: '16px',
-                    borderRadius: '12px',
-                    border: storeControls.paymentRoutingMode === 'merchant_upi' ? '2px solid #10B981' : '1px solid #CBD5E1',
-                    backgroundColor: storeControls.paymentRoutingMode === 'merchant_upi' ? '#ECFDF5' : '#FFFFFF',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s',
-                  }}
-                >
-                  <div style={{ fontWeight: 800, fontSize: '14px', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span> Direct Merchant UPI QR</span>
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '6px', lineHeight: 1.4 }}>
-                    Diners scan your store's direct UPI QR code (`upiId`) to send payments.
-                  </div>
-                </div>
-              </div>
-
-              {/* Input fields based on selected mode */}
-              {storeControls.paymentRoutingMode === 'merchant_razorpay' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', background: '#F8FAFC', padding: '16px', borderRadius: '12px', marginBottom: '16px' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
-                      Razorpay Key ID
-                    </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', backgroundColor: '#F8FAFC', padding: '20px', borderRadius: '16px', border: '1px solid #E2E8F0', marginBottom: '16px' }}>
+                {/* Left: Input & Details */}
+                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 800, color: '#0F172A', marginBottom: '6px' }}>
+                    Merchant Direct UPI ID (VPA) *
+                  </label>
+                  <p style={{ fontSize: '12px', color: '#64748B', margin: '0 0 10px' }}>
+                    Enter the exact UPI ID (e.g. <code>9800000000@paytm</code>, <code>myrestaurant@okicici</code>, or <code>merchant@upi</code>) where funds will land instantly.
+                  </p>
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '14px' }}>
                     <input
                       type="text"
-                      placeholder="rzp_live_xxxxxxxxxxxx"
-                      value={storeControls.razorpayKeyId || ''}
-                      onChange={(e) => setStoreControls((prev) => ({ ...prev, razorpayKeyId: e.target.value }))}
-                      style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px' }}
+                      placeholder="merchant@upi or 9800000000@paytm"
+                      value={storeControls.upiId || ''}
+                      onChange={(e) => setStoreControls((prev) => ({ ...prev, upiId: e.target.value, paymentRoutingMode: 'merchant_upi' }))}
+                      style={{
+                        flex: 1,
+                        padding: '10px 14px',
+                        borderRadius: '10px',
+                        border: '1.5px solid #CBD5E1',
+                        fontSize: '14px',
+                        fontWeight: 700,
+                        color: '#0F172A',
+                        outline: 'none',
+                        backgroundColor: '#FFFFFF',
+                      }}
                     />
                   </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
-                      Razorpay Key Secret
-                    </label>
-                    <input
-                      type="password"
-                      placeholder="••••••••••••••••"
-                      value={storeControls.razorpayKeySecret || ''}
-                      onChange={(e) => setStoreControls((prev) => ({ ...prev, razorpayKeySecret: e.target.value }))}
-                      style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px' }}
-                    />
-                  </div>
-                </div>
-              )}
 
-              {storeControls.paymentRoutingMode === 'merchant_upi' && (
-                <div style={{ background: '#F8FAFC', padding: '16px', borderRadius: '12px', marginBottom: '16px' }}>
-                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
-                    Direct Merchant UPI ID (VPA)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="merchant@icici"
-                    value={storeControls.upiId || ''}
-                    onChange={(e) => setStoreControls((prev) => ({ ...prev, upiId: e.target.value }))}
-                    style={{ width: '100%', maxWidth: '360px', padding: '8px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '13px' }}
-                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: '#10B981', fontWeight: 700 }}>
+                    <CheckCircle2 size={16} /> 0% Commission Direct Settlement Active
+                  </div>
                 </div>
-              )}
+
+                {/* Right: Live Dynamic UPI QR Preview */}
+                <div style={{ backgroundColor: '#FFFFFF', padding: '16px', borderRadius: '14px', border: '1px solid #E2E8F0', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 800, color: '#64748B', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Live Merchant UPI QR Preview
+                  </div>
+                  <div style={{ backgroundColor: '#F8FAFC', padding: '10px', borderRadius: '12px', border: '1px solid #E2E8F0', marginBottom: '8px' }}>
+                    <QrCodeComponent
+                      text={`upi://pay?pa=${encodeURIComponent(storeControls.upiId || 'merchant@icici')}&pn=${encodeURIComponent(storeControls.restName || 'Restaurant')}&cu=INR`}
+                      size={140}
+                      qrColor="#0F172A"
+                      cornerColor="#FF5E14"
+                      showLogo={true}
+                    />
+                  </div>
+                  <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#1D4ED8' }}>
+                    {storeControls.upiId || 'merchant@icici'}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px' }}>
+                    Scanned by customer phones during web cart checkout
+                  </div>
+                </div>
+              </div>
 
               <button
                 type="button"
                 onClick={async () => {
-                  try {
-                    const rzpKey = storeControls.razorpayKeyId || 'rzp_live_TjBEt4gu2aUflB';
-                    const rzpSec = storeControls.razorpayKeySecret || 'FPXDLXe3Vbh0NYSpCAXmXOA3';
-                    const mode = storeControls.paymentRoutingMode || 'foodypay_default';
-                    const upi = storeControls.upiId || 'merchant@icici';
+                  const upi = (storeControls.upiId || '').trim() || 'merchant@icici';
+                  setStoreControls((prev) => ({ ...prev, upiId: upi, paymentRoutingMode: 'merchant_upi' }));
 
-                    localStorage.setItem('foodypay_payment_routing_mode', mode);
-                    localStorage.setItem('foodypay_rzp_key_id', rzpKey);
-                    localStorage.setItem('foodypay_rzp_key_secret', rzpSec);
+                  try {
+                    localStorage.setItem('foodypay_payment_routing_mode', 'merchant_upi');
                     localStorage.setItem('foodypay_upi_id', upi);
 
                     const rawU = localStorage.getItem('foodypay_user');
                     if (rawU) {
                       const parsedU = JSON.parse(rawU);
-                      parsedU.paymentRoutingMode = mode;
-                      parsedU.razorpayKeyId = rzpKey;
-                      parsedU.razorpayKeySecret = rzpSec;
+                      parsedU.paymentRoutingMode = 'merchant_upi';
                       parsedU.upiId = upi;
                       localStorage.setItem('foodypay_user', JSON.stringify(parsedU));
                     }
@@ -7756,28 +8211,26 @@ export default function DashboardPage({ onShowToast }) {
                   if (token) {
                     try {
                       await updateSettingsApi(token, {
-                        paymentRoutingMode: storeControls.paymentRoutingMode || 'foodypay_default',
-                        razorpayKeyId: storeControls.razorpayKeyId || 'rzp_live_TjBEt4gu2aUflB',
-                        razorpayKeySecret: storeControls.razorpayKeySecret || 'FPXDLXe3Vbh0NYSpCAXmXOA3',
-                        upiId: storeControls.upiId,
+                        paymentRoutingMode: 'merchant_upi',
+                        upiId: upi,
                       });
                     } catch (e) {}
                   }
-                  addToast(' Razorpay Live Payment Gateway configured & saved successfully!', <Check size={18} />);
+                  addToast(' Direct Merchant UPI ID saved successfully! Customer web ordering will use this UPI ID.', <Check size={18} />);
                 }}
                 style={{
-                  padding: '10px 20px',
+                  padding: '11px 24px',
                   borderRadius: '10px',
-                  background: '#FF5E14',
+                  background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
                   color: '#FFFFFF',
                   border: 'none',
                   fontWeight: 800,
-                  fontSize: '13.5px',
+                  fontSize: '14px',
                   cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(255, 94, 20, 0.3)',
+                  boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)',
                 }}
               >
-                Save Payment Settings
+                Save UPI Settings
               </button>
             </div>
 
@@ -7888,6 +8341,51 @@ export default function DashboardPage({ onShowToast }) {
                 Save Payment Display Labels
               </button>
             </div>
+
+            {/* System API Infrastructure & Multi-Backup Server Failover Section */}
+            <div className="crm-control-section-card" style={{ marginTop: '20px' }}>
+              <div className="crm-control-card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ShieldCheck size={20} color="#10B981" /> System API Infrastructure &amp; Failover Protection
+                </div>
+                <span style={{ fontSize: '12px', fontWeight: 900, backgroundColor: '#DCFCE7', color: '#15803D', border: '1px solid #86EFAC', padding: '4px 12px', borderRadius: '20px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <CheckCircle2 size={14} color="#16A34A" /> TOTAL AVAILABLE APIS: {TOTAL_AVAILABLE_APIS_COUNT} (1 Primary + {TOTAL_AVAILABLE_APIS_COUNT - 1} Backup Cloud Servers)
+                </span>
+              </div>
+
+              <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '16px' }}>
+                All API endpoints are stored in one centralized location. FoodyPay automatically monitors connection health with high-speed failover across all {TOTAL_AVAILABLE_APIS_COUNT} configured endpoints.
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+                {ALL_CONFIGURED_APIS.map((api, idx) => (
+                  <div
+                    key={api.id}
+                    style={{
+                      background: api.isPrimary ? '#F0FDF4' : '#F8FAFC',
+                      border: api.isPrimary ? '1.5px solid #86EFAC' : '1px solid #E2E8F0',
+                      borderRadius: '12px',
+                      padding: '14px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '6px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 800, color: api.isPrimary ? '#15803D' : '#334155' }}>
+                        {api.type}: {api.name}
+                      </span>
+                      <span style={{ fontSize: '10.5px', fontWeight: 900, textTransform: 'uppercase', backgroundColor: api.isPrimary ? '#DCFCE7' : '#E2E8F0', color: api.isPrimary ? '#16A34A' : '#475569', padding: '2px 8px', borderRadius: '6px' }}>
+                        {api.isPrimary ? 'ONLINE (PRIMARY)' : `BACKUP ${idx}`}
+                      </span>
+                    </div>
+                    <code style={{ fontSize: '12px', color: '#0F172A', backgroundColor: '#FFFFFF', padding: '6px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', wordBreak: 'break-all' }}>
+                      {api.url}
+                    </code>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
@@ -7895,7 +8393,7 @@ export default function DashboardPage({ onShowToast }) {
             VIEW 8: CUSTOMER REVIEWS & FEEDBACK
             ========================================================================== */}
         {activeTab === 'customer_reviews' && (
-          <div className="crm-reviews-page" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div className="crm-reviews-page animate-fade-in" key={activeTab} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             {/* Header Title Bar */}
             <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', background: '#FFFFFF', padding: '20px 24px', borderRadius: '16px', border: '1px solid #E2E8F0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
               <div>
@@ -8113,9 +8611,17 @@ export default function DashboardPage({ onShowToast }) {
                 );
               }
 
+              const totalRevItems = filteredList.length;
+              const actualRevPerPage = reviewsPerPage === 'All' ? totalRevItems || 1 : Number(reviewsPerPage);
+              const totalRevPages = Math.ceil(totalRevItems / actualRevPerPage) || 1;
+              const safeRevPage = Math.min(Math.max(1, reviewsPage), totalRevPages);
+              const startRevIdx = totalRevItems === 0 ? 0 : (safeRevPage - 1) * actualRevPerPage + 1;
+              const endRevIdx = Math.min(safeRevPage * actualRevPerPage, totalRevItems);
+              const displayedReviews = filteredList.slice((safeRevPage - 1) * actualRevPerPage, safeRevPage * actualRevPerPage);
+
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {filteredList.map((r) => {
+                  {displayedReviews.map((r) => {
                     const stars = Array.from({ length: 5 }, (_, i) => i < r.rating);
                     const isPos = r.rating >= 4 || r.sentiment === 'positive';
                     const isNeu = r.rating === 3 || r.sentiment === 'neutral';
@@ -8320,6 +8826,75 @@ export default function DashboardPage({ onShowToast }) {
                       </div>
                     );
                   })}
+
+                  {/* Customer Reviews Pagination Controls */}
+                  {totalRevItems > 0 && (
+                    <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#FFFFFF', padding: '12px 18px', borderRadius: '12px', border: '1px solid #E2E8F0', flexWrap: 'wrap', gap: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#475569' }}>
+                          Showing {startRevIdx} – {endRevIdx} of {totalRevItems} reviews (Page {safeRevPage} of {totalRevPages})
+                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>Reviews per page:</span>
+                          <select
+                            value={reviewsPerPage}
+                            onChange={(e) => {
+                              const val = e.target.value === 'All' ? 'All' : Number(e.target.value);
+                              setReviewsPerPage(val);
+                              setReviewsPage(1);
+                            }}
+                            style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '12px', fontWeight: 700 }}
+                          >
+                            <option value={10}>10</option>
+                            <option value={20}>20</option>
+                            <option value={50}>50</option>
+                            <option value="All">All reviews</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          disabled={safeRevPage === 1}
+                          onClick={() => setReviewsPage((p) => Math.max(1, p - 1))}
+                          style={{ padding: '5px 12px', borderRadius: '8px', border: '1.5px solid #CBD5E1', background: safeRevPage === 1 ? '#F1F5F9' : '#FFFFFF', color: safeRevPage === 1 ? '#94A3B8' : '#0F172A', fontWeight: 800, fontSize: '12px', cursor: safeRevPage === 1 ? 'not-allowed' : 'pointer' }}
+                        >
+                          ◀ Prev
+                        </button>
+
+                        {Array.from({ length: totalRevPages }, (_, i) => i + 1).map((pageNum) => (
+                          <button
+                            key={pageNum}
+                            type="button"
+                            onClick={() => setReviewsPage(pageNum)}
+                            style={{
+                              width: '32px',
+                              height: '32px',
+                              borderRadius: '8px',
+                              border: safeRevPage === pageNum ? '2px solid #F59E0B' : '1px solid #CBD5E1',
+                              background: safeRevPage === pageNum ? '#F59E0B' : '#FFFFFF',
+                              color: safeRevPage === pageNum ? '#FFFFFF' : '#0F172A',
+                              fontWeight: 800,
+                              fontSize: '12px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {pageNum}
+                          </button>
+                        ))}
+
+                        <button
+                          type="button"
+                          disabled={safeRevPage === totalRevPages}
+                          onClick={() => setReviewsPage((p) => Math.min(totalRevPages, p + 1))}
+                          style={{ padding: '5px 12px', borderRadius: '8px', border: '1.5px solid #CBD5E1', background: safeRevPage === totalRevPages ? '#F1F5F9' : '#FFFFFF', color: safeRevPage === totalRevPages ? '#94A3B8' : '#0F172A', fontWeight: 800, fontSize: '12px', cursor: safeRevPage === totalRevPages ? 'not-allowed' : 'pointer' }}
+                        >
+                          Next ▶
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })()}
@@ -8545,8 +9120,8 @@ export default function DashboardPage({ onShowToast }) {
               {/* Kitchen Filter Tabs */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                 {[
-                  { key: 'all', label: `All Kitchen Orders (${(orders || []).filter((o) => o && o.status !== 'completed').length})` },
-                  { key: 'new', label: ` New Orders (${(orders || []).filter((o) => o && o.status === 'new').length})` },
+                  { key: 'all', label: `All Kitchen Orders (${(orders || []).filter((o) => o && o.status !== 'completed' && (o.sentToKitchen || o.status === 'preparing' || o.status === 'ready')).length})` },
+                  { key: 'new', label: ` New Orders (${(orders || []).filter((o) => o && o.status === 'new' && o.sentToKitchen).length})` },
                   { key: 'preparing', label: `‍ Cooking In Progress (${(orders || []).filter((o) => o && o.status === 'preparing').length})` },
                   { key: 'ready', label: ` Ready for Service (${(orders || []).filter((o) => o && o.status === 'ready').length})` },
                 ].map((tab) => (
@@ -8576,7 +9151,9 @@ export default function DashboardPage({ onShowToast }) {
             {(() => {
               const activeKitchenOrders = (orders || []).filter((o) => {
                 if (!o) return false;
+                if (!o.sentToKitchen && o.status === 'new') return false;
                 if (kitchenFilter === 'all') return o.status !== 'completed';
+                if (kitchenFilter === 'new') return o.status === 'new' && o.sentToKitchen;
                 return o.status === kitchenFilter;
               });
 
@@ -8937,8 +9514,8 @@ export default function DashboardPage({ onShowToast }) {
                         onChange={(e) => setManualTable(e.target.value)}
                         onKeyDown={(e) => handleInputKeyDown(e, 2)}
                       >
-                        {tables.map((t) => (
-                          <option key={t.id} value={t.name}>
+                        {(tables || []).map((t, idx) => (
+                          <option key={t.id || t._id || t.name || `tbl_${idx}`} value={t.name}>
                             {t.name} ({t.capacity} Pax) — {t.section}
                           </option>
                         ))}
@@ -9018,17 +9595,58 @@ export default function DashboardPage({ onShowToast }) {
                   {/* Charges, Tax & Discounts in 2 Columns */}
                   <div className="crm-form-grid" style={{ gap: '8px', marginBottom: '8px' }}>
                     <div className="crm-form-group">
-                      <label style={{ fontSize: '11.5px' }}>Flat Discount (₹)</label>
-                      <input
-                        ref={manualDiscountRef}
-                        type="number"
-                        className="crm-input"
-                        style={{ padding: '6px 10px', fontSize: '13px' }}
-                        placeholder="0"
-                        value={manualDiscount}
-                        onChange={(e) => setManualDiscount(e.target.value)}
-                        onKeyDown={(e) => handleInputKeyDown(e, 4)}
-                      />
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                        <label style={{ fontSize: '11.5px', margin: 0 }}>Discount</label>
+                        <div style={{ display: 'inline-flex', background: '#CBD5E1', borderRadius: '5px', padding: '1px' }}>
+                          <button
+                            type="button"
+                            onClick={() => setManualDiscountType('₹')}
+                            style={{
+                              border: 'none',
+                              background: manualDiscountType === '₹' ? '#FF5E14' : 'transparent',
+                              color: manualDiscountType === '₹' ? '#FFF' : '#334155',
+                              borderRadius: '4px',
+                              padding: '1px 6px',
+                              fontSize: '10px',
+                              fontWeight: 900,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            ₹
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setManualDiscountType('%')}
+                            style={{
+                              border: 'none',
+                              background: manualDiscountType === '%' ? '#FF5E14' : 'transparent',
+                              color: manualDiscountType === '%' ? '#FFF' : '#334155',
+                              borderRadius: '4px',
+                              padding: '1px 6px',
+                              fontSize: '10px',
+                              fontWeight: 900,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            %
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                        <input
+                          ref={manualDiscountRef}
+                          type="number"
+                          className="crm-input"
+                          style={{ padding: '6px 24px 6px 10px', fontSize: '13px', width: '100%' }}
+                          placeholder={manualDiscountType === '%' ? "e.g. 10%" : "0"}
+                          value={manualDiscount}
+                          onChange={(e) => setManualDiscount(e.target.value)}
+                          onKeyDown={(e) => handleInputKeyDown(e, 4)}
+                        />
+                        <span style={{ position: 'absolute', right: '8px', fontSize: '11px', fontWeight: 900, color: '#64748B', pointerEvents: 'none' }}>
+                          {manualDiscountType}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="crm-form-group" style={{ justifyContent: 'center' }}>
@@ -9187,12 +9805,69 @@ export default function DashboardPage({ onShowToast }) {
                 >
                   Cancel
                 </button>
-                <button type="submit" className="btn-create-order-primary">
-                  <Check size={16} />
-                  <span>{editingOrderId ? 'Update Order Details' : 'Place Order & Print KOT'}</span>
+                <button
+                  type="submit"
+                  className="btn-create-order-primary"
+                  disabled={isSubmittingManualOrder}
+                  style={{
+                    opacity: isSubmittingManualOrder ? 0.75 : 1,
+                    cursor: isSubmittingManualOrder ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {isSubmittingManualOrder ? (
+                    <RefreshCw size={16} style={{ animation: 'foodypay-spin 0.8s linear infinite' }} />
+                  ) : (
+                    <Check size={16} />
+                  )}
+                  <span>
+                    {isSubmittingManualOrder
+                      ? 'Creating Order...'
+                      : editingOrderId
+                      ? 'Update Order Details'
+                      : 'Place Order & Print KOT'}
+                  </span>
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================================================
+          MODAL: DUPLICATE ORDER WARNING CONFIRMATION
+          ========================================================================== */}
+      {duplicateOrderConfirm && (
+        <div className="crm-modal-backdrop" style={{ zIndex: 11000 }} onClick={() => setDuplicateOrderConfirm(null)}>
+          <div className="crm-modal-card" style={{ maxWidth: '440px', padding: '28px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: '#FEF2F2', color: '#DC2626', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', border: '2px solid #FCA5A5' }}>
+              <AlertTriangle size={32} />
+            </div>
+            <h3 style={{ margin: '0 0 10px', fontSize: '19px', fontWeight: 900, color: '#0F172A' }}>
+              Duplicate Order Alert!
+            </h3>
+            <p style={{ fontSize: '13.5px', color: '#475569', lineHeight: 1.5, marginBottom: '22px' }}>
+              An identical order <strong>{duplicateOrderConfirm.id || duplicateOrderConfirm.orderId}</strong> for <strong>{duplicateOrderConfirm.customer}</strong> ({duplicateOrderConfirm.table}) worth <strong>₹{duplicateOrderConfirm.total}</strong> was placed just a few seconds ago!
+              <br /><br />
+              Do you really want to place a second duplicate order?
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="crm-btn-secondary"
+                style={{ flex: 1, padding: '10px 16px', fontWeight: 700 }}
+                onClick={() => setDuplicateOrderConfirm(null)}
+              >
+                Cancel (Do Not Create)
+              </button>
+              <button
+                type="button"
+                className="crm-btn-action fire"
+                style={{ flex: 1, padding: '10px 16px', background: '#DC2626', color: '#FFF', fontWeight: 800 }}
+                onClick={() => handleCreateManualOrderSubmit(null, true)}
+              >
+                Yes, Create Duplicate
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -9241,18 +9916,63 @@ export default function DashboardPage({ onShowToast }) {
                       {/* DISCOUNT & COUPON CODE APPLIED SECTION */}
                       <div style={{ borderTop: '1.5px dashed #CBD5E1', paddingTop: '10px', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div style={{ display: 'flex', gap: '10px' }}>
-                          <div style={{ flex: 1 }}>
-                            <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '3px' }}>
-                              Manual Discount (₹)
-                            </label>
-                            <input
-                              type="number"
-                              className="crm-input"
-                              style={{ padding: '6px 10px', fontSize: '13px' }}
-                              placeholder="0"
-                              value={settleDiscount}
-                              onChange={(e) => setSettleDiscount(e.target.value)}
-                            />
+                          <div style={{ flex: 1.1 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                              <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', margin: 0 }}>
+                                Manual Discount
+                              </label>
+                              <div style={{ display: 'inline-flex', background: '#CBD5E1', borderRadius: '6px', padding: '1px' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setSettleDiscountType('₹')}
+                                  style={{
+                                    border: 'none',
+                                    background: settleDiscountType === '₹' ? '#FF5E14' : 'transparent',
+                                    color: settleDiscountType === '₹' ? '#FFF' : '#334155',
+                                    borderRadius: '5px',
+                                    padding: '1px 7px',
+                                    fontSize: '10px',
+                                    fontWeight: 900,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease'
+                                  }}
+                                  title="Discount in Rupees (₹)"
+                                >
+                                  ₹
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSettleDiscountType('%')}
+                                  style={{
+                                    border: 'none',
+                                    background: settleDiscountType === '%' ? '#FF5E14' : 'transparent',
+                                    color: settleDiscountType === '%' ? '#FFF' : '#334155',
+                                    borderRadius: '5px',
+                                    padding: '1px 7px',
+                                    fontSize: '10px',
+                                    fontWeight: 900,
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease'
+                                  }}
+                                  title="Discount in Percentage (%)"
+                                >
+                                  %
+                                </button>
+                              </div>
+                            </div>
+                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                              <input
+                                type="number"
+                                className="crm-input"
+                                style={{ padding: '6px 26px 6px 10px', fontSize: '13px', width: '100%' }}
+                                placeholder={settleDiscountType === '%' ? "e.g. 10%" : "0"}
+                                value={settleDiscount}
+                                onChange={(e) => setSettleDiscount(e.target.value)}
+                              />
+                              <span style={{ position: 'absolute', right: '10px', fontSize: '12px', fontWeight: 900, color: '#64748B', pointerEvents: 'none' }}>
+                                {settleDiscountType}
+                              </span>
+                            </div>
                           </div>
                           <div style={{ flex: 1.2 }}>
                             <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '3px' }}>

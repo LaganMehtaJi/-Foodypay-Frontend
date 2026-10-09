@@ -1,6 +1,25 @@
 export const PRIMARY_API_URL = 'http://3.108.59.216/api';
-export const BACKUP_CLOUD_API_URL = 'https://server-foodypay.onrender.com/api';
+export const BACKUP_CLOUD_API_URL_1 = 'https://server-foodypay.onrender.com/api';
+export const BACKUP_CLOUD_API_URL_2 = 'https://server-foodypay-simk.onrender.com/api';
+export const BACKUP_CLOUD_API_URL_3 = 'https://server-foodypay-1.onrender.com/api';
+export const BACKUP_CLOUD_API_URL_4 = 'https://server-foodypay-xn16.onrender.com/api';
+export const BACKUP_CLOUD_API_URL_5 = 'https://server-foodypay-yi21.onrender.com/api';
+export const BACKUP_CLOUD_API_URL = BACKUP_CLOUD_API_URL_1; // Alias for backward compatibility
 export const REMOTE_CLOUD_API_URL = PRIMARY_API_URL;
+
+/**
+ * All Centralized Configured Server API Endpoints (Primary + 5 Cloud Backups)
+ */
+export const ALL_CONFIGURED_APIS = [
+  { id: 'primary', name: 'Primary AWS EC2 API Server', url: PRIMARY_API_URL, type: 'Primary', isPrimary: true },
+  { id: 'backup_1', name: 'Backup Render Cloud Server 1', url: BACKUP_CLOUD_API_URL_1, type: 'Backup 1', isPrimary: false },
+  { id: 'backup_2', name: 'Backup Render Cloud Server 2', url: BACKUP_CLOUD_API_URL_2, type: 'Backup 2', isPrimary: false },
+  { id: 'backup_3', name: 'Backup Render Cloud Server 3', url: BACKUP_CLOUD_API_URL_3, type: 'Backup 3', isPrimary: false },
+  { id: 'backup_4', name: 'Backup Render Cloud Server 4', url: BACKUP_CLOUD_API_URL_4, type: 'Backup 4', isPrimary: false },
+  { id: 'backup_5', name: 'Backup Render Cloud Server 5', url: BACKUP_CLOUD_API_URL_5, type: 'Backup 5', isPrimary: false },
+];
+
+export const TOTAL_AVAILABLE_APIS_COUNT = ALL_CONFIGURED_APIS.length;
 
 /**
  * Dynamic API Base URL resolution for Local, LAN (Mobile on Wi-Fi), and Production
@@ -39,71 +58,150 @@ export async function parseJsonResponse(res) {
 }
 
 /**
- * High-speed safe fetch helper with automatic Primary EC2 -> Backup Render failover
+ * High-speed safe fetch helper with automatic 5-tier failover:
+ * Primary EC2 -> Backup Render Cloud 1 -> Backup Render Cloud 2 -> Backup Render Cloud 3 -> Backup Render Cloud 4
  */
 export async function safeFetch(path, options = {}) {
   const cleanPath = path.startsWith('/api') ? path.replace('/api', '') : (path.startsWith('/') ? path : `/${path}`);
   const primaryUrl = `${API_BASE_URL}${cleanPath}`;
-  const backupUrl = `${BACKUP_CLOUD_API_URL}${cleanPath}`;
 
-  // 1. Try Primary EC2 Production API (http://3.108.59.216/api)
+  const isLocalHost = typeof window !== 'undefined' && (
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    /^192\.168\./.test(window.location.hostname) ||
+    /^10\./.test(window.location.hostname)
+  );
+
+  // 1. If on localhost/LAN, try local server port first for instant response!
+  if (isLocalHost) {
+    const ports = [3000, 5001, 3001];
+    for (const port of ports) {
+      try {
+        const testUrl = `http://${window.location.hostname}:${port}/api${cleanPath}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1800);
+        const res = await fetch(testUrl, { ...options, signal: options.signal || controller.signal });
+        clearTimeout(timeoutId);
+        const clone = res.clone();
+        const text = await clone.text();
+        if (res.ok && text && !text.trim().startsWith('<')) {
+          return res;
+        }
+      } catch (e) {}
+    }
+  }
+
+  // 2. Try Primary API Server with AbortController timeout so UI never hangs
   try {
-    console.log(` [PRODUCTION EC2 API CALL] ${options.method || 'GET'} ${primaryUrl}`);
-    const res = await fetch(primaryUrl, options);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const res = await fetch(primaryUrl, { ...options, signal: options.signal || controller.signal });
+    clearTimeout(timeoutId);
     const contentType = res.headers.get('content-type') || '';
     if (res.ok || contentType.includes('application/json')) {
       const clone = res.clone();
       const text = await clone.text();
       if (text && !text.trim().startsWith('<')) {
-        console.log(`🟢 [SERVED FROM: PRODUCTION EC2 SERVER] (Status: ${res.status}) -> ${primaryUrl}`);
         return res;
       }
     }
-    console.warn(`️ [PRODUCTION EC2 API NON-JSON RESPONSE ${res.status}] ${primaryUrl}`);
   } catch (err) {
-    console.warn(`️ [PRODUCTION EC2 API FAILED] ${primaryUrl}:`, err.message);
+    console.warn(`[PRIMARY API TIMEOUT/FAILED] ${primaryUrl}:`, err.message);
   }
 
-  // 2. Try Local Fallback Ports (3000, 5001, 3001) if on local machine / LAN
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    const isLocal = hostname === 'localhost' || hostname === '127.0.0.1' || /^192\.168\./.test(hostname) || /^10\./.test(hostname);
-    if (isLocal) {
-      const ports = [3000, 5001, 3001];
-      for (const port of ports) {
-        try {
-          const testUrl = `http://${hostname}:${port}/api${cleanPath}`;
-          const res = await fetch(testUrl, options);
-          const clone = res.clone();
-          const text = await clone.text();
-          if (res.ok && text && !text.trim().startsWith('<')) {
-            console.log(` [SERVED FROM: LOCALHOST PORT ${port}] -> ${testUrl}`);
-            return res;
-          }
-        } catch (e) {}
-      }
-    }
-  }
-
-  // 3. Automatic Backup Cloud API Failover (Render Server: https://server-foodypay.onrender.com/api)
+  // 3. Fallback to Backup Cloud Server 1 (server-foodypay.onrender.com)
   try {
-    console.log(` [FAILOVER TO BACKUP] Production EC2 Failed! Switching to Backup Server -> ${backupUrl}`);
-    const res = await fetch(backupUrl, options);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const backup1Url = `${BACKUP_CLOUD_API_URL_1}${cleanPath}`;
+    const res = await fetch(backup1Url, { ...options, signal: options.signal || controller.signal });
+    clearTimeout(timeoutId);
     const contentType = res.headers.get('content-type') || '';
     if (res.ok || contentType.includes('application/json')) {
       const clone = res.clone();
       const text = await clone.text();
       if (text && !text.trim().startsWith('<')) {
-        console.log(`🟡 [SERVED FROM: BACKUP RENDER CLOUD SERVER] (Status: ${res.status}) -> ${backupUrl}`);
+        return res;
+      }
+    }
+  } catch (cloudErr1) {
+    console.warn(`[BACKUP API 1 TIMEOUT/FAILED] ${BACKUP_CLOUD_API_URL_1}:`, cloudErr1.message);
+  }
+
+  // 4. Fallback to Backup Cloud Server 2 (server-foodypay-simk.onrender.com)
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const backup2Url = `${BACKUP_CLOUD_API_URL_2}${cleanPath}`;
+    const res = await fetch(backup2Url, { ...options, signal: options.signal || controller.signal });
+    clearTimeout(timeoutId);
+    const contentType = res.headers.get('content-type') || '';
+    if (res.ok || contentType.includes('application/json')) {
+      const clone = res.clone();
+      const text = await clone.text();
+      if (text && !text.trim().startsWith('<')) {
+        return res;
+      }
+    }
+  } catch (cloudErr2) {
+    console.warn(`[BACKUP API 2 TIMEOUT/FAILED] ${BACKUP_CLOUD_API_URL_2}:`, cloudErr2.message);
+  }
+
+  // 5. Fallback to Backup Cloud Server 3 (server-foodypay-1.onrender.com)
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const backup3Url = `${BACKUP_CLOUD_API_URL_3}${cleanPath}`;
+    const res = await fetch(backup3Url, { ...options, signal: options.signal || controller.signal });
+    clearTimeout(timeoutId);
+    const contentType = res.headers.get('content-type') || '';
+    if (res.ok || contentType.includes('application/json')) {
+      const clone = res.clone();
+      const text = await clone.text();
+      if (text && !text.trim().startsWith('<')) {
+        return res;
+      }
+    }
+  } catch (cloudErr3) {
+    console.warn(`[BACKUP API 3 TIMEOUT/FAILED] ${BACKUP_CLOUD_API_URL_3}:`, cloudErr3.message);
+  }
+
+  // 6. Fallback to Backup Cloud Server 4 (server-foodypay-xn16.onrender.com)
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const backup4Url = `${BACKUP_CLOUD_API_URL_4}${cleanPath}`;
+    const res = await fetch(backup4Url, { ...options, signal: options.signal || controller.signal });
+    clearTimeout(timeoutId);
+    const contentType = res.headers.get('content-type') || '';
+    if (res.ok || contentType.includes('application/json')) {
+      const clone = res.clone();
+      const text = await clone.text();
+      if (text && !text.trim().startsWith('<')) {
+        return res;
+      }
+    }
+  } catch (cloudErr4) {
+    console.warn(`[BACKUP API 4 TIMEOUT/FAILED] ${BACKUP_CLOUD_API_URL_4}:`, cloudErr4.message);
+  }
+
+  // 7. Fallback to Backup Cloud Server 5 (server-foodypay-yi21.onrender.com)
+  try {
+    const backup5Url = `${BACKUP_CLOUD_API_URL_5}${cleanPath}`;
+    const res = await fetch(backup5Url, options);
+    const contentType = res.headers.get('content-type') || '';
+    if (res.ok || contentType.includes('application/json')) {
+      const clone = res.clone();
+      const text = await clone.text();
+      if (text && !text.trim().startsWith('<')) {
         return res;
       }
     }
     return res;
-  } catch (cloudErr) {
-    console.error(` [BOTH PRODUCTION & BACKUP APIs FAILED] ${backupUrl}:`, cloudErr.message);
+  } catch (cloudErr5) {
+    console.warn(`[BACKUP API 5 TIMEOUT/FAILED] ${BACKUP_CLOUD_API_URL_5}:`, cloudErr5.message);
   }
 
-  // Final fallback attempt
   return fetch(primaryUrl, options);
 }
 
@@ -354,16 +452,31 @@ export async function verifyRazorpaySignatureApi(payload) {
 
 
 export async function updateOrderStatusApi(token, orderId, status) {
-  const response = await fetch(`${API_BASE_URL}/orders/${orderId}/status`, {
+  const url = token ? `${API_BASE_URL}/orders/${orderId}/status` : `${API_BASE_URL}/orders/public/${orderId}/status`;
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ status, kitchenSeen: true }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to update order status');
+  return data.data;
+}
+
+export async function sendToKitchenApi(token, orderId) {
+  const response = await fetch(`${API_BASE_URL}/orders/${orderId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ sentToKitchen: true, kitchenSeen: false }),
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.message || 'Failed to update order status');
+  if (!response.ok) throw new Error(data.message || 'Failed to send order to kitchen');
   return data.data;
 }
 
@@ -376,6 +489,20 @@ export async function markOrderSeenApi(token, orderId) {
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || 'Failed to mark order seen');
+  return data.data;
+}
+
+export async function markKitchenSeenApi(token, orderId) {
+  const url = token ? `${API_BASE_URL}/orders/${orderId}/kitchen-seen` : `${API_BASE_URL}/orders/public/${orderId}/kitchen-seen`;
+  const headers = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers,
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to mark kitchen order seen');
   return data.data;
 }
 

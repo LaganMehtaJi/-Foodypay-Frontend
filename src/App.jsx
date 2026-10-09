@@ -11,6 +11,8 @@ import KitchenDisplayPage from './pages/KitchenDisplayPage';
 import DeliveryPartnerPage from './pages/DeliveryPartnerPage';
 import CrmPortalPage from './pages/CrmPortalPage';
 import LegalPolicyPage from './pages/LegalPolicyPage';
+import PartnerLoginPage from './pages/PartnerLoginPage';
+import PartnerPortalPage from './pages/PartnerPortalPage';
 import Toast from './components/Toast';
 import LiveOrderTicker from './components/LiveOrderTicker';
 import './App.css';
@@ -84,6 +86,18 @@ const AppContent = ({ showToast }) => {
         <Route
           path="/login"
           element={<LoginPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/partner-login"
+          element={<PartnerLoginPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/partner"
+          element={<PartnerPortalPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/partner-portal"
+          element={<PartnerPortalPage onShowToast={showToast} />}
         />
         <Route
           path="/signup"

@@ -11,9 +11,13 @@ import { CheckCircle2, Star, X, Clock, ChefHat, Flame, Bike, PackageCheck, Spark
  * 5: Delivered / Completed (completed, delivered, served)
  */
 function getStageDetails(status, seen, isDelivery) {
-  const normalizedStatus = (status || 'new').toLowerCase();
+  const rawStatus = (status || 'new').toLowerCase().trim();
+  const normalizedStatus = rawStatus.replace(/[^a-z0-9_]/g, '');
 
-  if (['completed', 'delivered', 'served'].includes(normalizedStatus)) {
+  if (
+    ['completed', 'delivered', 'done', 'paid', 'served'].includes(rawStatus) ||
+    ['completed', 'delivered', 'done', 'paid', 'served'].includes(normalizedStatus)
+  ) {
     return {
       stage: 5,
       title: 'Order Completed!',
@@ -26,11 +30,14 @@ function getStageDetails(status, seen, isDelivery) {
     };
   }
 
-  if (['ready', 'out_for_delivery'].includes(normalizedStatus)) {
+  if (
+    ['ready', 'out_for_delivery', 'out for delivery', 'on the way', 'serving', 'dispatched'].includes(rawStatus) ||
+    ['ready', 'out_for_delivery', 'outfordelivery', 'ontheway', 'serving', 'dispatched'].includes(normalizedStatus)
+  ) {
     return {
       stage: 4,
-      title: isDelivery ? 'Out For Delivery' : 'Order Ready!',
-      subtitle: isDelivery ? 'Delivery partner is on the way to your location.' : 'Freshly prepared and ready to be served.',
+      title: isDelivery ? 'Out For Delivery' : 'Order Ready to Serve!',
+      subtitle: isDelivery ? 'Delivery partner is on the way to your location.' : 'Freshly prepared and ready at your table.',
       color: '#059669',
       bgGradient: 'linear-gradient(135deg, #065F46 0%, #064E3B 100%)',
       accentColor: '#6EE7B7',
@@ -39,7 +46,10 @@ function getStageDetails(status, seen, isDelivery) {
     };
   }
 
-  if (['preparing', 'cooking', 'in-kitchen'].includes(normalizedStatus)) {
+  if (
+    ['preparing', 'cooking', 'in-kitchen', 'kitchen', 'in_kitchen', 'food_preparing', 'kitchen display system'].includes(rawStatus) ||
+    ['preparing', 'cooking', 'inkitchen', 'kitchen', 'in_kitchen', 'foodpreparing'].includes(normalizedStatus)
+  ) {
     return {
       stage: 3,
       title: 'Cooking In Kitchen',
@@ -52,7 +62,11 @@ function getStageDetails(status, seen, isDelivery) {
     };
   }
 
-  if (seen || ['accepted', 'acknowledged'].includes(normalizedStatus)) {
+  if (
+    seen ||
+    ['accepted', 'acknowledged', 'seen', 'confirmed', 'processing'].includes(rawStatus) ||
+    ['accepted', 'acknowledged', 'seen', 'confirmed', 'processing'].includes(normalizedStatus)
+  ) {
     return {
       stage: 2,
       title: 'Order Acknowledged',

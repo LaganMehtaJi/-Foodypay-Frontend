@@ -3053,6 +3053,36 @@ input:checked + .crm-blue-slider:before {
   }
 }
 
+/* ==========================================================================
+   BUTTON DEBOUNCE & LOADING ANIMATIONS
+   ========================================================================== */
+@keyframes foodypay-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin-loader {
+  animation: foodypay-spin 0.75s linear infinite !important;
+  display: inline-block;
+}
+
+@keyframes foodypay-pulse-blink {
+  0% { opacity: 0.6; transform: scale(0.98); }
+  50% { opacity: 1; transform: scale(1.01); }
+  100% { opacity: 0.6; transform: scale(0.98); }
+}
+
+.btn-loading-disabled {
+  pointer-events: none !important;
+  cursor: not-allowed !important;
+  opacity: 0.65 !important;
+  animation: foodypay-pulse-blink 1s ease-in-out infinite;
+}
+
 
 
 
