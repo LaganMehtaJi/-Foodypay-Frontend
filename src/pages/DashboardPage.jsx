@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import {
@@ -66,6 +66,8 @@ import {
   playMilestoneCelebration,
   startContinuousAlarm,
   stopContinuousAlarm,
+  sortOrdersNewestFirst,
+  testSoundNotification,
 } from '../utils/soundEffects';
 import { QrCodeComponent } from '../utils/qrGenerator';
 import {
@@ -201,23 +203,56 @@ export default function DashboardPage({ onShowToast }) {
     if (window.confirm('Are you sure you want to log out of your FoodyPay POS Dashboard?')) {
       localStorage.removeItem('foodypay_token');
       localStorage.removeItem('foodypay_user');
-      addToast('Logged out successfully');
-      navigate('/login');
+      localStorage.removeItem('foodypay_kitchen_logged_in');
+      try {
+        window.dispatchEvent(new Event('storage'));
+      } catch (e) {}
+      if (typeof addToast === 'function') addToast('Logged out of Dashboard successfully');
+      window.location.href = '/login';
     }
   };
 
-  // Datasets - default to empty array if user token is present, otherwise fallback
-  const [orders, setOrders] = useState([]);
+  const [orders, setOrders] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_crm_orders_v3');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return sortOrdersNewestFirst(parsed);
+      }
+    } catch (e) {}
+    return [];
+  });
   const [todayStats, setTodayStats] = useState(null);
   const [dishes, setDishes] = useState(() => {
+    const activeMerchantId = (() => {
+      try {
+        const u = localStorage.getItem('foodypay_user');
+        if (u) {
+          const parsed = JSON.parse(u);
+          if (parsed.foodypayId) return parsed.foodypayId;
+        }
+      } catch (e) {}
+      return 'FP-985569';
+    })();
+
     try {
       const saved = localStorage.getItem('foodypay_crm_dishes_v3');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((d) => ({
+            ...d,
+            foodypayId: d.foodypayId || d.merchantId || activeMerchantId,
+            merchantId: d.merchantId || d.foodypayId || activeMerchantId,
+          }));
+        }
       }
     } catch (e) {}
-    return DEFAULT_SNACK_RACK_DISHES;
+    return DEFAULT_SNACK_RACK_DISHES.map((d) => ({
+      ...d,
+      foodypayId: activeMerchantId,
+      merchantId: activeMerchantId,
+    }));
   });
   const [customers, setCustomers] = useState([]);
   const [custSearch, setCustSearch] = useState('');
@@ -1421,8 +1456,17 @@ export default function DashboardPage({ onShowToast }) {
         const savedOrders = localStorage.getItem('foodypay_crm_orders_v3');
         if (savedOrders) {
           const parsed = JSON.parse(savedOrders);
-          setOrders(parsed);
-          if (Array.isArray(parsed)) {
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setOrders((prev) => {
+              const prevMap = new Map((prev || []).map((o) => [String(o._id || o.id || o.orderId), o]));
+              parsed.forEach((po) => {
+                const poId = String(po._id || po.id || po.orderId);
+                if (!prevMap.has(poId)) {
+                  prevMap.set(poId, po);
+                }
+              });
+              return sortOrdersNewestFirst(Array.from(prevMap.values()));
+            });
             parsed.forEach((order) => notifyIfNewOrder(order));
           }
         }
@@ -1439,7 +1483,7 @@ export default function DashboardPage({ onShowToast }) {
         const res = await fetchOrdersApi(token);
         const fetchedOrders = res.orders || (Array.isArray(res) ? res : []);
         if (res.todayStats) setTodayStats(res.todayStats);
-        if (Array.isArray(fetchedOrders) && fetchedOrders.length > 0) {
+        if (Array.isArray(fetchedOrders)) {
           const seenSet = getSeenIds();
           const statusRank = { new: 1, new_seen: 1, preparing: 2, ready: 3, completed: 4, cancelled: 5 };
 
@@ -1450,33 +1494,36 @@ export default function DashboardPage({ onShowToast }) {
               localMap.set(idKey, lo);
             });
 
-            const merged = fetchedOrders.map((o) => {
-              const oId = String(o._id || o.id || o.orderId);
-              const localOrd = localMap.get(oId);
+            if (fetchedOrders.length > 0) {
+              fetchedOrders.forEach((o) => {
+                const oId = String(o._id || o.id || o.orderId);
+                const localOrd = localMap.get(oId);
 
-              let effectiveStatus = o.status;
-              if (localOrd && localOrd.status) {
-                const localR = statusRank[localOrd.status] || 1;
-                const remoteR = statusRank[o.status] || 1;
-                // Preserve local stage if local has progressed further (e.g., preparing vs new)
-                if (localR > remoteR) {
-                  effectiveStatus = localOrd.status;
+                let effectiveStatus = o.status;
+                if (localOrd && localOrd.status) {
+                  const localR = statusRank[localOrd.status] || 1;
+                  const remoteR = statusRank[o.status] || 1;
+                  // Preserve local stage if local has progressed further (e.g., preparing vs new)
+                  if (localR > remoteR) {
+                    effectiveStatus = localOrd.status;
+                  }
                 }
-              }
 
-              const localIsPaid = localOrd && (localOrd.paymentStatus === 'paid-upi' || localOrd.paymentStatus === 'paid-razorpay' || localOrd.paymentStatus === 'paid-cash' || localOrd.paymentStatus === 'paid');
-              const effectivePaymentStatus = localIsPaid ? localOrd.paymentStatus : (o.paymentStatus || 'unpaid');
-              const effectivePaymentLabel = localIsPaid ? localOrd.paymentLabel : (o.paymentLabel || 'Payment Pending');
+                const localIsPaid = localOrd && (localOrd.paymentStatus === 'paid-upi' || localOrd.paymentStatus === 'paid-razorpay' || localOrd.paymentStatus === 'paid-cash' || localOrd.paymentStatus === 'paid');
+                const effectivePaymentStatus = localIsPaid ? localOrd.paymentStatus : (o.paymentStatus || 'unpaid');
+                const effectivePaymentLabel = localIsPaid ? localOrd.paymentLabel : (o.paymentLabel || 'Payment Pending');
 
-              return {
-                ...o,
-                status: effectiveStatus,
-                paymentStatus: effectivePaymentStatus,
-                paymentLabel: effectivePaymentLabel,
-                seen: Boolean(o.seen || (localOrd && localOrd.seen) || seenSet.has(oId)),
-              };
-            });
+                localMap.set(oId, {
+                  ...o,
+                  status: effectiveStatus,
+                  paymentStatus: effectivePaymentStatus,
+                  paymentLabel: effectivePaymentLabel,
+                  seen: Boolean(o.seen || (localOrd && localOrd.seen) || seenSet.has(oId)),
+                });
+              });
+            }
 
+            const merged = sortOrdersNewestFirst(Array.from(localMap.values()));
             merged.forEach((order) => notifyIfNewOrder(order));
             return merged;
           });
@@ -1488,24 +1535,43 @@ export default function DashboardPage({ onShowToast }) {
 
     const pollInterval = setInterval(pollBackendOrders, 5000);
 
+    const handleAdminSyncRefresh = () => {
+      addToast('⚡ Superadmin Updated Store Settings & Controls! Auto-refreshing in 2s...', <Sparkles color="#FF5E14" size={18} />);
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+    };
+
     let bc = null;
     try {
       bc = new BroadcastChannel('foodypay_live_orders_channel');
       bc.onmessage = (msg) => {
         if (msg && msg.data) {
+          if (msg.data.type === 'ADMIN_SETTINGS_UPDATED') {
+            handleAdminSyncRefresh();
+            return;
+          }
           handleNewOrderEvent();
           pollBackendOrders();
         }
       };
     } catch (e) {}
 
+    const handleStorageEvent = (e) => {
+      if (!e || !e.key || e.key === 'foodypay_crm_orders_v3') {
+        handleNewOrderEvent();
+      }
+    };
+
     window.addEventListener('foodypay_order_created', handleNewOrderEvent);
-    window.addEventListener('storage', handleNewOrderEvent);
+    window.addEventListener('foodypay_admin_settings_updated', handleAdminSyncRefresh);
+    window.addEventListener('storage', handleStorageEvent);
     return () => {
       clearInterval(pollInterval);
       if (bc) bc.close();
       window.removeEventListener('foodypay_order_created', handleNewOrderEvent);
-      window.removeEventListener('storage', handleNewOrderEvent);
+      window.removeEventListener('foodypay_admin_settings_updated', handleAdminSyncRefresh);
+      window.removeEventListener('storage', handleStorageEvent);
     };
   }, [soundEnabled]);
 
@@ -1762,33 +1828,44 @@ export default function DashboardPage({ onShowToast }) {
 
         if (ordersRes.status === 'fulfilled') {
           const val = ordersRes.value;
-          if (val && Array.isArray(val.orders)) {
-            setOrders(val.orders);
-            if (val.todayStats) setTodayStats(val.todayStats);
-          } else if (Array.isArray(val)) {
-            setOrders(val);
-          } else {
-            setOrders(INITIAL_ORDERS);
-          }
-        } else setOrders(INITIAL_ORDERS);
+          const fetchedOrders = (val && Array.isArray(val.orders)) ? val.orders : (Array.isArray(val) ? val : []);
+          if (val && val.todayStats) setTodayStats(val.todayStats);
 
+          if (fetchedOrders.length > 0) {
+            setOrders((prev) => {
+              const map = new Map((prev || []).map((o) => [String(o._id || o.id || o.orderId), o]));
+              fetchedOrders.forEach((o) => {
+                const oId = String(o._id || o.id || o.orderId);
+                map.set(oId, { ...map.get(oId), ...o });
+              });
+              return Array.from(map.values());
+            });
+          }
+        }
+
+        const storeFpId = storeControls.foodypayId || currentUser.foodypayId || 'FP-985569';
         if (dishesRes.status === 'fulfilled' && Array.isArray(dishesRes.value) && dishesRes.value.length > 0) {
-          setDishes(dishesRes.value);
+          const taggedApiDishes = dishesRes.value.map((d) => ({
+            ...d,
+            foodypayId: d.foodypayId || d.merchantId || storeFpId,
+            merchantId: d.merchantId || d.foodypayId || storeFpId,
+          }));
+          setDishes(taggedApiDishes);
         } else {
           try {
             const saved = localStorage.getItem('foodypay_crm_dishes_v3');
             if (saved) {
               const parsed = JSON.parse(saved);
               if (Array.isArray(parsed) && parsed.length > 0) {
-                setDishes(parsed);
+                setDishes(parsed.map((d) => ({ ...d, foodypayId: storeFpId, merchantId: storeFpId })));
               } else {
-                setDishes(DEFAULT_SNACK_RACK_DISHES);
+                setDishes(DEFAULT_SNACK_RACK_DISHES.map((d) => ({ ...d, foodypayId: storeFpId, merchantId: storeFpId })));
               }
             } else {
-              setDishes(DEFAULT_SNACK_RACK_DISHES);
+              setDishes(DEFAULT_SNACK_RACK_DISHES.map((d) => ({ ...d, foodypayId: storeFpId, merchantId: storeFpId })));
             }
           } catch (e) {
-            setDishes(DEFAULT_SNACK_RACK_DISHES);
+            setDishes(DEFAULT_SNACK_RACK_DISHES.map((d) => ({ ...d, foodypayId: storeFpId, merchantId: storeFpId })));
           }
         }
 
@@ -1841,7 +1918,9 @@ export default function DashboardPage({ onShowToast }) {
   // LocalStorage sync
   useEffect(() => {
     try {
-      localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(orders));
+      if (Array.isArray(orders) && orders.length > 0) {
+        localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(orders));
+      }
     } catch {}
   }, [orders]);
 
@@ -1855,6 +1934,7 @@ export default function DashboardPage({ onShowToast }) {
     try {
       localStorage.setItem('foodypay_crm_dishes_v3', JSON.stringify(dishes));
       window.dispatchEvent(new CustomEvent('foodypay_dishes_updated', { detail: dishes }));
+      window.dispatchEvent(new Event('storage'));
     } catch {}
   }, [dishes]);
 
@@ -1868,13 +1948,17 @@ export default function DashboardPage({ onShowToast }) {
     }, 3200);
   };
 
+  const lastSoundTriggerRef = useRef(0);
+
   const triggerSound = (fn) => {
-    if (soundEnabled && typeof fn === 'function') {
-      try {
-        fn();
-      } catch (e) {
-        console.warn('Audio blocked:', e);
-      }
+    if (!soundEnabled || typeof fn !== 'function') return;
+    const now = Date.now();
+    if (now - lastSoundTriggerRef.current < 1500) return; // Prevent overlapping audio triggers
+    lastSoundTriggerRef.current = now;
+    try {
+      fn();
+    } catch (e) {
+      console.warn('Audio blocked:', e);
     }
   };
 
@@ -2368,6 +2452,13 @@ export default function DashboardPage({ onShowToast }) {
         const seenSet = raw ? new Set(JSON.parse(raw)) : new Set();
         seenSet.add(oIdStr);
         localStorage.setItem('foodypay_seen_order_ids', JSON.stringify(Array.from(seenSet)));
+
+        if (newStatus === 'preparing') {
+          const rawKds = localStorage.getItem('foodypay_kds_seen_orders');
+          const kdsSet = rawKds ? new Set(JSON.parse(rawKds)) : new Set();
+          kdsSet.delete(oIdStr);
+          localStorage.setItem('foodypay_kds_seen_orders', JSON.stringify(Array.from(kdsSet)));
+        }
       } catch (e) {}
 
       setOrders((prev) => {
@@ -2379,6 +2470,7 @@ export default function DashboardPage({ onShowToast }) {
               seen: true,
               status: newStatus,
               sentToKitchen: newStatus === 'preparing' ? true : ord.sentToKitchen,
+              kitchenSeen: newStatus === 'preparing' ? false : ord.kitchenSeen,
               updatedAt: new Date().toISOString(),
             };
           }
@@ -2584,10 +2676,14 @@ export default function DashboardPage({ onShowToast }) {
       ? newProductForm.images
       : [productLogoPreview || newProductForm.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80'];
     const finalImage = rawImages[0];
+    const storeFpId = storeControls.foodypayId || currentUser.foodypayId || 'FP-985569';
 
+    let addedToState = false;
     if (token) {
       try {
         const formData = new FormData();
+        formData.append('foodypayId', storeFpId);
+        formData.append('merchantId', storeFpId);
         formData.append('name', newProductForm.name.trim().toUpperCase());
         formData.append('category', newProductForm.category);
         formData.append('price', newProductForm.price);
@@ -2602,20 +2698,27 @@ export default function DashboardPage({ onShowToast }) {
         }
 
         const createdDish = await createDishApi(token, formData);
-        const storeFpId = storeControls.foodypayId || currentUser.foodypayId || 'FP-985569';
         const fullCreatedDish = {
           ...(createdDish || {}),
           foodypayId: createdDish?.foodypayId || storeFpId,
           merchantId: createdDish?.merchantId || storeFpId,
+          name: newProductForm.name.trim().toUpperCase(),
+          category: newProductForm.category,
+          price: Number(newProductForm.price),
+          isVeg: newProductForm.isVeg,
+          isSpecial: newProductForm.isSpecial,
+          inStock: true,
           images: rawImages,
           image: finalImage,
         };
         setDishes((prev) => [fullCreatedDish, ...prev]);
+        addedToState = true;
       } catch (err) {
-        console.warn('API error creating dish:', err);
+        console.warn('API error creating dish, adding locally:', err);
       }
-    } else {
-      const storeFpId = storeControls.foodypayId || currentUser.foodypayId || 'FP-985569';
+    }
+
+    if (!addedToState) {
       const newDish = {
         id: 'p_' + Date.now(),
         _id: 'p_' + Date.now(),
@@ -2667,8 +2770,11 @@ export default function DashboardPage({ onShowToast }) {
       ? editProductForm.images
       : [editProductForm.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80'];
     const primaryImg = finalImagesList[0];
+    const storeFpId = storeControls.foodypayId || currentUser.foodypayId || 'FP-985569';
 
     const updateData = {
+      foodypayId: storeFpId,
+      merchantId: storeFpId,
       name: editProductForm.name.trim().toUpperCase(),
       category: editProductForm.category,
       price: Number(editProductForm.price),
@@ -2682,7 +2788,8 @@ export default function DashboardPage({ onShowToast }) {
       image: primaryImg,
     };
 
-    if (token && dishId) {
+    let updatedInState = false;
+    if (token && dishId && !String(dishId).startsWith('p_') && !String(dishId).startsWith('dish_')) {
       try {
         const updatedDish = await updateDishApi(token, dishId, updateData);
         const mergedUpdated = {
@@ -2692,10 +2799,13 @@ export default function DashboardPage({ onShowToast }) {
         setDishes((prev) =>
           prev.map((dish) => ((dish._id || dish.id) === dishId ? mergedUpdated : dish))
         );
+        updatedInState = true;
       } catch (err) {
-        console.warn('API error updating dish:', err);
+        console.warn('API error updating dish, updating local state:', err);
       }
-    } else {
+    }
+
+    if (!updatedInState) {
       setDishes((prev) => 
         prev.map((dish) => {
           if ((dish._id || dish.id) === dishId) {
@@ -3336,7 +3446,7 @@ export default function DashboardPage({ onShowToast }) {
   };
 
   // Day-Wise Calendar & Date Range Filter State
-  const [dateRangeFilter, setDateRangeFilter] = useState('all'); // 'today' | 'yesterday' | 'last_7' | 'last_30' | 'this_month' | 'custom' | 'all'
+  const [dateRangeFilter, setDateRangeFilter] = useState('today'); // 'today' | 'yesterday' | 'last_7' | 'last_30' | 'this_month' | 'custom' | 'all'
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
 
@@ -3400,40 +3510,42 @@ export default function DashboardPage({ onShowToast }) {
     return true;
   };
 
-  const filteredOrders = (orders || []).filter((o) => {
-    if (!o) return false;
+  const filteredOrders = sortOrdersNewestFirst(
+    (orders || []).filter((o) => {
+      if (!o) return false;
 
-    // Date Range & Calendar filter check
-    const matchesDate = isOrderInDateRange(o, dateRangeFilter, customStartDate, customEndDate);
-    if (!matchesDate) return false;
+      // Date Range & Calendar filter check
+      const matchesDate = isOrderInDateRange(o, dateRangeFilter, customStartDate, customEndDate);
+      if (!matchesDate) return false;
 
-    const query = (orderSearchQuery || '').trim().toLowerCase();
+      const query = (orderSearchQuery || '').trim().toLowerCase();
 
-    if (query) {
-      const custName = String(o.customer || o.customerName || o.name || '').toLowerCase();
-      const custPhone = String(o.phone || o.customerPhone || o.contactNo || o.mobile || '').toLowerCase();
-      const orderIdStr = String(o.orderId || o.id || o._id || '').toLowerCase();
-      const tableStr = String(o.table || o.type || '').toLowerCase();
-      const statusStr = String(o.status || '').toLowerCase();
-      const payStatusStr = String(o.paymentStatus || o.paymentLabel || '').toLowerCase();
-      const itemsStr = Array.isArray(o.items)
-        ? o.items.map((i) => `${i.name || ''} ${i.qty || ''}`).join(' ').toLowerCase()
-        : '';
+      if (query) {
+        const custName = String(o.customer || o.customerName || o.name || '').toLowerCase();
+        const custPhone = String(o.phone || o.customerPhone || o.contactNo || o.mobile || '').toLowerCase();
+        const orderIdStr = String(o.orderId || o.id || o._id || '').toLowerCase();
+        const tableStr = String(o.table || o.type || '').toLowerCase();
+        const statusStr = String(o.status || '').toLowerCase();
+        const payStatusStr = String(o.paymentStatus || o.paymentLabel || '').toLowerCase();
+        const itemsStr = Array.isArray(o.items)
+          ? o.items.map((i) => `${i.name || ''} ${i.qty || ''}`).join(' ').toLowerCase()
+          : '';
 
-      return (
-        custName.includes(query) ||
-        custPhone.includes(query) ||
-        orderIdStr.includes(query) ||
-        tableStr.includes(query) ||
-        statusStr.includes(query) ||
-        payStatusStr.includes(query) ||
-        itemsStr.includes(query)
-      );
-    }
+        return (
+          custName.includes(query) ||
+          custPhone.includes(query) ||
+          orderIdStr.includes(query) ||
+          tableStr.includes(query) ||
+          statusStr.includes(query) ||
+          payStatusStr.includes(query) ||
+          itemsStr.includes(query)
+        );
+      }
 
-    if (orderTabFilter === 'all') return true;
-    return o.status === orderTabFilter;
-  });
+      if (orderTabFilter === 'all') return true;
+      return o.status === orderTabFilter;
+    })
+  );
 
   return (
     <div className="crm-layout">
@@ -5275,16 +5387,18 @@ export default function DashboardPage({ onShowToast }) {
 
                 return (
                   <>
-                    <table className="crm-product-table">
-                      <thead>
-                        <tr>
-                          <th style={{ width: '40%' }}>Product Name</th>
-                          <th style={{ width: '15%' }}>Category</th>
-                          <th style={{ width: '15%' }}>Price</th>
-                          <th style={{ width: '15%' }}>Stock</th>
-                          <th style={{ width: '15%', textAlign: 'right' }}>Actions</th>
-                        </tr>
-                      </thead>
+                    {/* Products Table Card Container */}
+                    <div style={{ backgroundColor: '#FFFFFF', borderRadius: '16px', border: '1.5px solid #E2E8F0', boxShadow: '0 4px 16px rgba(0,0,0,0.03)', overflow: 'hidden', overflowX: 'auto', width: '100%', marginBottom: '16px' }}>
+                      <table className="crm-product-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead style={{ backgroundColor: '#F8FAFC', borderBottom: '1.5px solid #E2E8F0' }}>
+                          <tr>
+                            <th style={{ width: '40%', padding: '14px 18px', textAlign: 'left', fontSize: '12px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Product</th>
+                            <th style={{ width: '15%', padding: '14px 18px', textAlign: 'left', fontSize: '12px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Category</th>
+                            <th style={{ width: '15%', padding: '14px 18px', textAlign: 'left', fontSize: '12px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Price</th>
+                            <th style={{ width: '15%', padding: '14px 18px', textAlign: 'left', fontSize: '12px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Stock</th>
+                            <th style={{ width: '15%', padding: '14px 18px', textAlign: 'right', fontSize: '12px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Actions</th>
+                          </tr>
+                        </thead>
                       <tbody>
                         {displayedDishes.map((dish, idx) => {
                           const dishKey = dish._id || dish.id || `dish_${idx}`;
@@ -5330,38 +5444,10 @@ export default function DashboardPage({ onShowToast }) {
                                       {dish.desc}
                                     </div>
                                   )}
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
-                                    <span className="crm-prod-variants-badge">
-                                      View {dish.variantsCount || 1} variants
+                                  <div style={{ marginTop: '4px' }}>
+                                    <span className="crm-prod-variants-badge" style={{ fontSize: '11px', color: '#64748B', background: '#F1F5F9', padding: '2px 8px', borderRadius: '8px', fontWeight: 600 }}>
+                                      View {dish.variantsCount || (dish.sizes ? dish.sizes.length : 1)} variants
                                     </span>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setEditProductForm({
-                                          ...dish,
-                                          sizes: dish.sizes && dish.sizes.length > 0 ? dish.sizes : [{ name: 'Regular', price: dish.price, qty: 100 }],
-                                          images: dish.images && dish.images.length > 0 ? dish.images : (dishImgUrl ? [dishImgUrl] : [])
-                                        });
-                                        setIsEditProductModalOpen(true);
-                                      }}
-                                      style={{
-                                        padding: '3px 10px',
-                                        borderRadius: '12px',
-                                        border: '1.5px solid #3B82F6',
-                                        background: '#EFF6FF',
-                                        color: '#1D4ED8',
-                                        fontSize: '11.5px',
-                                        fontWeight: 800,
-                                        cursor: 'pointer',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '4px'
-                                      }}
-                                      title="Edit Product Details & Images"
-                                    >
-                                      <Edit3 size={13} color="#1D4ED8" /> Edit Product
-                                    </button>
                                   </div>
                                 </div>
                               </div>
@@ -5461,8 +5547,9 @@ export default function DashboardPage({ onShowToast }) {
                         })}
                       </tbody>
                     </table>
+                  </div>
 
-                    {/* Catalog Table Pagination Controls */}
+                  {/* Catalog Table Pagination Controls */}
                     {totalItems > 0 && (
                       <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#F8FAFC', padding: '12px 18px', borderRadius: '12px', border: '1.5px solid #E2E8F0', flexWrap: 'wrap', gap: '10px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -8259,6 +8346,80 @@ export default function DashboardPage({ onShowToast }) {
                   />
                 </div>
 
+                {/* 1.5 Quick Payment Mode Selection Buttons */}
+                <div style={{ paddingTop: '10px', borderTop: '1px solid #E2E8F0' }}>
+                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '8px' }}>
+                    Active Payment Method Visibility (Customer ko konse buttons dikhane hain?)
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+                    {/* Option: Dono (Online + Cash) */}
+                    <button
+                      type="button"
+                      onClick={() => savePaymentConfig({ ...paymentConfig, upiEnabled: true, cashEnabled: true })}
+                      style={{
+                        padding: '12px 14px',
+                        borderRadius: '12px',
+                        border: (paymentConfig.upiEnabled !== false && paymentConfig.cashEnabled !== false) ? '2px solid #FF5E14' : '1.5px solid #CBD5E1',
+                        background: (paymentConfig.upiEnabled !== false && paymentConfig.cashEnabled !== false) ? '#FFF0EB' : '#FFFFFF',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        boxShadow: (paymentConfig.upiEnabled !== false && paymentConfig.cashEnabled !== false) ? '0 2px 8px rgba(255, 94, 20, 0.15)' : 'none',
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, fontSize: '13px', color: (paymentConfig.upiEnabled !== false && paymentConfig.cashEnabled !== false) ? '#FF5E14' : '#1E293B', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                         Dono (Online UPI &amp; Cash)
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#64748B', marginTop: '3px' }}>
+                        Diners can choose either Online UPI or Cash at counter
+                      </div>
+                    </button>
+
+                    {/* Option: Sirf Online UPI */}
+                    <button
+                      type="button"
+                      onClick={() => savePaymentConfig({ ...paymentConfig, upiEnabled: true, cashEnabled: false })}
+                      style={{
+                        padding: '12px 14px',
+                        borderRadius: '12px',
+                        border: (paymentConfig.upiEnabled !== false && paymentConfig.cashEnabled === false) ? '2px solid #2563EB' : '1.5px solid #CBD5E1',
+                        background: (paymentConfig.upiEnabled !== false && paymentConfig.cashEnabled === false) ? '#EFF6FF' : '#FFFFFF',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        boxShadow: (paymentConfig.upiEnabled !== false && paymentConfig.cashEnabled === false) ? '0 2px 8px rgba(37, 99, 235, 0.15)' : 'none',
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, fontSize: '13px', color: (paymentConfig.upiEnabled !== false && paymentConfig.cashEnabled === false) ? '#2563EB' : '#1E293B', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        ️ Sirf Online UPI
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#64748B', marginTop: '3px' }}>
+                        Show only Online UPI / Scan &amp; Pay option to diners
+                      </div>
+                    </button>
+
+                    {/* Option: Sirf Cash / Pay Counter */}
+                    <button
+                      type="button"
+                      onClick={() => savePaymentConfig({ ...paymentConfig, upiEnabled: false, cashEnabled: true })}
+                      style={{
+                        padding: '12px 14px',
+                        borderRadius: '12px',
+                        border: (paymentConfig.upiEnabled === false && paymentConfig.cashEnabled !== false) ? '2px solid #059669' : '1.5px solid #CBD5E1',
+                        background: (paymentConfig.upiEnabled === false && paymentConfig.cashEnabled !== false) ? '#ECFDF5' : '#FFFFFF',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        boxShadow: (paymentConfig.upiEnabled === false && paymentConfig.cashEnabled !== false) ? '0 2px 8px rgba(5, 150, 105, 0.15)' : 'none',
+                      }}
+                    >
+                      <div style={{ fontWeight: 800, fontSize: '13px', color: (paymentConfig.upiEnabled === false && paymentConfig.cashEnabled !== false) ? '#059669' : '#1E293B', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                         Sirf Cash / Pay Counter
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#64748B', marginTop: '3px' }}>
+                        Show only Cash at Counter option to diners
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px', paddingTop: '12px', borderTop: '1px solid #E2E8F0' }}>
                   {/* 2. Option 1: Online UPI */}
                   <div style={{ background: '#FFFFFF', padding: '14px', borderRadius: '10px', border: '1px solid #CBD5E1' }}>
@@ -8342,50 +8503,7 @@ export default function DashboardPage({ onShowToast }) {
               </button>
             </div>
 
-            {/* System API Infrastructure & Multi-Backup Server Failover Section */}
-            <div className="crm-control-section-card" style={{ marginTop: '20px' }}>
-              <div className="crm-control-card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <ShieldCheck size={20} color="#10B981" /> System API Infrastructure &amp; Failover Protection
-                </div>
-                <span style={{ fontSize: '12px', fontWeight: 900, backgroundColor: '#DCFCE7', color: '#15803D', border: '1px solid #86EFAC', padding: '4px 12px', borderRadius: '20px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  <CheckCircle2 size={14} color="#16A34A" /> TOTAL AVAILABLE APIS: {TOTAL_AVAILABLE_APIS_COUNT} (1 Primary + {TOTAL_AVAILABLE_APIS_COUNT - 1} Backup Cloud Servers)
-                </span>
-              </div>
 
-              <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '16px' }}>
-                All API endpoints are stored in one centralized location. FoodyPay automatically monitors connection health with high-speed failover across all {TOTAL_AVAILABLE_APIS_COUNT} configured endpoints.
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
-                {ALL_CONFIGURED_APIS.map((api, idx) => (
-                  <div
-                    key={api.id}
-                    style={{
-                      background: api.isPrimary ? '#F0FDF4' : '#F8FAFC',
-                      border: api.isPrimary ? '1.5px solid #86EFAC' : '1px solid #E2E8F0',
-                      borderRadius: '12px',
-                      padding: '14px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '6px',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: '13px', fontWeight: 800, color: api.isPrimary ? '#15803D' : '#334155' }}>
-                        {api.type}: {api.name}
-                      </span>
-                      <span style={{ fontSize: '10.5px', fontWeight: 900, textTransform: 'uppercase', backgroundColor: api.isPrimary ? '#DCFCE7' : '#E2E8F0', color: api.isPrimary ? '#16A34A' : '#475569', padding: '2px 8px', borderRadius: '6px' }}>
-                        {api.isPrimary ? 'ONLINE (PRIMARY)' : `BACKUP ${idx}`}
-                      </span>
-                    </div>
-                    <code style={{ fontSize: '12px', color: '#0F172A', backgroundColor: '#FFFFFF', padding: '6px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', wordBreak: 'break-all' }}>
-                      {api.url}
-                    </code>
-                  </div>
-                ))}
-              </div>
-            </div>
           </div>
         )}
 

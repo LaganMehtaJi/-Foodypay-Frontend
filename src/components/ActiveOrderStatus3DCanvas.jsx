@@ -282,10 +282,10 @@ export default function ActiveOrderStatus3DCard({ order, onRatingClick, onDismis
 
     // 4. Animation Loop
     let animationFrameId;
-    let clock = new THREE.Clock();
+    const startTime = performance.now();
 
     const animate = () => {
-      const elapsedTime = clock.getElapsedTime();
+      const elapsedTime = (performance.now() - startTime) / 1000;
 
       // Rotation & Float
       stageGroup.rotation.y = elapsedTime * 0.45;
@@ -322,10 +322,13 @@ export default function ActiveOrderStatus3DCard({ order, onRatingClick, onDismis
     return () => {
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
-      if (container.contains(renderer.domElement)) {
+      if (container && renderer.domElement && container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
-      renderer.dispose();
+      try {
+        renderer.dispose();
+        renderer.forceContextLoss();
+      } catch (e) {}
     };
   }, [stageInfo]);
 

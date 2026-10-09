@@ -1,41 +1,27 @@
-export const PRIMARY_API_URL = 'http://3.108.59.216/api';
-export const BACKUP_CLOUD_API_URL_1 = 'https://server-foodypay.onrender.com/api';
-export const BACKUP_CLOUD_API_URL_2 = 'https://server-foodypay-simk.onrender.com/api';
-export const BACKUP_CLOUD_API_URL_3 = 'https://server-foodypay-1.onrender.com/api';
-export const BACKUP_CLOUD_API_URL_4 = 'https://server-foodypay-xn16.onrender.com/api';
-export const BACKUP_CLOUD_API_URL_5 = 'https://server-foodypay-yi21.onrender.com/api';
-export const BACKUP_CLOUD_API_URL = BACKUP_CLOUD_API_URL_1; // Alias for backward compatibility
+export const PRIMARY_API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+export const BACKUP_CLOUD_API_URL_1 = PRIMARY_API_URL;
+export const BACKUP_CLOUD_API_URL_2 = PRIMARY_API_URL;
+export const BACKUP_CLOUD_API_URL_3 = PRIMARY_API_URL;
+export const BACKUP_CLOUD_API_URL_4 = PRIMARY_API_URL;
+export const BACKUP_CLOUD_API_URL_5 = PRIMARY_API_URL;
+export const BACKUP_CLOUD_API_URL = PRIMARY_API_URL;
 export const REMOTE_CLOUD_API_URL = PRIMARY_API_URL;
 
 /**
- * All Centralized Configured Server API Endpoints (Primary + 5 Cloud Backups)
+ * Single Configured Server API Endpoint
  */
 export const ALL_CONFIGURED_APIS = [
-  { id: 'primary', name: 'Primary AWS EC2 API Server', url: PRIMARY_API_URL, type: 'Primary', isPrimary: true },
-  { id: 'backup_1', name: 'Backup Render Cloud Server 1', url: BACKUP_CLOUD_API_URL_1, type: 'Backup 1', isPrimary: false },
-  { id: 'backup_2', name: 'Backup Render Cloud Server 2', url: BACKUP_CLOUD_API_URL_2, type: 'Backup 2', isPrimary: false },
-  { id: 'backup_3', name: 'Backup Render Cloud Server 3', url: BACKUP_CLOUD_API_URL_3, type: 'Backup 3', isPrimary: false },
-  { id: 'backup_4', name: 'Backup Render Cloud Server 4', url: BACKUP_CLOUD_API_URL_4, type: 'Backup 4', isPrimary: false },
-  { id: 'backup_5', name: 'Backup Render Cloud Server 5', url: BACKUP_CLOUD_API_URL_5, type: 'Backup 5', isPrimary: false },
+  { id: 'primary', name: 'Primary Node API Server', url: PRIMARY_API_URL, type: 'Primary', isPrimary: true },
 ];
 
 export const TOTAL_AVAILABLE_APIS_COUNT = ALL_CONFIGURED_APIS.length;
 
 /**
- * Dynamic API Base URL resolution for Local, LAN (Mobile on Wi-Fi), and Production
+ * Central API Base URL Resolution
  */
 export const getApiBaseUrl = () => {
   if (import.meta.env.VITE_API_BASE_URL) {
     return import.meta.env.VITE_API_BASE_URL;
-  }
-  if (typeof window !== 'undefined') {
-    const { hostname, protocol } = window.location;
-    // Localhost or Local Private LAN IP only (e.g. 192.168.x.x, 10.x.x.x)
-    const isPrivateLan = hostname === 'localhost' || hostname === '127.0.0.1' || /^192\.168\./.test(hostname) || /^10\./.test(hostname);
-    if (isPrivateLan) {
-      return `${protocol}//${hostname}:3000/api`;
-    }
-    return PRIMARY_API_URL;
   }
   return PRIMARY_API_URL;
 };
@@ -58,151 +44,12 @@ export async function parseJsonResponse(res) {
 }
 
 /**
- * High-speed safe fetch helper with automatic 5-tier failover:
- * Primary EC2 -> Backup Render Cloud 1 -> Backup Render Cloud 2 -> Backup Render Cloud 3 -> Backup Render Cloud 4
+ * Unified Safe Fetch Helper (direct fast fetch to configured API_BASE_URL)
  */
 export async function safeFetch(path, options = {}) {
   const cleanPath = path.startsWith('/api') ? path.replace('/api', '') : (path.startsWith('/') ? path : `/${path}`);
-  const primaryUrl = `${API_BASE_URL}${cleanPath}`;
-
-  const isLocalHost = typeof window !== 'undefined' && (
-    window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1' ||
-    /^192\.168\./.test(window.location.hostname) ||
-    /^10\./.test(window.location.hostname)
-  );
-
-  // 1. If on localhost/LAN, try local server port first for instant response!
-  if (isLocalHost) {
-    const ports = [3000, 5001, 3001];
-    for (const port of ports) {
-      try {
-        const testUrl = `http://${window.location.hostname}:${port}/api${cleanPath}`;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 1800);
-        const res = await fetch(testUrl, { ...options, signal: options.signal || controller.signal });
-        clearTimeout(timeoutId);
-        const clone = res.clone();
-        const text = await clone.text();
-        if (res.ok && text && !text.trim().startsWith('<')) {
-          return res;
-        }
-      } catch (e) {}
-    }
-  }
-
-  // 2. Try Primary API Server with AbortController timeout so UI never hangs
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
-    const res = await fetch(primaryUrl, { ...options, signal: options.signal || controller.signal });
-    clearTimeout(timeoutId);
-    const contentType = res.headers.get('content-type') || '';
-    if (res.ok || contentType.includes('application/json')) {
-      const clone = res.clone();
-      const text = await clone.text();
-      if (text && !text.trim().startsWith('<')) {
-        return res;
-      }
-    }
-  } catch (err) {
-    console.warn(`[PRIMARY API TIMEOUT/FAILED] ${primaryUrl}:`, err.message);
-  }
-
-  // 3. Fallback to Backup Cloud Server 1 (server-foodypay.onrender.com)
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
-    const backup1Url = `${BACKUP_CLOUD_API_URL_1}${cleanPath}`;
-    const res = await fetch(backup1Url, { ...options, signal: options.signal || controller.signal });
-    clearTimeout(timeoutId);
-    const contentType = res.headers.get('content-type') || '';
-    if (res.ok || contentType.includes('application/json')) {
-      const clone = res.clone();
-      const text = await clone.text();
-      if (text && !text.trim().startsWith('<')) {
-        return res;
-      }
-    }
-  } catch (cloudErr1) {
-    console.warn(`[BACKUP API 1 TIMEOUT/FAILED] ${BACKUP_CLOUD_API_URL_1}:`, cloudErr1.message);
-  }
-
-  // 4. Fallback to Backup Cloud Server 2 (server-foodypay-simk.onrender.com)
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
-    const backup2Url = `${BACKUP_CLOUD_API_URL_2}${cleanPath}`;
-    const res = await fetch(backup2Url, { ...options, signal: options.signal || controller.signal });
-    clearTimeout(timeoutId);
-    const contentType = res.headers.get('content-type') || '';
-    if (res.ok || contentType.includes('application/json')) {
-      const clone = res.clone();
-      const text = await clone.text();
-      if (text && !text.trim().startsWith('<')) {
-        return res;
-      }
-    }
-  } catch (cloudErr2) {
-    console.warn(`[BACKUP API 2 TIMEOUT/FAILED] ${BACKUP_CLOUD_API_URL_2}:`, cloudErr2.message);
-  }
-
-  // 5. Fallback to Backup Cloud Server 3 (server-foodypay-1.onrender.com)
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
-    const backup3Url = `${BACKUP_CLOUD_API_URL_3}${cleanPath}`;
-    const res = await fetch(backup3Url, { ...options, signal: options.signal || controller.signal });
-    clearTimeout(timeoutId);
-    const contentType = res.headers.get('content-type') || '';
-    if (res.ok || contentType.includes('application/json')) {
-      const clone = res.clone();
-      const text = await clone.text();
-      if (text && !text.trim().startsWith('<')) {
-        return res;
-      }
-    }
-  } catch (cloudErr3) {
-    console.warn(`[BACKUP API 3 TIMEOUT/FAILED] ${BACKUP_CLOUD_API_URL_3}:`, cloudErr3.message);
-  }
-
-  // 6. Fallback to Backup Cloud Server 4 (server-foodypay-xn16.onrender.com)
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
-    const backup4Url = `${BACKUP_CLOUD_API_URL_4}${cleanPath}`;
-    const res = await fetch(backup4Url, { ...options, signal: options.signal || controller.signal });
-    clearTimeout(timeoutId);
-    const contentType = res.headers.get('content-type') || '';
-    if (res.ok || contentType.includes('application/json')) {
-      const clone = res.clone();
-      const text = await clone.text();
-      if (text && !text.trim().startsWith('<')) {
-        return res;
-      }
-    }
-  } catch (cloudErr4) {
-    console.warn(`[BACKUP API 4 TIMEOUT/FAILED] ${BACKUP_CLOUD_API_URL_4}:`, cloudErr4.message);
-  }
-
-  // 7. Fallback to Backup Cloud Server 5 (server-foodypay-yi21.onrender.com)
-  try {
-    const backup5Url = `${BACKUP_CLOUD_API_URL_5}${cleanPath}`;
-    const res = await fetch(backup5Url, options);
-    const contentType = res.headers.get('content-type') || '';
-    if (res.ok || contentType.includes('application/json')) {
-      const clone = res.clone();
-      const text = await clone.text();
-      if (text && !text.trim().startsWith('<')) {
-        return res;
-      }
-    }
-    return res;
-  } catch (cloudErr5) {
-    console.warn(`[BACKUP API 5 TIMEOUT/FAILED] ${BACKUP_CLOUD_API_URL_5}:`, cloudErr5.message);
-  }
-
-  return fetch(primaryUrl, options);
+  const url = `${API_BASE_URL}${cleanPath}`;
+  return fetch(url, options);
 }
 
 /**
@@ -393,12 +240,21 @@ export async function getDashboardApi(token) {
    ========================================================================== */
 
 export async function fetchOrdersApi(token) {
-  const response = await fetch(`${API_BASE_URL}/orders`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.message || 'Failed to fetch orders');
-  return data.data;
+  try {
+    const response = await safeFetch('/orders', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await parseJsonResponse(response);
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch orders');
+    return data.data;
+  } catch (err) {
+    const response = await fetch(`${API_BASE_URL}/orders`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch orders');
+    return data.data;
+  }
 }
 
 export async function createOrderApi(token, orderData) {
@@ -507,12 +363,21 @@ export async function markKitchenSeenApi(token, orderId) {
 }
 
 export async function fetchOrderStatsApi(token) {
-  const response = await fetch(`${API_BASE_URL}/orders/stats`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.message || 'Failed to fetch order stats');
-  return data.data;
+  try {
+    const response = await safeFetch('/orders/stats', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await parseJsonResponse(response);
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch order stats');
+    return data.data;
+  } catch (err) {
+    const response = await fetch(`${API_BASE_URL}/orders/stats`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch order stats');
+    return data.data;
+  }
 }
 
 export async function fetchDishesApi(token) {
@@ -544,10 +409,15 @@ export async function fetchPublicOrdersApi(merchantId, foodypayId) {
 }
 
 export async function fetchPublicMerchantApi(identifier) {
-  const response = await fetch(`${API_BASE_URL}/auth/merchant/${encodeURIComponent(identifier)}`);
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.message || 'Failed to fetch merchant details');
-  return data.data;
+  if (!identifier || identifier === 'undefined') return null;
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/merchant/${encodeURIComponent(identifier)}`);
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.data || null;
+  } catch (err) {
+    return null;
+  }
 }
 
 
@@ -710,16 +580,11 @@ export async function fetchPublicCouponsApi(phone, email, merchantId) {
 
     const response = await fetch(`${API_BASE_URL}/coupons/public?${queryParams.toString()}`, { headers });
     if (!response.ok) {
-      if (response.status === 401 || response.status === 404) {
-        return [];
-      }
-      const data = await response.json().catch(() => ({}));
-      throw new Error(data.message || 'Failed to fetch public coupons');
+      return [];
     }
     const data = await response.json();
     return data.data || [];
   } catch (err) {
-    console.warn('Public coupons fetch fallback:', err.message);
     return [];
   }
 }

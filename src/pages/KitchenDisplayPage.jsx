@@ -17,9 +17,13 @@ import {
   ShoppingBag,
   Check,
   Play,
-  RotateCcw
+  RotateCcw,
+  Sparkles,
+  ShieldCheck,
+  KeyRound,
+  Lock
 } from 'lucide-react';
-import { playFoodPreparing, playFoodReady, startKitchenAlarm, stopKitchenAlarm } from '../utils/soundEffects';
+import { playFoodPreparing, playFoodReady, startKitchenAlarm, stopKitchenAlarm, sortOrdersNewestFirst } from '../utils/soundEffects';
 import { fetchOrdersApi, fetchPublicOrdersApi, updateOrderStatusApi, markKitchenSeenApi } from '../utils/api';
 import { validateKitchenLogin, getPartnerCredentials } from '../utils/partnerAuth';
 
@@ -43,6 +47,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
   const [currentTime, setCurrentTime] = useState('');
   const [isCounterOrderModalOpen, setIsCounterOrderModalOpen] = useState(false);
   const [actionLoadingSet, setActionLoadingSet] = useState(new Set());
+  const [showAdminSyncBanner, setShowAdminSyncBanner] = useState(false);
 
   // Kitchen KDS Login Authentication State
   const [isKitchenAuth, setIsKitchenAuth] = useState(() => {
@@ -160,7 +165,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
         const fetched = await fetchOrdersApi(token);
         const fetchedList = fetched.orders || (Array.isArray(fetched) ? fetched : []);
         if (Array.isArray(fetchedList) && fetchedList.length > 0) {
-          setOrders(fetchedList);
+          setOrders(sortOrdersNewestFirst(fetchedList));
           return;
         }
       } catch (e) {}
@@ -169,7 +174,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
     try {
       const fetchedPublic = await fetchPublicOrdersApi(merchantId, effectiveMerchantId);
       if (Array.isArray(fetchedPublic) && fetchedPublic.length > 0) {
-        setOrders(fetchedPublic);
+        setOrders(sortOrdersNewestFirst(fetchedPublic));
         return;
       }
     } catch (e) {}
@@ -178,7 +183,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
     try {
       const saved = localStorage.getItem('foodypay_crm_orders_v3');
       if (saved) {
-        setOrders(JSON.parse(saved));
+        setOrders(sortOrdersNewestFirst(JSON.parse(saved)));
       } else {
         setOrders([]);
       }
@@ -197,11 +202,22 @@ export default function KitchenDisplayPage({ onShowToast }) {
       }
     };
 
+    const handleAdminSync = () => {
+      setShowAdminSyncBanner(true);
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+    };
+
     let bc = null;
     try {
       bc = new BroadcastChannel('foodypay_live_orders_channel');
       bc.onmessage = (msg) => {
         if (msg && msg.data) {
+          if (msg.data.type === 'ADMIN_SETTINGS_UPDATED') {
+            handleAdminSync();
+            return;
+          }
           loadOrders();
         }
       };
@@ -209,12 +225,14 @@ export default function KitchenDisplayPage({ onShowToast }) {
 
     window.addEventListener('storage', handleStorage);
     window.addEventListener('foodypay_order_created', loadOrders);
+    window.addEventListener('foodypay_admin_settings_updated', handleAdminSync);
 
     return () => {
       clearInterval(pollInterval);
       if (bc) bc.close();
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('foodypay_order_created', loadOrders);
+      window.removeEventListener('foodypay_admin_settings_updated', handleAdminSync);
     };
   }, []);
 
@@ -400,133 +418,228 @@ export default function KitchenDisplayPage({ onShowToast }) {
     if (onShowToast) onShowToast(`Created Counter Order ${newId}!`);
   };
 
-  // Active Kitchen Queue Filters:
-  // Active queue: sentToKitchen === true or status is active ('new' | 'preparing' | 'ready')
-  // Completed history: status === 'completed' or status === 'cancelled'
-  const activeOrders = (orders || []).filter((o) => o && (o.sentToKitchen || o.status === 'preparing' || o.status === 'new' || o.status === 'ready') && o.status !== 'completed' && o.status !== 'cancelled');
-  const completedOrders = (orders || []).filter((o) => o && (o.status === 'completed' || o.status === 'cancelled'));
+  const activeOrders = sortOrdersNewestFirst(
+    (orders || []).filter((o) => o && (o.sentToKitchen || o.status === 'preparing' || o.status === 'ready') && o.status !== 'completed' && o.status !== 'cancelled')
+  );
+  const completedOrders = sortOrdersNewestFirst(
+    (orders || []).filter((o) => o && (o.status === 'completed' || o.status === 'cancelled'))
+  );
 
-  const displayedOrders =
+  const displayedOrders = sortOrdersNewestFirst(
     kitchenTabFilter === 'active'
       ? activeOrders
       : kitchenTabFilter === 'completed'
       ? completedOrders
-      : (orders || []).filter((o) => o && (o.sentToKitchen || o.status === 'preparing' || o.status === 'ready' || o.status === 'completed'));
+      : (orders || []).filter((o) => o && (o.sentToKitchen || o.status === 'preparing' || o.status === 'ready' || o.status === 'completed'))
+  );
 
   if (!isKitchenAuth) {
     const creds = getPartnerCredentials();
     return (
-      <div style={{
-        minHeight: '100vh',
-        backgroundColor: '#0F172A',
-        color: '#F8FAFC',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px',
-        fontFamily: 'system-ui, -apple-system, sans-serif'
-      }}>
-        <div style={{
-          backgroundColor: '#1E293B',
-          padding: '36px 32px',
-          borderRadius: '24px',
-          border: '1.5px solid #334155',
-          maxWidth: '420px',
-          width: '100%',
-          boxShadow: '0 20px 40px rgba(0,0,0,0.5)'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-            <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: '#FF5E14', color: '#FFF', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(255,94,20,0.4)' }}>
-              <ChefHat size={28} />
-            </div>
+      <div style={{ minHeight: '100vh', backgroundColor: '#F8FAFC', display: 'flex', flexDirection: 'column', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+        
+        {/* TOP HEADER MATCHING LOGIN PAGE */}
+        <header className="auth-header">
+          <Link to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <img src="/Logo.png" alt="FoodyPay Logo" style={{ height: '34px', objectFit: 'contain' }} />
             <div>
-              <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 900, color: '#FFF' }}>Kitchen KDS Staff Login</h2>
-              <span style={{ fontSize: '12px', color: '#94A3B8' }}>{storeName}</span>
+              <span style={{ fontSize: '17px', fontWeight: 900, color: '#0F172A', letterSpacing: '-0.5px' }}>FoodyPay</span>
+              <span style={{ fontSize: '10.5px', color: '#FF5E14', fontWeight: 800, display: 'block', marginTop: '-3px' }}>Always With You</span>
             </div>
-          </div>
+          </Link>
 
-          <p style={{ fontSize: '13px', color: '#CBD5E1', marginBottom: '20px', lineHeight: '1.4' }}>
-            Store ID <b>{effectiveMerchantId}</b> is pre-filled. Enter Kitchen Password (e.g. <b>SnackRack400</b>) to access live kitchen orders.
-          </p>
-
-          {kError && (
-            <div style={{ background: '#451A1A', border: '1px solid #7F1D1D', color: '#FCA5A5', padding: '10px 14px', borderRadius: '10px', fontSize: '12.5px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <AlertCircle size={16} color="#EF4444" />
-              <span>{kError}</span>
-            </div>
-          )}
-
-          <form onSubmit={handleKitchenLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#E2E8F0', marginBottom: '4px' }}>
-                Store FoodyPay ID / Kitchen ID
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. FP-348330"
-                value={kInput}
-                onChange={(e) => setKInput(e.target.value)}
-                style={{ width: '100%', padding: '10px 12px', background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', color: '#60A5FA', fontWeight: 700, fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
-              />
-            </div>
-
-            <div>
-              <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#E2E8F0', marginBottom: '4px' }}>
-                Kitchen Password
-              </label>
-              <input
-                type="password"
-                required
-                autoFocus
-                placeholder="Enter password (e.g. SnackRack400)"
-                value={kPass}
-                onChange={(e) => setKPass(e.target.value)}
-                style={{ width: '100%', padding: '10px 12px', background: '#0F172A', border: '1px solid #334155', borderRadius: '10px', color: '#FFF', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="active-scale"
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span className="auth-header-subtext">Store Manager?</span>
+            <Link
+              to="/login"
               style={{
-                marginTop: '6px',
-                padding: '12px',
-                borderRadius: '12px',
-                background: 'linear-gradient(135deg, #FF5E14 0%, #D97706 100%)',
-                color: '#FFF',
-                fontWeight: 900,
-                fontSize: '14.5px',
-                border: 'none',
-                cursor: 'pointer',
-                boxShadow: '0 6px 16px rgba(255,94,20,0.3)'
+                padding: '6px 14px',
+                borderRadius: '8px',
+                backgroundColor: '#FFF0EB',
+                color: '#FF5E14',
+                border: '1.5px solid #FFDCD0',
+                fontWeight: 800,
+                fontSize: '12px',
+                textDecoration: 'none',
+                whiteSpace: 'nowrap',
               }}
             >
-              Enter Kitchen Display System
-            </button>
-          </form>
-
-          <div style={{ marginTop: '20px', background: '#0F172A', padding: '10px 12px', borderRadius: '10px', border: '1px dashed #334155', fontSize: '11.5px', color: '#94A3B8', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div><b>Store Kitchen Pass:</b> <code style={{ color: '#F59E0B' }}>SnackRack400</code></div>
-            <button
-              type="button"
-              onClick={() => {
-                setKInput(effectiveMerchantId || 'FP-348330');
-                setKPass('SnackRack400');
-              }}
-              style={{ background: 'none', border: 'none', color: '#60A5FA', fontSize: '11px', fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}
-            >
-              Auto-fill Password
-            </button>
-          </div>
-
-          <div style={{ marginTop: '16px', textAlign: 'center' }}>
-            <Link to="/login" style={{ fontSize: '12px', color: '#94A3B8', textDecoration: 'none' }}>
-              Back to Store Dashboard Login ↗
+              Dashboard Login ↗
             </Link>
           </div>
-        </div>
+        </header>
+
+        {/* MAIN CONTENT SPLIT CARD MATCHING LOGIN PAGE */}
+        <main className="auth-main-container">
+          <div className="auth-card-grid">
+            {/* LEFT BRANDING PANEL */}
+            <div className="auth-left-panel">
+              <div>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(255, 94, 20, 0.15)', color: '#FF5E14', padding: '4px 12px', borderRadius: '20px', fontSize: '11.5px', fontWeight: 800, border: '1px solid rgba(255, 94, 20, 0.3)', marginBottom: '16px' }}>
+                  <Sparkles size={14} />
+                  <span>Smart Kitchen Operating System (KDS)</span>
+                </div>
+
+                <h2 style={{ fontSize: '22px', fontWeight: 900, lineHeight: 1.25, margin: '0 0 12px', letterSpacing: '-0.3px', color: '#FFFFFF' }}>
+                  Kitchen Display &amp; Chef Station Controller
+                </h2>
+
+                <p style={{ fontSize: '13px', color: '#94A3B8', lineHeight: 1.5, margin: '0 0 20px' }}>
+                  Streamline live customer QR table orders, kitchen ticket alarms, dish preparation timers, and counter POS dispatching.
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {[
+                    'Real-Time Order Sync from POS & Table QR',
+                    'Continuous Sound Alarm for Incoming Tickets',
+                    'Item-Level Preparation & Progress Steppers',
+                    'Instant Counter POS Quick Ticket Entry',
+                    'Multi-Device Kitchen Display Synchronization',
+                  ].map((feature, idx) => (
+                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', fontWeight: 700, color: '#E2E8F0' }}>
+                      <CheckCircle2 size={16} color="#FF5E14" />
+                      <span>{feature}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ marginTop: '20px', paddingTop: '14px', borderTop: '1px solid #334155', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <ShieldCheck size={24} color="#10B981" />
+                <div>
+                  <div style={{ fontSize: '12px', fontWeight: 800, color: '#F8FAFC' }}>Encrypted Kitchen Pass Authentication</div>
+                  <div style={{ fontSize: '11px', color: '#94A3B8' }}>Active Store KDS Station • FoodyPay Cloud</div>
+                </div>
+              </div>
+            </div>
+
+            {/* RIGHT KDS LOGIN FORM */}
+            <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', justifyContent: 'center', backgroundColor: '#FFFFFF' }}>
+              <div style={{ marginBottom: '18px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                  <div style={{ width: '40px', height: '40px', borderRadius: '12px', backgroundColor: '#FFF0EB', border: '1.5px solid #FFDCD0', color: '#FF5E14', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <ChefHat size={24} />
+                  </div>
+                  <div>
+                    <h2 style={{ fontSize: '20px', fontWeight: 900, color: '#0F172A', margin: 0, letterSpacing: '-0.3px' }}>
+                      Kitchen KDS Login
+                    </h2>
+                    <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>{storeName}</span>
+                  </div>
+                </div>
+                <p style={{ fontSize: '12.5px', color: '#64748B', margin: '4px 0 0' }}>
+                  Store ID <b>{effectiveMerchantId}</b> is pre-filled. Enter Kitchen Password (e.g. <b>SnackRack400</b>) to access live tickets.
+                </p>
+              </div>
+
+              {kError && (
+                <div style={{ backgroundColor: '#FEF2F2', border: '1.5px solid #FCA5A5', color: '#991B1B', padding: '12px 16px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 700, marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <AlertCircle size={16} color="#EF4444" />
+                  <div>{kError}</div>
+                </div>
+              )}
+
+              <form onSubmit={handleKitchenLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    Store FoodyPay ID / Kitchen ID
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <KeyRound size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. FP-348330"
+                      value={kInput}
+                      onChange={(e) => setKInput(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px 10px 38px',
+                        borderRadius: '10px',
+                        border: '1.5px solid #CBD5E1',
+                        backgroundColor: '#F8FAFC',
+                        color: '#0F172A',
+                        fontWeight: 700,
+                        fontSize: '13.5px',
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    Kitchen Access Password
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <Lock size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                    <input
+                      type="password"
+                      required
+                      autoFocus
+                      placeholder="Enter password (e.g. SnackRack400)"
+                      value={kPass}
+                      onChange={(e) => setKPass(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px 10px 38px',
+                        borderRadius: '10px',
+                        border: '1.5px solid #CBD5E1',
+                        backgroundColor: '#FFFFFF',
+                        color: '#0F172A',
+                        fontSize: '13.5px',
+                        fontWeight: 600,
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  style={{
+                    marginTop: '4px',
+                    width: '100%',
+                    padding: '12px',
+                    borderRadius: '12px',
+                    background: 'linear-gradient(135deg, #FF6B2B 0%, #E84E05 100%)',
+                    border: '2px solid #C73E00',
+                    color: '#FFFFFF',
+                    fontWeight: 900,
+                    fontSize: '14px',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 0 #9E3100, 0 6px 16px rgba(232, 78, 5, 0.28)',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  Enter Kitchen Display System →
+                </button>
+              </form>
+
+              <div style={{ marginTop: '18px', backgroundColor: '#FFF0EB', padding: '10px 14px', borderRadius: '10px', border: '1.5px dashed #FFDCD0', fontSize: '12px', color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div><b>Store Pass:</b> <code style={{ color: '#E84E05', fontWeight: 800 }}>SnackRack400</code></div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setKInput(effectiveMerchantId || 'FP-348330');
+                    setKPass('SnackRack400');
+                  }}
+                  style={{ background: 'none', border: 'none', color: '#FF5E14', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer', textDecoration: 'underline' }}
+                >
+                  Auto-fill Password
+                </button>
+              </div>
+
+              <div style={{ marginTop: '16px', textAlign: 'center' }}>
+                <Link to="/login" style={{ fontSize: '12.5px', fontWeight: 700, color: '#64748B', textDecoration: 'none' }}>
+                  Back to Store Dashboard Login ↗
+                </Link>
+              </div>
+            </div>
+          </div>
+        </main>
       </div>
     );
   }
@@ -535,8 +648,8 @@ export default function KitchenDisplayPage({ onShowToast }) {
     return (
       <div style={{
         minHeight: '100vh',
-        backgroundColor: '#0F172A',
-        color: '#F8FAFC',
+        backgroundColor: '#F8FAFC',
+        color: '#0F172A',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -546,31 +659,32 @@ export default function KitchenDisplayPage({ onShowToast }) {
         fontFamily: 'system-ui, -apple-system, sans-serif'
       }}>
         <div style={{
-          backgroundColor: '#1E293B',
-          padding: '36px 28px',
-          borderRadius: '24px',
-          border: '1.5px solid #334155',
+          backgroundColor: '#FFFFFF',
+          padding: '36px 32px',
+          borderRadius: '20px',
+          border: '1.5px solid #E2E8F0',
           maxWidth: '460px',
           width: '100%',
-          boxShadow: '0 20px 40px rgba(0,0,0,0.5)'
+          boxShadow: '0 12px 35px rgba(15, 23, 42, 0.06)'
         }}>
           <div style={{
             width: '64px',
             height: '64px',
             borderRadius: '50%',
-            backgroundColor: '#FEF2F2',
-            color: '#EF4444',
+            backgroundColor: '#FFF0EB',
+            color: '#FF5E14',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            margin: '0 auto 20px'
+            margin: '0 auto 20px',
+            border: '1.5px solid #FFDCD0'
           }}>
             <ChefHat size={32} />
           </div>
-          <h2 style={{ fontSize: '22px', fontWeight: 800, marginBottom: '10px', color: '#FFF' }}>
+          <h2 style={{ fontSize: '22px', fontWeight: 900, marginBottom: '10px', color: '#0F172A' }}>
             Kitchen Display System is OFF
           </h2>
-          <p style={{ fontSize: '13.5px', color: '#94A3B8', lineHeight: 1.6, marginBottom: '24px' }}>
+          <p style={{ fontSize: '13.5px', color: '#64748B', lineHeight: 1.6, marginBottom: '24px' }}>
             The Kitchen Display System (KDS) for <b>{storeName}</b> is currently turned <b>OFF</b> in Restaurant Settings.
           </p>
           <Link
@@ -584,10 +698,11 @@ export default function KitchenDisplayPage({ onShowToast }) {
               color: '#FFF',
               padding: '12px 24px',
               borderRadius: '12px',
-              fontWeight: 700,
+              fontWeight: 800,
               textDecoration: 'none',
               fontSize: '14px',
-              width: '100%'
+              width: '100%',
+              boxShadow: '0 4px 12px rgba(255,94,20,0.25)'
             }}
           >
             <ArrowLeft size={16} /> Open Dashboard Settings
@@ -598,48 +713,72 @@ export default function KitchenDisplayPage({ onShowToast }) {
   }
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#0F172A', color: '#F8FAFC', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#F8FAFC', color: '#0F172A', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       
+      {/* Superadmin Settings Update Auto-Refresh Popup Banner */}
+      {showAdminSyncBanner && (
+        <div style={{
+          position: 'fixed',
+          top: '16px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 9999,
+          backgroundColor: '#059669',
+          color: '#FFFFFF',
+          padding: '12px 24px',
+          borderRadius: '14px',
+          boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          fontWeight: 700,
+          fontSize: '14px',
+          border: '1px solid #10B981'
+        }}>
+          <RefreshCw className="animate-spin" size={20} />
+          <span>⚡ Superadmin Updated Store Settings & Controls! Auto-refreshing Kitchen KDS in 2s...</span>
+        </div>
+      )}
+
       {/* KDS Top Header */}
-      <header style={{ backgroundColor: '#1E293B', borderBottom: '1px solid #334155', padding: '12px 20px', position: 'sticky', top: 0, zIndex: 50 }}>
+      <header style={{ backgroundColor: '#FFFFFF', borderBottom: '1.5px solid #E2E8F0', padding: '12px 24px', position: 'sticky', top: 0, zIndex: 50, boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <Link to="/dashboard" style={{ color: '#94A3B8', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 500 }}>
+            <Link to="/dashboard" style={{ color: '#64748B', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700 }}>
               <ArrowLeft size={16} /> Exit KDS
             </Link>
-            <div style={{ width: '1px', height: '20px', backgroundColor: '#334155' }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ backgroundColor: '#FF5E14', color: '#FFF', padding: '6px', borderRadius: '8px', display: 'flex' }}>
-                <ChefHat size={20} />
-              </div>
+            <div style={{ width: '1px', height: '20px', backgroundColor: '#E2E8F0' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <img src="/Logo.png" alt="FoodyPay" style={{ height: '28px', objectFit: 'contain' }} />
               <div>
-                <h1 style={{ margin: 0, fontSize: '17px', fontWeight: 600, color: '#F8FAFC' }}>
+                <h1 style={{ margin: 0, fontSize: '17px', fontWeight: 900, color: '#0F172A', letterSpacing: '-0.3px' }}>
                   Kitchen Display System (KDS)
                 </h1>
-                <div style={{ fontSize: '11.5px', color: '#94A3B8', fontWeight: 400 }}>
-                  {storeName} • Merchant: {effectiveMerchantId}
+                <div style={{ fontSize: '11.5px', color: '#64748B', fontWeight: 600 }}>
+                  {storeName} • Merchant: <strong style={{ color: '#FF5E14' }}>{effectiveMerchantId}</strong>
                 </div>
               </div>
             </div>
           </div>
 
           {/* Center Tabs: Active Queue vs History */}
-          <div style={{ display: 'flex', backgroundColor: '#0F172A', padding: '3px', borderRadius: '10px', border: '1px solid #334155' }}>
+          <div style={{ display: 'flex', backgroundColor: '#F1F5F9', padding: '4px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
             <button
               onClick={() => setKitchenTabFilter('active')}
               style={{
                 border: 'none',
                 backgroundColor: kitchenTabFilter === 'active' ? '#FF5E14' : 'transparent',
-                color: kitchenTabFilter === 'active' ? '#FFF' : '#94A3B8',
-                padding: '6px 14px',
+                color: kitchenTabFilter === 'active' ? '#FFF' : '#64748B',
+                padding: '7px 16px',
                 borderRadius: '8px',
                 fontSize: '12.5px',
-                fontWeight: 500,
+                fontWeight: 800,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px'
+                gap: '6px',
+                boxShadow: kitchenTabFilter === 'active' ? '0 2px 8px rgba(255,94,20,0.3)' : 'none'
               }}
             >
                Active Queue ({activeOrders.length})
@@ -649,15 +788,16 @@ export default function KitchenDisplayPage({ onShowToast }) {
               style={{
                 border: 'none',
                 backgroundColor: kitchenTabFilter === 'completed' ? '#10B981' : 'transparent',
-                color: kitchenTabFilter === 'completed' ? '#FFF' : '#94A3B8',
-                padding: '6px 14px',
+                color: kitchenTabFilter === 'completed' ? '#FFF' : '#64748B',
+                padding: '7px 16px',
                 borderRadius: '8px',
                 fontSize: '12.5px',
-                fontWeight: 500,
+                fontWeight: 800,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px'
+                gap: '6px',
+                boxShadow: kitchenTabFilter === 'completed' ? '0 2px 8px rgba(16,185,129,0.3)' : 'none'
               }}
             >
                Ready / Served ({completedOrders.length})
@@ -666,12 +806,12 @@ export default function KitchenDisplayPage({ onShowToast }) {
               onClick={() => setKitchenTabFilter('all')}
               style={{
                 border: 'none',
-                backgroundColor: kitchenTabFilter === 'all' ? '#334155' : 'transparent',
-                color: kitchenTabFilter === 'all' ? '#FFF' : '#94A3B8',
-                padding: '6px 14px',
+                backgroundColor: kitchenTabFilter === 'all' ? '#0F172A' : 'transparent',
+                color: kitchenTabFilter === 'all' ? '#FFF' : '#64748B',
+                padding: '7px 16px',
                 borderRadius: '8px',
                 fontSize: '12.5px',
-                fontWeight: 500,
+                fontWeight: 800,
                 cursor: 'pointer'
               }}
             >
@@ -680,8 +820,8 @@ export default function KitchenDisplayPage({ onShowToast }) {
           </div>
 
           {/* Right Clock & Add Ticket Action */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#CBD5E1', fontSize: '13px', fontWeight: 500 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#0F172A', fontSize: '13.5px', fontWeight: 800, backgroundColor: '#F8FAFC', padding: '6px 12px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
               <Clock size={16} color="#FF5E14" />
               <span>{currentTime}</span>
             </div>
@@ -689,20 +829,21 @@ export default function KitchenDisplayPage({ onShowToast }) {
             <button
               onClick={() => setIsCounterOrderModalOpen(true)}
               style={{
-                backgroundColor: '#334155',
-                color: '#F8FAFC',
-                border: '1px solid #475569',
-                padding: '7px 12px',
-                borderRadius: '8px',
-                fontSize: '12px',
-                fontWeight: 500,
+                backgroundColor: '#FF5E14',
+                color: '#FFFFFF',
+                border: 'none',
+                padding: '8px 16px',
+                borderRadius: '10px',
+                fontSize: '12.5px',
+                fontWeight: 800,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px'
+                gap: '6px',
+                boxShadow: '0 4px 12px rgba(255,94,20,0.3)'
               }}
             >
-              <Plus size={14} /> Add Counter Ticket
+              <Plus size={15} /> Add Counter Ticket
             </button>
           </div>
 
@@ -710,20 +851,22 @@ export default function KitchenDisplayPage({ onShowToast }) {
       </header>
 
       {/* Main KDS Workspace */}
-      <main style={{ padding: '20px' }}>
+      <main style={{ padding: '24px', maxWidth: '1600px', margin: '0 auto' }}>
         
         {displayedOrders.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '80px 20px', color: '#64748B' }}>
-            <ChefHat size={48} color="#475569" style={{ marginBottom: '12px' }} />
-            <h3 style={{ margin: '0 0 6px', fontSize: '18px', fontWeight: 500, color: '#94A3B8' }}>
+          <div style={{ textAlign: 'center', padding: '90px 20px', color: '#64748B', backgroundColor: '#FFFFFF', borderRadius: '20px', border: '1.5px solid #E2E8F0', boxShadow: '0 8px 30px rgba(0,0,0,0.03)' }}>
+            <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: '#FFF0EB', color: '#FF5E14', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+              <ChefHat size={32} />
+            </div>
+            <h3 style={{ margin: '0 0 6px', fontSize: '19px', fontWeight: 900, color: '#0F172A' }}>
               {kitchenTabFilter === 'active' ? 'No Active Kitchen Orders' : 'No Completed Orders in History'}
             </h3>
-            <p style={{ margin: 0, fontSize: '13px', fontWeight: 400 }}>
-              {kitchenTabFilter === 'active' ? 'Orders sent to kitchen will appear here automatically.' : 'Completed orders will be saved here.'}
+            <p style={{ margin: 0, fontSize: '13.5px', fontWeight: 600, color: '#64748B' }}>
+              {kitchenTabFilter === 'active' ? 'Orders sent to kitchen will appear here automatically with bell sound.' : 'Completed orders will be saved here.'}
             </p>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))', gap: '20px' }}>
             {displayedOrders.map((order) => {
               const orderIdStr = String(order._id || order.id || order.orderId);
               const isReady = order.status === 'ready' || order.status === 'completed';
@@ -749,10 +892,10 @@ export default function KitchenDisplayPage({ onShowToast }) {
                 <div
                   key={orderIdStr}
                   style={{
-                    backgroundColor: '#1E293B',
-                    borderRadius: '16px',
-                    border: isReady ? '1px solid #10B981' : isPreparing ? '1.5px solid #FF5E14' : !isKitchenSeen ? '2px solid #2563EB' : '1px solid #334155',
-                    boxShadow: !isKitchenSeen ? '0 0 16px rgba(37,99,235,0.4)' : '0 4px 14px rgba(0,0,0,0.25)',
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: '18px',
+                    border: isReady ? '2px solid #10B981' : isPreparing ? '2px solid #FF5E14' : !isKitchenSeen ? '2px solid #2563EB' : '1.5px solid #E2E8F0',
+                    boxShadow: !isKitchenSeen ? '0 0 20px rgba(37,99,235,0.25)' : '0 8px 25px rgba(15,23,42,0.06)',
                     display: 'flex',
                     flexDirection: 'column',
                     justifyContent: 'space-between',
@@ -761,29 +904,29 @@ export default function KitchenDisplayPage({ onShowToast }) {
                 >
                   {/* Order Card Header */}
                   <div style={{
-                    backgroundColor: isReady ? 'rgba(16,185,129,0.15)' : isPreparing ? 'rgba(255,94,20,0.15)' : !isKitchenSeen ? 'rgba(37,99,235,0.15)' : '#0F172A',
-                    padding: '12px 14px',
-                    borderBottom: '1px solid #334155',
+                    backgroundColor: isReady ? '#ECFDF5' : isPreparing ? '#FFF7ED' : !isKitchenSeen ? '#EFF6FF' : '#F8FAFC',
+                    padding: '14px 16px',
+                    borderBottom: '1.5px solid #E2E8F0',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between'
                   }}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '17px', fontWeight: 600, color: '#F8FAFC' }}>
+                        <span style={{ fontSize: '18px', fontWeight: 900, color: '#0F172A' }}>
                           {order.id || order.orderId}
                         </span>
-                        <span style={{ fontSize: '11px', backgroundColor: '#FFEDD5', color: '#C2410C', fontWeight: 600, padding: '2px 8px', borderRadius: '6px' }}>
+                        <span style={{ fontSize: '11.5px', backgroundColor: '#FFEDD5', color: '#C2410C', fontWeight: 800, padding: '3px 9px', borderRadius: '6px' }}>
                            {order.table || 'Table'}
                         </span>
                         {(order.paymentStatus === 'paid-razorpay' || order.paymentStatus === 'paid-upi' || order.paymentStatus === 'paid-cash' || order.paymentStatus === 'paid' || (order.paymentLabel && order.paymentLabel.toLowerCase().includes('paid')) || order.status === 'completed') && (
-                          <span style={{ fontSize: '10.5px', backgroundColor: '#DCFCE7', color: '#15803D', fontWeight: 800, padding: '2px 8px', borderRadius: '6px', border: '1px solid #86EFAC' }}>
+                          <span style={{ fontSize: '10.5px', backgroundColor: '#DCFCE7', color: '#15803D', fontWeight: 900, padding: '3px 8px', borderRadius: '6px', border: '1px solid #86EFAC' }}>
                              PAID
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px', fontWeight: 400 }}>
-                        Customer: <strong style={{ color: '#E2E8F0', fontWeight: 500 }}>{order.customer || 'Diner'}</strong> • {order.time || 'Today'}
+                      <div style={{ fontSize: '12px', color: '#64748B', marginTop: '3px', fontWeight: 600 }}>
+                        Customer: <strong style={{ color: '#0F172A', fontWeight: 800 }}>{order.customer || 'Diner'}</strong> • {order.time || 'Today'}
                       </div>
                     </div>
 
@@ -793,40 +936,40 @@ export default function KitchenDisplayPage({ onShowToast }) {
                         onClick={() => handleMarkKitchenSeen(orderIdStr)}
                         disabled={isKitchenSeen}
                         style={{
-                          backgroundColor: isKitchenSeen ? '#334155' : '#2563EB',
-                          color: '#FFF',
+                          backgroundColor: isKitchenSeen ? '#E2E8F0' : '#2563EB',
+                          color: isKitchenSeen ? '#64748B' : '#FFF',
                           border: 'none',
-                          padding: '5px 10px',
+                          padding: '6px 10px',
                           borderRadius: '8px',
                           fontSize: '11px',
-                          fontWeight: 700,
+                          fontWeight: 800,
                           cursor: isKitchenSeen ? 'default' : 'pointer',
                           display: 'flex',
                           alignItems: 'center',
                           gap: '4px',
-                          boxShadow: isKitchenSeen ? 'none' : '0 0 10px rgba(37,99,235,0.6)'
+                          boxShadow: isKitchenSeen ? 'none' : '0 2px 8px rgba(37,99,235,0.4)'
                         }}
                         title={isKitchenSeen ? "Bell alarm stopped" : "Stop Kitchen Bell Alarm & Acknowledge Order"}
                       >
                         {isKitchenSeen ? (
                           <>
                             <Check size={13} />
-                            <span>SEEN (BELL STOPPED)</span>
+                            <span>SEEN</span>
                           </>
                         ) : (
                           <>
                             <Bell size={13} style={{ animation: 'foodypay-spin 1.2s ease infinite' }} />
-                            <span>SEEN (STOP BELL)</span>
+                            <span>STOP BELL</span>
                           </>
                         )}
                       </button>
 
                       <span style={{
-                        fontSize: '10.5px',
-                        fontWeight: 600,
-                        padding: '3px 8px',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        padding: '4px 10px',
                         borderRadius: '6px',
-                        backgroundColor: isReady ? '#10B981' : isPreparing ? '#FF5E14' : '#334155',
+                        backgroundColor: isReady ? '#10B981' : isPreparing ? '#FF5E14' : '#64748B',
                         color: '#FFF'
                       }}>
                         {isReady ? ' READY' : isPreparing ? ' COOKING' : '⏳ NEW'}
@@ -835,8 +978,8 @@ export default function KitchenDisplayPage({ onShowToast }) {
                   </div>
 
                   {/* Order Items List with Per-Item Start Cooking Status */}
-                  <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div style={{ fontSize: '11.5px', fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ fontSize: '11.5px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                       Items to Prepare:
                     </div>
 
@@ -849,20 +992,20 @@ export default function KitchenDisplayPage({ onShowToast }) {
                           <div
                             key={itemIdx}
                             style={{
-                              backgroundColor: cookingStatus === 'done' ? 'rgba(16,185,129,0.1)' : cookingStatus === 'cooking' ? 'rgba(255,94,20,0.1)' : '#0F172A',
-                              border: cookingStatus === 'done' ? '1px solid #10B981' : cookingStatus === 'cooking' ? '1px solid #FF5E14' : '1px solid #334155',
-                              borderRadius: '10px',
-                              padding: '8px 10px',
+                              backgroundColor: cookingStatus === 'done' ? '#F0FDF4' : cookingStatus === 'cooking' ? '#FFF7ED' : '#F8FAFC',
+                              border: cookingStatus === 'done' ? '1.5px solid #86EFAC' : cookingStatus === 'cooking' ? '1.5px solid #FDBA74' : '1.5px solid #E2E8F0',
+                              borderRadius: '12px',
+                              padding: '10px 12px',
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'space-between'
                             }}
                           >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontSize: '13.5px', fontWeight: 600, color: '#FF5E14' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <span style={{ fontSize: '14px', fontWeight: 900, color: '#FF5E14' }}>
                                 {item.qty}x
                               </span>
-                              <span style={{ fontSize: '13px', fontWeight: 500, color: cookingStatus === 'done' ? '#94A3B8' : '#F8FAFC', textDecoration: cookingStatus === 'done' ? 'line-through' : 'none' }}>
+                              <span style={{ fontSize: '13.5px', fontWeight: 700, color: cookingStatus === 'done' ? '#94A3B8' : '#0F172A', textDecoration: cookingStatus === 'done' ? 'line-through' : 'none' }}>
                                 {item.name}
                               </span>
                             </div>
@@ -871,12 +1014,12 @@ export default function KitchenDisplayPage({ onShowToast }) {
                               onClick={() => toggleItemCooking(orderIdStr, itemIdx)}
                               style={{
                                 border: 'none',
-                                backgroundColor: cookingStatus === 'done' ? '#10B981' : cookingStatus === 'cooking' ? '#FF5E14' : '#334155',
-                                color: '#FFF',
-                                padding: '4px 10px',
-                                borderRadius: '6px',
-                                fontSize: '11px',
-                                fontWeight: 500,
+                                backgroundColor: cookingStatus === 'done' ? '#10B981' : cookingStatus === 'cooking' ? '#FF5E14' : '#E2E8F0',
+                                color: cookingStatus === 'idle' ? '#334155' : '#FFF',
+                                padding: '5px 12px',
+                                borderRadius: '8px',
+                                fontSize: '11.5px',
+                                fontWeight: 800,
                                 cursor: 'pointer',
                                 display: 'flex',
                                 alignItems: 'center',
@@ -897,16 +1040,16 @@ export default function KitchenDisplayPage({ onShowToast }) {
                     </div>
 
                     {order.note && (
-                      <div style={{ backgroundColor: '#334155', padding: '8px 10px', borderRadius: '8px', fontSize: '11.5px', color: '#FCD34D', fontWeight: 400, marginTop: '4px' }}>
+                      <div style={{ backgroundColor: '#FEF3C7', border: '1px solid #FDE68A', padding: '10px 12px', borderRadius: '10px', fontSize: '12px', color: '#92400E', fontWeight: 700, marginTop: '4px' }}>
                          Note: {order.note}
                       </div>
                     )}
                   </div>
 
                   {/* Order Card Footer Action */}
-                  <div style={{ padding: '12px 14px', borderTop: '1px solid #334155', backgroundColor: '#0F172A', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '11.5px', color: '#94A3B8' }}>
-                      Payment: <strong style={{ color: '#CBD5E1', fontWeight: 500 }}>{order.paymentLabel || 'Cash'}</strong>
+                  <div style={{ padding: '14px 16px', borderTop: '1.5px solid #E2E8F0', backgroundColor: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>
+                      Pay: <strong style={{ color: '#0F172A', fontWeight: 800 }}>{order.paymentLabel || 'Cash'}</strong>
                     </span>
 
                     {order.status === 'new' || (!isPreparing && !isReady && order.status !== 'completed') ? (
@@ -914,18 +1057,19 @@ export default function KitchenDisplayPage({ onShowToast }) {
                         onClick={() => updateOrderStatus(orderIdStr, 'preparing')}
                         disabled={actionLoadingSet.has(orderIdStr)}
                         style={{
-                          backgroundColor: '#FF5E14',
+                          background: 'linear-gradient(135deg, #FF6B2B 0%, #E84E05 100%)',
                           color: '#FFF',
                           border: 'none',
-                          padding: '8px 16px',
-                          borderRadius: '8px',
-                          fontWeight: 700,
-                          fontSize: '12.5px',
+                          padding: '9px 18px',
+                          borderRadius: '10px',
+                          fontWeight: 900,
+                          fontSize: '13px',
                           cursor: actionLoadingSet.has(orderIdStr) ? 'not-allowed' : 'pointer',
                           opacity: actionLoadingSet.has(orderIdStr) ? 0.7 : 1,
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '6px'
+                          gap: '6px',
+                          boxShadow: '0 4px 12px rgba(232,78,5,0.3)'
                         }}
                       >
                         {actionLoadingSet.has(orderIdStr) ? (
@@ -936,7 +1080,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
                         ) : (
                           <>
                             <Flame size={15} />
-                            <span>Accept & Start Cooking</span>
+                            <span>Accept &amp; Start Cooking</span>
                           </>
                         )}
                       </button>
@@ -948,15 +1092,16 @@ export default function KitchenDisplayPage({ onShowToast }) {
                           backgroundColor: '#10B981',
                           color: '#FFF',
                           border: 'none',
-                          padding: '8px 16px',
-                          borderRadius: '8px',
-                          fontWeight: 700,
-                          fontSize: '12.5px',
+                          padding: '9px 18px',
+                          borderRadius: '10px',
+                          fontWeight: 900,
+                          fontSize: '13px',
                           cursor: actionLoadingSet.has(orderIdStr) ? 'not-allowed' : 'pointer',
                           opacity: actionLoadingSet.has(orderIdStr) ? 0.7 : 1,
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '6px'
+                          gap: '6px',
+                          boxShadow: '0 4px 12px rgba(16,185,129,0.3)'
                         }}
                       >
                         {actionLoadingSet.has(orderIdStr) ? (
@@ -980,10 +1125,10 @@ export default function KitchenDisplayPage({ onShowToast }) {
                             backgroundColor: '#059669',
                             color: '#FFF',
                             border: 'none',
-                            padding: '8px 14px',
-                            borderRadius: '8px',
-                            fontWeight: 700,
-                            fontSize: '12px',
+                            padding: '9px 16px',
+                            borderRadius: '10px',
+                            fontWeight: 900,
+                            fontSize: '12.5px',
                             cursor: actionLoadingSet.has(orderIdStr) ? 'not-allowed' : 'pointer',
                             opacity: actionLoadingSet.has(orderIdStr) ? 0.7 : 1,
                             display: 'flex',
@@ -999,7 +1144,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
                           ) : (
                             <>
                               <CheckCircle2 size={14} />
-                              <span>Complete & End Order</span>
+                              <span>Complete &amp; End Order</span>
                             </>
                           )}
                         </button>
@@ -1007,13 +1152,13 @@ export default function KitchenDisplayPage({ onShowToast }) {
                           onClick={() => updateOrderStatus(orderIdStr, 'preparing')}
                           disabled={actionLoadingSet.has(orderIdStr)}
                           style={{
-                            backgroundColor: '#334155',
-                            color: '#94A3B8',
-                            border: '1px solid #475569',
-                            padding: '7px 10px',
-                            borderRadius: '8px',
-                            fontWeight: 500,
-                            fontSize: '11px',
+                            backgroundColor: '#E2E8F0',
+                            color: '#475569',
+                            border: '1px solid #CBD5E1',
+                            padding: '8px 11px',
+                            borderRadius: '10px',
+                            fontWeight: 700,
+                            fontSize: '11.5px',
                             cursor: actionLoadingSet.has(orderIdStr) ? 'not-allowed' : 'pointer',
                             opacity: actionLoadingSet.has(orderIdStr) ? 0.7 : 1,
                             display: 'flex',
@@ -1034,13 +1179,13 @@ export default function KitchenDisplayPage({ onShowToast }) {
                       <button
                         disabled={true}
                         style={{
-                          backgroundColor: '#1E293B',
-                          color: '#10B981',
-                          border: '1px solid #10B981',
-                          padding: '7px 14px',
-                          borderRadius: '8px',
-                          fontWeight: 700,
-                          fontSize: '12px',
+                          backgroundColor: '#F1F5F9',
+                          color: '#059669',
+                          border: '1.5px solid #A7F3D0',
+                          padding: '8px 16px',
+                          borderRadius: '10px',
+                          fontWeight: 900,
+                          fontSize: '12.5px',
                           cursor: 'not-allowed',
                           display: 'flex',
                           alignItems: 'center',
@@ -1065,74 +1210,76 @@ export default function KitchenDisplayPage({ onShowToast }) {
         <div style={{
           position: 'fixed',
           top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(15,23,42,0.8)',
+          backgroundColor: 'rgba(15,23,42,0.5)',
           zIndex: 100,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '16px'
+          padding: '16px',
+          backdropFilter: 'blur(4px)'
         }}>
           <div style={{
-            backgroundColor: '#1E293B',
+            backgroundColor: '#FFFFFF',
             borderRadius: '20px',
-            maxWidth: '420px',
+            maxWidth: '440px',
             width: '100%',
-            padding: '20px',
-            border: '1px solid #334155',
-            color: '#F8FAFC'
+            padding: '24px',
+            border: '1.5px solid #E2E8F0',
+            color: '#0F172A',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.15)'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-              <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 600 }}>Create Counter Kitchen Ticket</h3>
-              <button onClick={() => setIsCounterOrderModalOpen(false)} style={{ background: 'none', border: 'none', color: '#94A3B8', cursor: 'pointer' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#0F172A' }}>Create Counter Kitchen Ticket</h3>
+              <button onClick={() => setIsCounterOrderModalOpen(false)} style={{ background: '#F1F5F9', border: 'none', color: '#64748B', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleAddCounterOrder} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <form onSubmit={handleAddCounterOrder} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '12px', color: '#94A3B8', marginBottom: '4px' }}>Table / Order Type</label>
+                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>Table / Order Type</label>
                 <input
                   type="text"
                   value={counterForm.table}
                   onChange={(e) => setCounterForm({ ...counterForm, table: e.target.value })}
-                  style={{ width: '100%', padding: '9px 11px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#0F172A', color: '#FFF', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #CBD5E1', backgroundColor: '#F8FAFC', color: '#0F172A', fontSize: '13.5px', fontWeight: 600, outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '12px', color: '#94A3B8', marginBottom: '4px' }}>Customer Name</label>
+                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>Customer Name</label>
                 <input
                   type="text"
                   value={counterForm.customer}
                   onChange={(e) => setCounterForm({ ...counterForm, customer: e.target.value })}
-                  style={{ width: '100%', padding: '9px 11px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#0F172A', color: '#FFF', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #CBD5E1', backgroundColor: '#F8FAFC', color: '#0F172A', fontSize: '13.5px', fontWeight: 600, outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '12px', color: '#94A3B8', marginBottom: '4px' }}>Items (format: Dish xQty, Dish xQty)</label>
+                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>Items (format: Dish xQty, Dish xQty)</label>
                 <input
                   type="text"
                   required
                   value={counterForm.items}
                   onChange={(e) => setCounterForm({ ...counterForm, items: e.target.value })}
-                  style={{ width: '100%', padding: '9px 11px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#0F172A', color: '#FFF', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #CBD5E1', backgroundColor: '#F8FAFC', color: '#0F172A', fontSize: '13.5px', fontWeight: 600, outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '12px', color: '#94A3B8', marginBottom: '4px' }}>Chef Instruction Note</label>
+                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>Chef Instruction Note</label>
                 <input
                   type="text"
                   value={counterForm.note}
                   onChange={(e) => setCounterForm({ ...counterForm, note: e.target.value })}
-                  style={{ width: '100%', padding: '9px 11px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#0F172A', color: '#FFF', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #CBD5E1', backgroundColor: '#F8FAFC', color: '#0F172A', fontSize: '13.5px', fontWeight: 600, outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
 
               <button
                 type="submit"
-                style={{ backgroundColor: '#FF5E14', color: '#FFF', border: 'none', padding: '11px', borderRadius: '10px', fontWeight: 600, fontSize: '14px', cursor: 'pointer', marginTop: '6px' }}
+                style={{ background: 'linear-gradient(135deg, #FF6B2B 0%, #E84E05 100%)', color: '#FFF', border: 'none', padding: '12px', borderRadius: '12px', fontWeight: 900, fontSize: '14px', cursor: 'pointer', marginTop: '6px', boxShadow: '0 4px 12px rgba(232,78,5,0.3)' }}
               >
                 Send Ticket to Kitchen Display
               </button>

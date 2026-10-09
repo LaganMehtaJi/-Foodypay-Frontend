@@ -124,7 +124,7 @@ export const createPublicOrder = async (req, res, next) => {
       paymentMode: paymentMode || 'Cash',
       status: 'new',
       seen: false, // Unseen by merchant -> triggers sound notification
-      sentToKitchen: true, // Auto sent to Kitchen Display System
+      sentToKitchen: false, // Must be approved/sent to Kitchen from POS Dashboard first
       kitchenSeen: false, // Unseen by kitchen staff -> triggers alarm bell until acknowledged
       paymentStatus: paymentStatus || 'cash',
       paymentLabel: paymentLabel || 'Cash on Counter',
@@ -390,12 +390,13 @@ export const updateOrderStatus = async (req, res, next) => {
     if (paymentLabel) order.paymentLabel = paymentLabel;
     if (sentToKitchen !== undefined) order.sentToKitchen = sentToKitchen;
     if (kitchenSeen !== undefined) order.kitchenSeen = kitchenSeen;
-    if (status === 'completed' || status === 'preparing' || status === 'ready') {
+    if (status === 'completed' || status === 'ready') {
       order.seen = true;
-      if (status === 'preparing') {
-        order.sentToKitchen = true;
-      }
       order.kitchenSeen = true;
+    } else if (status === 'preparing') {
+      order.seen = true;
+      order.sentToKitchen = true;
+      order.kitchenSeen = false;
     }
 
     await order.save();

@@ -30,7 +30,8 @@ import {
   savePartnerCredentials,
   getStoreRestrictions,
   saveStoreRestrictions,
-  generateUnique6DigitId
+  generateUnique6DigitId,
+  triggerAdminSyncBroadcast
 } from '../utils/partnerAuth';
 import { fetchOrdersApi, fetchOrderStatsApi } from '../utils/api';
 
@@ -121,7 +122,8 @@ export default function PartnerPortalPage({ onShowToast }) {
     };
     saveStoreRestrictions(updated);
     setRestrictions(updated);
-    if (onShowToast) onShowToast('Store UPI ID & Dashboard Restrictions Updated Successfully!');
+    triggerAdminSyncBroadcast();
+    if (onShowToast) onShowToast('⚡ Admin Restrictions Saved! Broadcasted live 2s refresh signal to Dashboard & Kitchen KDS.', <Sparkles color="#10B981" />);
   };
 
   // Save Credentials (Admin, Dashboard, Kitchen)
@@ -129,7 +131,15 @@ export default function PartnerPortalPage({ onShowToast }) {
     e?.preventDefault();
     const updated = savePartnerCredentials(credentials);
     setCredentials(updated);
-    if (onShowToast) onShowToast('Store & Kitchen Access Credentials Saved Successfully!');
+    triggerAdminSyncBroadcast();
+    if (onShowToast) onShowToast('⚡ Access Credentials Saved! Broadcasted live 2s refresh signal to Dashboard & Kitchen KDS.', <Sparkles color="#10B981" />);
+  };
+
+  // Master Save All Admin Changes & Live Refresh Signal Broadcast Handler
+  const handleMasterSaveAllAdminChanges = (e) => {
+    e?.preventDefault();
+    handleSaveRestrictions();
+    handleSaveCredentials();
   };
 
   return (
@@ -220,7 +230,40 @@ export default function PartnerPortalPage({ onShowToast }) {
               Synced with Store &amp; Customer Mobile Menu QR
             </div>
           </div>
+        </div>
 
+        {/* MASTER SAVE & SYNC LIVE APPS ACTION CARD */}
+        <div style={{ background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)', borderRadius: '24px', padding: '24px 28px', color: '#FFFFFF', boxShadow: '0 8px 24px rgba(15,23,42,0.15)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '20px', fontWeight: 900 }}>
+              <Sparkles color="#10B981" size={24} /> Save All Admin Changes &amp; Live Sync Apps
+            </div>
+            <div style={{ fontSize: '13px', color: '#94A3B8', marginTop: '4px' }}>
+              Clicking this button saves all Store Restrictions, UPI IDs &amp; Credentials and triggers a live 2-second auto-refresh popup on Store Dashboard &amp; Kitchen KDS!
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleMasterSaveAllAdminChanges}
+            style={{
+              background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+              color: '#FFFFFF',
+              border: 'none',
+              padding: '14px 28px',
+              borderRadius: '14px',
+              fontWeight: 900,
+              fontSize: '15px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              boxShadow: '0 4px 16px rgba(16,185,129,0.4)',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            <RefreshCw size={20} /> Save Changes &amp; Refresh Live Apps (2s)
+          </button>
         </div>
 
         {/* SECTION 1: STORE UPI & ACCESS RESTRICTION CONTROLS */}

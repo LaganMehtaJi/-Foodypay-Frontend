@@ -1249,7 +1249,9 @@
 /* Center Products Table Column - Bigger & High-Contrast */
 .crm-products-main-col {
   flex: 1;
-  padding: 28px 36px;
+  padding: 24px 28px;
+  min-width: 0;
+  box-sizing: border-box;
   overflow-x: auto;
 }
 

@@ -105,6 +105,19 @@ export const saveStoreRestrictions = (newRestrictions) => {
   }
 };
 
+export const triggerAdminSyncBroadcast = () => {
+  try {
+    const bc = new BroadcastChannel('foodypay_live_orders_channel');
+    bc.postMessage({ type: 'ADMIN_SETTINGS_UPDATED', timestamp: Date.now() });
+    bc.close();
+  } catch (e) {}
+  try {
+    window.dispatchEvent(new CustomEvent('foodypay_admin_settings_updated', { detail: { timestamp: Date.now() } }));
+    window.dispatchEvent(new Event('foodypay_store_controls_updated'));
+    window.dispatchEvent(new Event('storage'));
+  } catch (e) {}
+};
+
 export const generateUnique6DigitId = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };

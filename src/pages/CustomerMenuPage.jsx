@@ -51,7 +51,7 @@ import {
   FileText,
   BookOpen
 } from 'lucide-react';
-import { playOrderPlaced } from '../utils/soundEffects';
+import { playOrderPlaced, sortOrdersNewestFirst } from '../utils/soundEffects';
 import { QrCodeComponent } from '../utils/qrGenerator';
 import { fetchDishesApi, fetchPublicDishesApi, fetchPublicMerchantApi, fetchPublicCouponsApi, createReviewApi, createPublicOrderApi, createRazorpayOrderApi, verifyRazorpaySignatureApi, checkDeliveryAvailabilityApi, fetchAvailableProductsApi, calculateBikeDeliveryTime, calculateHaversineDistanceKm } from '../utils/api';
 import { SNACK_RACK_FULL_MENU } from '../data/snackRackMenuData';
@@ -534,15 +534,15 @@ export default function CustomerMenuPage({ onShowToast }) {
             addressLabel: resolvedLabel,
           });
 
-          // Fetch products for location
-          try {
-            const prodRes = await fetchAvailableProductsApi(lat, lng, selectedCategory);
-            if (prodRes && prodRes.available === false) {
-              setDishes([]);
-            } else if (prodRes && Array.isArray(prodRes.dishes)) {
-              setDishes(prodRes.dishes);
-            }
-          } catch (e) {}
+          // Fetch products for location only if no specific merchant or scanned table is active
+          if (!merchantId && !hasScannedTable) {
+            try {
+              const prodRes = await fetchAvailableProductsApi(lat, lng, selectedCategory);
+              if (prodRes && prodRes.available !== false && Array.isArray(prodRes.dishes) && prodRes.dishes.length > 0) {
+                setDishes(prodRes.dishes);
+              }
+            } catch (e) {}
+          }
 
           // Location detection completed without blocking catalog
         } catch (err) {
@@ -595,6 +595,13 @@ export default function CustomerMenuPage({ onShowToast }) {
   const [isNavMenuOpen, setIsNavMenuOpen] = useState(false);
   const [chefNote, setChefNote] = useState('');
   const [paymentMode, setPaymentMode] = useState('upi'); // 'upi' | 'cash'
+  useEffect(() => {
+    if (paymentConfig.upiEnabled === false && paymentConfig.cashEnabled !== false) {
+      setPaymentMode('cash');
+    } else if (paymentConfig.upiEnabled !== false && paymentConfig.cashEnabled === false) {
+      setPaymentMode('upi');
+    }
+  }, [paymentConfig]);
   const [appliedCoupon, setAppliedCoupon] = useState(null);
 
   // Online UPI QR Modal state
@@ -708,7 +715,7 @@ export default function CustomerMenuPage({ onShowToast }) {
         }
       } catch (e) {}
 
-      setCustomerOrders(allOrdersList);
+      setCustomerOrders(sortOrdersNewestFirst(allOrdersList));
 
       // Active Tracker Banner ONLY appears when customer actively places an order in their session
       const currentSessionOrder = sessionStorage.getItem('foodypay_active_order');
@@ -961,7 +968,7 @@ export default function CustomerMenuPage({ onShowToast }) {
       }
 
       const isSnackRackStore = (restaurantSlug || '').toLowerCase() === 'meenakshi' || (targetIdentifier || '').toUpperCase() === 'FP-348330' || (effectiveMerchantId || '').toUpperCase() === 'FP-348330';
-      const activeStoreId = (effectiveMerchantId || merchantId || targetIdentifier || 'FP-348330').toUpperCase();
+      const activeStoreId = (effectiveMerchantId || merchantId || targetIdentifier || 'FP-985569').toUpperCase();
 
       let combinedDishesList = [...freshApiDishes];
 
@@ -969,7 +976,7 @@ export default function CustomerMenuPage({ onShowToast }) {
         const localSaved = localStorage.getItem('foodypay_crm_dishes_v3');
         if (localSaved) {
           const parsedLocal = JSON.parse(localSaved);
-          if (Array.isArray(parsedLocal)) {
+          if (Array.isArray(parsedLocal) && parsedLocal.length > 0) {
             // Filter local dishes to match current store to prevent cross-store product leak
             const storeMatchedLocal = parsedLocal.filter((d) => {
               if (!d) return false;
@@ -977,7 +984,7 @@ export default function CustomerMenuPage({ onShowToast }) {
               if (isSnackRackStore) {
                 return !dFpId || dFpId === 'FP-348330' || dFpId === 'MEENAKSHI';
               }
-              return dFpId === activeStoreId;
+              return !dFpId || dFpId === activeStoreId || dFpId === 'FP-985569';
             });
 
             if (storeMatchedLocal.length > 0) {
@@ -990,26 +997,25 @@ export default function CustomerMenuPage({ onShowToast }) {
               });
 
               // Apply local edits (price, image, inStock availability, description) over API dishes
-              combinedDishesList = combinedDishesList.map((apiDish) => {
-                const idKey = String(apiDish._id || apiDish.id);
-                const nameKey = (apiDish.name || '').toLowerCase().trim();
-                if (localEditsMap.has(idKey)) return { ...apiDish, ...localEditsMap.get(idKey) };
-                if (localEditsMap.has(nameKey)) return { ...apiDish, ...localEditsMap.get(nameKey) };
-                return apiDish;
-              });
+              if (combinedDishesList.length > 0) {
+                combinedDishesList = combinedDishesList.map((apiDish) => {
+                  const idKey = String(apiDish._id || apiDish.id);
+                  const nameKey = (apiDish.name || '').toLowerCase().trim();
+                  if (localEditsMap.has(idKey)) return { ...apiDish, ...localEditsMap.get(idKey) };
+                  if (localEditsMap.has(nameKey)) return { ...apiDish, ...localEditsMap.get(nameKey) };
+                  return apiDish;
+                });
 
-              // Add new local dishes that are not in API list
-              const existingKeys = new Set(combinedDishesList.flatMap((d) => [String(d._id || d.id), (d.name || '').toLowerCase().trim()]));
-              const newLocalDishes = storeMatchedLocal.filter((d) => {
-                const idKey = String(d._id || d.id);
-                const nameKey = (d.name || '').toLowerCase().trim();
-                return !existingKeys.has(idKey) && !existingKeys.has(nameKey);
-              });
+                // Add new local dishes that are not in API list
+                const existingKeys = new Set(combinedDishesList.flatMap((d) => [String(d._id || d.id), (d.name || '').toLowerCase().trim()]));
+                const newLocalDishes = storeMatchedLocal.filter((d) => {
+                  const idKey = String(d._id || d.id);
+                  const nameKey = (d.name || '').toLowerCase().trim();
+                  return !existingKeys.has(idKey) && !existingKeys.has(nameKey);
+                });
 
-              combinedDishesList = [...combinedDishesList, ...newLocalDishes];
-
-              // If API returned empty array, use local dishes directly
-              if (freshApiDishes.length === 0) {
+                combinedDishesList = [...combinedDishesList, ...newLocalDishes];
+              } else {
                 combinedDishesList = storeMatchedLocal;
               }
             }
@@ -1017,8 +1023,13 @@ export default function CustomerMenuPage({ onShowToast }) {
         }
       } catch (e) {}
 
-      if (isSnackRackStore && combinedDishesList.length === 0) {
-        combinedDishesList = [...SNACK_RACK_DEFAULT_DISHES];
+      // Fallback: If no custom dishes exist in API or localStorage for this store, load default store catalog
+      if (combinedDishesList.length === 0) {
+        combinedDishesList = SNACK_RACK_FULL_MENU.map((d) => ({
+          ...d,
+          foodypayId: activeStoreId,
+          merchantId: activeStoreId,
+        }));
       }
 
       if (combinedDishesList.length > 0) {
@@ -1068,10 +1079,10 @@ export default function CustomerMenuPage({ onShowToast }) {
     window.addEventListener('foodypay_order_created', loadDynamicMenu);
     window.addEventListener('foodypay_dishes_updated', loadDynamicMenu);
 
-    // Auto-poll catalog API every 3 seconds for fresh data
+    // Auto-poll catalog API every 10 seconds for fresh data
     const catalogPollTimer = setInterval(() => {
       loadDynamicMenu();
-    }, 3000);
+    }, 10000);
 
     return () => {
       window.removeEventListener('storage', loadDynamicMenu);
@@ -1599,6 +1610,7 @@ export default function CustomerMenuPage({ onShowToast }) {
       timestamp: Date.now(),
       status: 'new',
       seen: false,
+      sentToKitchen: false,
       paymentStatus: paymentMode === 'upi' ? 'paid-upi' : 'cash',
       paymentLabel: paymentMode === 'upi' ? 'Paid via Online UPI' : 'Cash on Counter',
       items: orderItems,
@@ -1656,6 +1668,7 @@ export default function CustomerMenuPage({ onShowToast }) {
         discount: orderObj.discount,
         tax: orderObj.tax,
         total: orderObj.total,
+        sentToKitchen: false,
       });
     } catch (err) {}
 
