@@ -4153,9 +4153,10 @@ export default function DashboardPage({ onShowToast }) {
   const [tableLogoPreview, setTableLogoPreview] = useState(null);
 
   const [tableForm, setTableForm] = useState({
-    name: '',
+    tableNumber: '1',
+    name: 'Table 1',
     purpose: 'Contactless Self Ordering',
-    section: 'Indoor AC Dining',
+    section: 'Restaurant',
     capacity: 4,
     url: '',
     theme: 'acrylic', // 'acrylic' | 'luxury' | 'neon'
@@ -4216,10 +4217,15 @@ export default function DashboardPage({ onShowToast }) {
     setTableLogoPreview(tableToEdit?.logoUrl || null);
     if (tableToEdit) {
       setEditingTableObj(tableToEdit);
+      const rawNum = tableToEdit.tableNumber ||
+        String(tableToEdit.name || '').replace(/^(.*?table|\s*[-:]*\s*)/i, '').trim() ||
+        String(tableToEdit.name || '1');
+      const tableSec = tableToEdit.section || defaultSection || 'Restaurant';
       setTableForm({
-        name: tableToEdit.name || 'Table 1',
+        tableNumber: rawNum,
+        name: tableToEdit.name || `${tableSec} - Table ${rawNum}`,
         purpose: tableToEdit.purpose || 'Contactless Self Ordering',
-        section: tableToEdit.section || defaultSection || 'Restaurant',
+        section: tableSec,
         capacity: tableToEdit.capacity || 4,
         url: getUniqueTableUrl(tableToEdit.name, tableToEdit.url),
         theme: tableToEdit.theme || 'acrylic',
@@ -4230,11 +4236,20 @@ export default function DashboardPage({ onShowToast }) {
     } else {
       setEditingTableObj(null);
       const chosenSection = defaultSection || (customSections[0] || 'Restaurant');
-      // Count tables in this section to pick a smart next name (e.g. 1, 2, or Table 1)
-      const tablesInSection = (tables || []).filter((t) => (t.section || 'Restaurant').toLowerCase() === chosenSection.toLowerCase());
-      const nextNum = tablesInSection.length + 1;
-      const tableName = `${nextNum}`;
+      // Count existing tables in chosen category to determine next available number
+      const tablesInSection = (tables || []).filter(
+        (t) => String(t.section || 'Restaurant').trim().toLowerCase() === chosenSection.trim().toLowerCase()
+      );
+      const existingNums = tablesInSection.map((t) => {
+        const m = String(t.tableNumber || t.name).match(/\d+/);
+        return m ? parseInt(m[0], 10) : 0;
+      });
+      const nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 1;
+      const numStr = String(nextNum);
+      const tableName = `${chosenSection} - Table ${numStr}`;
+
       setTableForm({
+        tableNumber: numStr,
         name: tableName,
         purpose: 'Contactless Self Ordering',
         section: chosenSection,
@@ -4251,15 +4266,62 @@ export default function DashboardPage({ onShowToast }) {
 
   const handleSaveTableSubmit = async (e) => {
     e.preventDefault();
-    if (!tableForm.name.trim()) return;
+    const cleanSection = (tableForm.section || 'Restaurant').trim();
+    const cleanNum = (tableForm.tableNumber || '').trim();
+    const cleanName = (tableForm.name || '').trim();
 
-    const targetUrl = getUniqueTableUrl(tableForm.name, tableForm.url);
+    if (!cleanNum && !cleanName) {
+      addToast('⚠️ Please enter a Table Number / Name!', <AlertCircle size={18} color="#DC2626" />);
+      return;
+    }
+
+    const effectiveNumber = cleanNum || cleanName.replace(/^(.*?table|\s*[-:]*\s*)/i, '').trim() || cleanName;
+    const finalTableName = cleanName || `${cleanSection} - Table ${effectiveNumber}`;
+
+    // STRICT CHECK: Uniqueness strictly enforced by Table Number + Category / Section
+    const isDuplicate = (tables || []).some((t) => {
+      const tId = t._id || t.id;
+      if (editingTableObj && (editingTableObj._id === tId || editingTableObj.id === tId)) {
+        return false;
+      }
+      const tSection = String(t.section || 'Restaurant').trim().toLowerCase();
+      const thisSection = cleanSection.toLowerCase();
+      if (tSection !== thisSection) return false;
+
+      // Inside same category: check if number or name conflicts
+      const tNum = String(t.tableNumber || '').trim().toLowerCase();
+      const thisNum = effectiveNumber.toLowerCase();
+      if (tNum && thisNum && tNum === thisNum) return true;
+
+      const tName = String(t.name || '').trim().toLowerCase();
+      const thisName = finalTableName.toLowerCase();
+      if (tName === thisName) return true;
+
+      const tOnlyNum = tName.replace(/^(.*?table|\s*[-:]*\s*)/i, '').trim().toLowerCase();
+      const thisOnlyNum = thisNum.replace(/^(.*?table|\s*[-:]*\s*)/i, '').trim().toLowerCase();
+      if (tOnlyNum && thisOnlyNum && tOnlyNum === thisOnlyNum) return true;
+
+      return false;
+    });
+
+    if (isDuplicate) {
+      addToast(`⚠️ Table "${effectiveNumber}" already exists in Category "${cleanSection}"! Each table must be unique by Number + Category.`, <AlertCircle size={18} color="#DC2626" />);
+      return;
+    }
+
+    // Auto-register category in customSections if newly typed
+    if (cleanSection && !customSections.some((s) => s.toLowerCase() === cleanSection.toLowerCase())) {
+      setCustomSections((prev) => [...prev, cleanSection]);
+    }
+
+    const targetUrl = getUniqueTableUrl(finalTableName, tableForm.url);
     const finalLogo = tableLogoPreview || tableForm.logoUrl || '';
 
     const newTableData = {
-      name: tableForm.name.trim(),
-      purpose: tableForm.purpose.trim() || 'Contactless Self Ordering',
-      section: tableForm.section.trim() || 'Restaurant',
+      name: finalTableName,
+      tableNumber: effectiveNumber,
+      purpose: tableForm.purpose?.trim() || 'Contactless Self Ordering',
+      section: cleanSection,
       capacity: Number(tableForm.capacity) || 4,
       url: targetUrl,
       theme: tableForm.theme || 'acrylic',
@@ -4283,7 +4345,7 @@ export default function DashboardPage({ onShowToast }) {
         prev.map((t) => (t.id === editingTableObj.id || t._id === editingTableObj._id ? updatedTable : t))
       );
       saveTableToFirestore({ ...updatedTable, businessId: currentUser?.foodypayId || currentUser?._id });
-      addToast(`Updated Table ${tableForm.name}!`, <Check size={18} />);
+      addToast(`Updated Table ${finalTableName}!`, <Check size={18} />);
     } else {
       let createdTable = {
         ...newTableData,
@@ -4301,7 +4363,7 @@ export default function DashboardPage({ onShowToast }) {
       }
       setTables((prev) => [...prev, createdTable]);
       saveTableToFirestore({ ...createdTable, businessId: currentUser?.foodypayId || currentUser?._id });
-      addToast(`Created Table ${tableForm.name} in ${newTableData.section}!`, <Check size={18} />);
+      addToast(`Created Table ${finalTableName} in ${cleanSection}!`, <Check size={18} />);
     }
 
     setIsAddTableModalOpen(false);
@@ -5567,12 +5629,14 @@ export default function DashboardPage({ onShowToast }) {
 
                   // Helper: find running/active order for a table
                   const getRunningOrderForTable = (tableName) => {
-                    const cleanTName = String(tableName).trim().toLowerCase();
+                    const cleanTName = String(tableName || '').trim().toLowerCase();
+                    const normTName = cleanTName.replace(/[^a-z0-9]/g, '');
                     return (orders || []).find((o) => {
                       if (!o || o.status === 'completed' || o.status === 'cancelled') return false;
                       const oTable = String(o.table || o.tableName || o.tableNo || '').trim().toLowerCase();
                       if (oTable === cleanTName) return true;
                       if (oTable === `table ${cleanTName}` || `table ${oTable}` === cleanTName) return true;
+                      if (normTName && oTable.replace(/[^a-z0-9]/g, '') === normTName) return true;
                       return false;
                     });
                   };
@@ -15108,17 +15172,85 @@ export default function DashboardPage({ onShowToast }) {
               <div className="crm-manual-order-container" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 24px', gap: '18px', display: 'flex' }}>
                 {/* LEFT COLUMN: FORM INPUTS & CUSTOMIZER */}
                 <div className="crm-pos-left-col" style={{ width: '460px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {/* Table Name & Pax */}
+                  {/* Category / Section Selection */}
+                  <div className="crm-form-group">
+                    <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#0F172A', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>Category / Section *</span>
+                      <span style={{ fontSize: '11px', color: '#64748B', fontWeight: 600 }}>Pill selection or custom type</span>
+                    </label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px', marginTop: '2px' }}>
+                      {(customSections || ['Restaurant', 'Cafe', 'Family Hall']).map((sec) => {
+                        const isSelected = (tableForm.section || '').trim().toLowerCase() === sec.trim().toLowerCase();
+                        return (
+                          <button
+                            key={sec}
+                            type="button"
+                            onClick={() => {
+                              const nextNum = tableForm.tableNumber || '1';
+                              setTableForm({
+                                ...tableForm,
+                                section: sec,
+                                name: `${sec} - Table ${nextNum}`,
+                              });
+                            }}
+                            style={{
+                              padding: '5px 12px',
+                              borderRadius: '20px',
+                              fontSize: '11.5px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              border: isSelected ? '1.5px solid #FF5E14' : '1px solid #CBD5E1',
+                              backgroundColor: isSelected ? '#FFF7ED' : '#F8FAFC',
+                              color: isSelected ? '#EA580C' : '#475569',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            {isSelected ? '✓ ' : ''}{sec}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <input
+                      ref={tableSectionRef}
+                      type="text"
+                      className="crm-input"
+                      placeholder="e.g. Restaurant, Cafe, AC Dining, Rooftop"
+                      value={tableForm.section}
+                      onChange={(e) => {
+                        const newSec = e.target.value;
+                        const nextNum = tableForm.tableNumber || '1';
+                        setTableForm({
+                          ...tableForm,
+                          section: newSec,
+                          name: newSec.trim() ? `${newSec.trim()} - Table ${nextNum}` : `Table ${nextNum}`,
+                        });
+                      }}
+                      onKeyDown={(e) => handleTableInputKeyDown(e, 2)}
+                      required
+                    />
+                  </div>
+
+                  {/* Table Number & Capacity (Pax) */}
                   <div className="crm-form-grid" style={{ gap: '10px' }}>
                     <div className="crm-form-group">
-                      <label style={{ fontSize: '12.5px', fontWeight: 700 }}>Table Name / Number *</label>
+                      <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#0F172A' }}>
+                        Table Number * <span style={{ fontSize: '11px', color: '#FF5E14', fontWeight: 700 }}>(Unique in {tableForm.section || 'Category'})</span>
+                      </label>
                       <input
                         ref={tableNameRef}
                         type="text"
                         className="crm-input"
-                        placeholder="e.g. Table 1 or VIP Booth 4"
-                        value={tableForm.name}
-                        onChange={(e) => setTableForm({ ...tableForm, name: e.target.value })}
+                        placeholder="e.g. 1, 2, 3, T-1"
+                        value={tableForm.tableNumber || ''}
+                        onChange={(e) => {
+                          const newNum = e.target.value;
+                          const sec = tableForm.section || 'Restaurant';
+                          setTableForm({
+                            ...tableForm,
+                            tableNumber: newNum,
+                            name: `${sec} - Table ${newNum}`,
+                          });
+                        }}
                         onKeyDown={(e) => handleTableInputKeyDown(e, 0)}
                         required
                         autoFocus
@@ -15126,7 +15258,7 @@ export default function DashboardPage({ onShowToast }) {
                     </div>
 
                     <div className="crm-form-group">
-                      <label style={{ fontSize: '12.5px', fontWeight: 700 }}>Capacity (Pax)</label>
+                      <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#0F172A' }}>Capacity (Pax)</label>
                       <input
                         ref={tableCapacityRef}
                         type="number"
@@ -15139,23 +15271,24 @@ export default function DashboardPage({ onShowToast }) {
                     </div>
                   </div>
 
-                  {/* Section & Purpose */}
+                  {/* Composite Table Name & Purpose */}
                   <div className="crm-form-grid" style={{ gap: '10px' }}>
                     <div className="crm-form-group">
-                      <label style={{ fontSize: '12.5px', fontWeight: 700 }}>Section / Area</label>
+                      <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#0F172A' }}>
+                        Table Name / Number *
+                      </label>
                       <input
-                        ref={tableSectionRef}
                         type="text"
                         className="crm-input"
-                        placeholder="e.g. Indoor AC Dining"
-                        value={tableForm.section}
-                        onChange={(e) => setTableForm({ ...tableForm, section: e.target.value })}
-                        onKeyDown={(e) => handleTableInputKeyDown(e, 2)}
+                        placeholder="e.g. Cafe - Table 1"
+                        value={tableForm.name}
+                        onChange={(e) => setTableForm({ ...tableForm, name: e.target.value })}
+                        required
                       />
                     </div>
 
                     <div className="crm-form-group">
-                      <label style={{ fontSize: '12.5px', fontWeight: 700 }}>Purpose / Label</label>
+                      <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#0F172A' }}>Purpose / Label</label>
                       <input
                         ref={tablePurposeRef}
                         type="text"
@@ -15167,6 +15300,69 @@ export default function DashboardPage({ onShowToast }) {
                       />
                     </div>
                   </div>
+
+                  {/* Live Uniqueness Feedback Indicator */}
+                  {(() => {
+                    const cleanSec = String(tableForm.section || 'Restaurant').trim().toLowerCase();
+                    const cleanNum = String(tableForm.tableNumber || '').trim().toLowerCase();
+                    const cleanNm = String(tableForm.name || '').trim().toLowerCase();
+
+                    const isDup = (tables || []).some((t) => {
+                      const tId = t._id || t.id;
+                      if (editingTableObj && (editingTableObj._id === tId || editingTableObj.id === tId)) return false;
+                      const tSec = String(t.section || 'Restaurant').trim().toLowerCase();
+                      if (tSec !== cleanSec) return false;
+
+                      const tNum = String(t.tableNumber || '').trim().toLowerCase();
+                      const tNm = String(t.name || '').trim().toLowerCase();
+                      if (cleanNum && tNum && tNum === cleanNum) return true;
+                      if (cleanNm && tNm === cleanNm) return true;
+
+                      const tOnlyNum = tNm.replace(/^(.*?table|\s*[-:]*\s*)/i, '').trim().toLowerCase();
+                      const thisOnlyNum = cleanNum.replace(/^(.*?table|\s*[-:]*\s*)/i, '').trim().toLowerCase();
+                      if (tOnlyNum && thisOnlyNum && tOnlyNum === thisOnlyNum) return true;
+
+                      return false;
+                    });
+
+                    if (isDup) {
+                      return (
+                        <div style={{
+                          fontSize: '11.5px',
+                          fontWeight: 700,
+                          color: '#B91C1C',
+                          backgroundColor: '#FEF2F2',
+                          border: '1px solid #FECACA',
+                          padding: '7px 12px',
+                          borderRadius: '8px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}>
+                          <AlertCircle size={14} color="#DC2626" />
+                          <span>Table "{tableForm.tableNumber || '1'}" already exists in Category "{tableForm.section || 'Restaurant'}". Choose another number.</span>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div style={{
+                        fontSize: '11px',
+                        color: '#047857',
+                        backgroundColor: '#ECFDF5',
+                        border: '1px solid #A7F3D0',
+                        padding: '6px 12px',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontWeight: 700
+                      }}>
+                        <span>✓ Unique Table: <strong>{tableForm.section || 'Restaurant'}</strong> • Table <strong>{tableForm.tableNumber || '1'}</strong></span>
+                        <span style={{ fontSize: '10px', color: '#059669', opacity: 0.85 }}>KEY: {(tableForm.section || 'Restaurant').toUpperCase()}-{String(tableForm.tableNumber || '1').toUpperCase()}</span>
+                      </div>
+                    );
+                  })()}
 
                   {/* Standee Theme Selector (3 Themes) */}
                   <div className="crm-form-group">
