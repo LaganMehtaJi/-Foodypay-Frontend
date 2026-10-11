@@ -5905,18 +5905,19 @@ export default function DashboardPage({ onShowToast }) {
                                 paidCount += 1;
                               } else if (ord.billPrinted || ord.status === 'printed') {
                                 billReadyCount += 1;
-                              } else if (ord.status === 'preparing' || ord.hasPendingKot || ord.status === 'new') {
-                                waitingCount += 1;
-                              } else {
+                              } else if (ord.status === 'served' || ord.status === 'eating') {
                                 eatingCount += 1;
+                              } else {
+                                // Status is placed, new, preparing, or cooking -> Waiting for food
+                                waitingCount += 1;
                               }
                             });
 
                             const filtersList = [
                               { key: 'all', label: 'All', count: totalTablesCount, dotColor: null },
                               { key: 'available', label: 'Available', count: availableCount, dotColor: '#94A3B8' },
-                              { key: 'eating', label: 'Eating', count: eatingCount, dotColor: '#06B6D4' },
                               { key: 'waiting', label: 'Waiting for food', count: waitingCount, dotColor: '#F97316' },
+                              { key: 'eating', label: 'Eating', count: eatingCount, dotColor: '#06B6D4' },
                               { key: 'bill_ready', label: 'Bill ready', count: billReadyCount, dotColor: '#10B981' },
                               { key: 'paid', label: 'Paid', count: paidCount, dotColor: '#EF4444' },
                             ];
@@ -5960,8 +5961,8 @@ export default function DashboardPage({ onShowToast }) {
                           if (!ord) return false;
                           if (tableStatusFilter === 'paid') return ord.status === 'paid' || (ord.isPaid && !ord.tableCleared);
                           if (tableStatusFilter === 'bill_ready') return ord.billPrinted || ord.status === 'printed';
-                          if (tableStatusFilter === 'waiting') return ord.status === 'preparing' || ord.hasPendingKot || ord.status === 'new';
-                          if (tableStatusFilter === 'eating') return ord.status === 'ready' || ord.status === 'served' || (!ord.billPrinted && ord.status !== 'paid');
+                          if (tableStatusFilter === 'eating') return ord.status === 'served' || ord.status === 'eating';
+                          if (tableStatusFilter === 'waiting') return ord.status !== 'served' && ord.status !== 'eating' && ord.status !== 'paid' && !ord.billPrinted;
                           return true;
                         });
 
@@ -6022,7 +6023,7 @@ export default function DashboardPage({ onShowToast }) {
                                   }
                                 }
 
-                                // Determine Table Status
+                                // Determine Table Status: Placed (30s) -> Waiting for food (Cooking) -> Eating (Served)
                                 let statusKey = 'available';
                                 let statusLabel = 'Available';
                                 let remainingGraceSecs = 0;
@@ -6039,11 +6040,12 @@ export default function DashboardPage({ onShowToast }) {
                                     const elapsed = Math.floor((Date.now() - orderTime) / 1000);
                                     remainingGraceSecs = Math.max(0, graceSecs - elapsed);
                                     statusKey = 'waiting';
-                                    statusLabel = `Placed (${remainingGraceSecs}s to Kitchen)`;
-                                  } else if (runningOrder.status === 'preparing') {
+                                    statusLabel = remainingGraceSecs > 0 ? `Waiting for food (${remainingGraceSecs}s)` : 'Waiting for food';
+                                  } else if (runningOrder.status === 'preparing' || runningOrder.status === 'in-kitchen' || runningOrder.status === 'kitchen') {
                                     statusKey = 'waiting';
-                                    statusLabel = 'Cooking in Kitchen';
+                                    statusLabel = 'Waiting for food';
                                   } else {
+                                    // Food served to table -> Eating state
                                     statusKey = 'eating';
                                     statusLabel = 'Eating';
                                   }
