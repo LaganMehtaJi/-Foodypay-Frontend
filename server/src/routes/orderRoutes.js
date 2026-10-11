@@ -12,6 +12,7 @@ import {
   markKitchenSeen,
   markPublicKitchenSeen,
   deleteOrder,
+  moveKotTable,
 } from '../controllers/orderController.js';
 import { protect } from '../middlewares/authMiddleware.js';
 
@@ -34,6 +35,9 @@ router.route('/')
 router.route('/:id/status')
   .put(updateOrderStatus);
 
+router.route('/:id/move-table')
+  .patch(moveKotTable);
+
 router.route('/:id/seen')
   .put(markOrderSeen);
 
@@ -45,3 +49,4 @@ router.route('/:id')
   .delete(deleteOrder);
 
 export default router;
+

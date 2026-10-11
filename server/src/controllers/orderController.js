@@ -334,12 +334,12 @@ export const updateOrder = async (req, res, next) => {
       throw new Error('Order not found');
     }
 
-    if (order.status !== 'new') {
-      res.status(400);
-      throw new Error('Cannot edit order once cooking has started');
-    }
+    const { type, table, customer, phone, items, note, paymentStatus, paymentLabel, subtotal, discount, tax, total, status, sentToKitchen, kitchenSeen, isPaid, dueNote, dueMarkedAt, dueClearedAt, dueClearedMode } = req.body;
 
-    const { type, table, customer, phone, items, note, paymentStatus, paymentLabel, subtotal, discount, tax, total, status, sentToKitchen, kitchenSeen } = req.body;
+    if (order.status !== 'new' && items && !status && !paymentStatus) {
+      res.status(400);
+      throw new Error('Cannot edit order items once cooking has started');
+    }
 
     if (type) order.type = type;
     if (table) order.table = table;
@@ -349,6 +349,11 @@ export const updateOrder = async (req, res, next) => {
     if (note !== undefined) order.note = note;
     if (paymentStatus) order.paymentStatus = paymentStatus;
     if (paymentLabel) order.paymentLabel = paymentLabel;
+    if (isPaid !== undefined) order.isPaid = isPaid;
+    if (dueNote !== undefined) order.dueNote = dueNote;
+    if (dueMarkedAt !== undefined) order.dueMarkedAt = dueMarkedAt;
+    if (dueClearedAt !== undefined) order.dueClearedAt = dueClearedAt;
+    if (dueClearedMode !== undefined) order.dueClearedMode = dueClearedMode;
     if (subtotal !== undefined) order.subtotal = subtotal;
     if (discount !== undefined) order.discount = discount;
     if (tax !== undefined) order.tax = tax;
@@ -543,6 +548,39 @@ export const deleteOrder = async (req, res, next) => {
       success: true,
       message: 'Order deleted successfully',
       todayStats,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Move KOT / Shift order to another table
+ * @route   PATCH /api/orders/:id/move-table
+ * @access  Private
+ */
+export const moveKotTable = async (req, res, next) => {
+  try {
+    const { targetTable } = req.body;
+    if (!targetTable) {
+      return res.status(400).json({ success: false, message: 'targetTable is required' });
+    }
+
+    const order = await findOrderByIdOrCode(req.params.id, req.user._id);
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    const previousTable = order.table;
+    order.table = targetTable;
+    order.note = order.note ? `${order.note} (Shifted from ${previousTable} to ${targetTable})` : `Shifted from ${previousTable} to ${targetTable}`;
+
+    await order.save();
+
+    res.json({
+      success: true,
+      message: `Order successfully shifted from ${previousTable} to ${targetTable}`,
+      data: order,
     });
   } catch (error) {
     next(error);
