@@ -54,7 +54,7 @@ import {
 import { playOrderPlaced, sortOrdersNewestFirst } from '../utils/soundEffects';
 import { QrCodeComponent } from '../utils/qrGenerator';
 import { fetchDishesApi, fetchPublicDishesApi, fetchPublicMerchantApi, fetchPublicCouponsApi, createReviewApi, createPublicOrderApi, createRazorpayOrderApi, verifyRazorpaySignatureApi, checkDeliveryAvailabilityApi, fetchAvailableProductsApi, calculateBikeDeliveryTime, calculateHaversineDistanceKm } from '../utils/api';
-import { saveOrderToFirestore } from '../utils/firestoreService';
+import { saveOrderToFirestore, saveCustomerToFirestore } from '../utils/firestoreService';
 const AVAILABLE_COUPONS = [];
 
 const DEFAULT_10_PRODUCTS = [];
@@ -1558,6 +1558,20 @@ export default function CustomerMenuPage({ onShowToast }) {
       return;
     }
 
+    const cleanCustPhone = customerPhone.trim();
+    if (!cleanCustPhone) {
+      alert('Please enter your Contact Number to place the order!');
+      return;
+    }
+
+    // Auto generate/fill email if empty
+    let cleanCustEmail = customerEmail.trim();
+    if (!cleanCustEmail) {
+      const cleanDigits = cleanCustPhone.replace(/\D/g, '');
+      cleanCustEmail = `user${cleanDigits.slice(-10) || 'order'}@foodypay.com`;
+      setCustomerEmail(cleanCustEmail);
+    }
+
     setIsSubmittingOrder(true);
 
     const orderItems = Object.entries(cart).map(([dishId, qty]) => {
@@ -1585,7 +1599,8 @@ export default function CustomerMenuPage({ onShowToast }) {
       type: navTab === 'scanner' ? 'Dine-In' : 'Home Delivery',
       table: navTab === 'scanner' ? rawTable : 'Delivery',
       customer: customerName.trim(),
-      phone: customerPhone.trim() || '+91 98000 00000',
+      phone: cleanCustPhone,
+      email: cleanCustEmail,
       time: 'Just now',
       timestamp: Date.now(),
       status: 'new',
@@ -1605,6 +1620,27 @@ export default function CustomerMenuPage({ onShowToast }) {
       restaurantSlug,
       restaurantName: storeInfo.name,
     };
+
+    // Auto-save user profile to localStorage & Cloud Firestore
+    try {
+      const profileData = {
+        name: customerName.trim(),
+        phone: cleanCustPhone,
+        email: cleanCustEmail,
+        dob: customerDob,
+        photo: customerPhoto,
+        lastOrderAt: new Date().toISOString(),
+        totalOrders: 1,
+        businessId: (effectiveMerchantId || storeInfo.merchantId || '').toUpperCase(),
+      };
+      localStorage.setItem('foodypay_customer_profile', JSON.stringify(profileData));
+
+      // Save customer profile to Firestore CUSTOMERS collection for CRM & live orders
+      saveCustomerToFirestore(
+        (effectiveMerchantId || storeInfo.merchantId || '').toUpperCase(),
+        profileData
+      ).catch(() => {});
+    } catch (e) {}
 
     if (paymentMode === 'upi' || paymentMode === 'razorpay') {
       setPendingOrderObj(newOrder);
@@ -1653,6 +1689,7 @@ export default function CustomerMenuPage({ onShowToast }) {
         table: orderObj.table,
         customer: orderObj.customer,
         phone: orderObj.phone,
+        email: orderObj.email,
         items: orderObj.items,
         note: orderObj.note,
         paymentStatus: orderObj.paymentStatus,
@@ -4606,73 +4643,115 @@ export default function CustomerMenuPage({ onShowToast }) {
             </div>
 
             <form onSubmit={handleInitiateOrder}>
-              <div style={{ marginBottom: '14px' }}>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#334155', marginBottom: '4px' }}>
-                  Your Name <span style={{ color: '#EF4444' }}>*</span>
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
+                  Your Full Name <span style={{ color: '#EF4444' }}>*</span>
                 </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Enter your name (e.g. Rahul Sharma)"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '9px 11px',
-                    borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
-                    fontSize: '13px',
-                    outline: 'none',
-                    boxSizing: 'border-box',
-                    fontWeight: 400
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#334155', marginBottom: '4px' }}>
-                    Phone Number
-                  </label>
+                <div style={{ position: 'relative' }}>
+                  <User size={15} color="#94A3B8" style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)' }} />
                   <input
-                    type="tel"
-                    placeholder="+91 98765 43210"
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    type="text"
+                    required
+                    placeholder="Enter your name (e.g. Rahul Sharma)"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
                     style={{
                       width: '100%',
-                      padding: '9px 11px',
+                      padding: '9px 11px 9px 34px',
                       borderRadius: '8px',
                       border: '1px solid #CBD5E1',
                       fontSize: '13px',
                       outline: 'none',
                       boxSizing: 'border-box',
-                      fontWeight: 400
+                      fontWeight: 600
                     }}
                   />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
+                    Contact Number <span style={{ color: '#EF4444' }}>*</span>
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <Phone size={15} color="#94A3B8" style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)' }} />
+                    <input
+                      type="tel"
+                      required
+                      placeholder="e.g. 9876543210"
+                      value={customerPhone}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setCustomerPhone(val);
+                        // Auto generate/fill email if empty
+                        if (!customerEmail.trim()) {
+                          const cleanDigits = val.replace(/\D/g, '');
+                          if (cleanDigits.length >= 10) {
+                            setCustomerEmail(`user${cleanDigits.slice(-10)}@foodypay.com`);
+                          }
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '9px 11px 9px 34px',
+                        borderRadius: '8px',
+                        border: '1px solid #CBD5E1',
+                        fontSize: '13px',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                        fontWeight: 600
+                      }}
+                    />
+                  </div>
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 500, color: '#334155', marginBottom: '4px' }}>
-                    Order Location
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '4px' }}>
+                    Email Address
                   </label>
-                  <input
-                    type="text"
-                    disabled
-                    value={navTab === 'scanner' ? storeInfo.table : (savedAddresses.length > 0 ? savedAddresses[0].label : 'Home Delivery')}
-                    style={{
-                      width: '100%',
-                      padding: '9px 11px',
-                      borderRadius: '8px',
-                      border: '1px solid #E2E8F0',
-                      backgroundColor: '#F8FAFC',
-                      fontSize: '13px',
-                      fontWeight: 500,
-                      color: '#475569',
-                      boxSizing: 'border-box'
-                    }}
-                  />
+                  <div style={{ position: 'relative' }}>
+                    <Mail size={15} color="#94A3B8" style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)' }} />
+                    <input
+                      type="email"
+                      placeholder="user@gmail.com"
+                      value={customerEmail}
+                      onChange={(e) => setCustomerEmail(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '9px 11px 9px 34px',
+                        borderRadius: '8px',
+                        border: '1px solid #CBD5E1',
+                        fontSize: '13px',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                        fontWeight: 600
+                      }}
+                    />
+                  </div>
                 </div>
+              </div>
+
+              <div style={{ marginBottom: '14px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                  Order Location / Table
+                </label>
+                <input
+                  type="text"
+                  disabled
+                  value={navTab === 'scanner' ? storeInfo.table : (savedAddresses.length > 0 ? savedAddresses[0].label : 'Home Delivery')}
+                  style={{
+                    width: '100%',
+                    padding: '8px 11px',
+                    borderRadius: '8px',
+                    border: '1px solid #E2E8F0',
+                    backgroundColor: '#F8FAFC',
+                    fontSize: '12.5px',
+                    fontWeight: 600,
+                    color: '#475569',
+                    boxSizing: 'border-box'
+                  }}
+                />
               </div>
 
               {/* Coupon Promocode & Assigned Offers */}
