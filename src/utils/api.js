@@ -1,32 +1,51 @@
-export const PRIMARY_API_URL = import.meta.env.VITE_API_BASE_URL || 'https://server-foodypay.onrender.com/api';
-export const BACKUP_CLOUD_API_URL_1 = PRIMARY_API_URL;
-export const BACKUP_CLOUD_API_URL_2 = PRIMARY_API_URL;
-export const BACKUP_CLOUD_API_URL_3 = PRIMARY_API_URL;
-export const BACKUP_CLOUD_API_URL_4 = PRIMARY_API_URL;
-export const BACKUP_CLOUD_API_URL_5 = PRIMARY_API_URL;
-export const BACKUP_CLOUD_API_URL = PRIMARY_API_URL;
+export const PRIMARY_API_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.foodypay.online/api';
+export const EMERGENCY_API_URL = import.meta.env.VITE_EMERGENCY_API_URL || 'https://api.stage.foodypay.online/api';
+export const BACKUP_CLOUD_API_URL_1 = EMERGENCY_API_URL;
+export const BACKUP_CLOUD_API_URL_2 = EMERGENCY_API_URL;
+export const BACKUP_CLOUD_API_URL_3 = EMERGENCY_API_URL;
+export const BACKUP_CLOUD_API_URL_4 = EMERGENCY_API_URL;
+export const BACKUP_CLOUD_API_URL_5 = EMERGENCY_API_URL;
+export const BACKUP_CLOUD_API_URL = EMERGENCY_API_URL;
 export const REMOTE_CLOUD_API_URL = PRIMARY_API_URL;
 
+import {
+  saveOrderToFirestore,
+  updateOrderInFirestore,
+  deleteOrderFromFirestore,
+  moveKotTableInFirestore,
+  saveCustomerDueToFirestore,
+  settleCustomerDueInFirestore,
+} from './firestoreService';
+
+
 /**
- * Single Configured Server API Endpoint
+ * All Configured Server API Endpoints (Primary Production + Emergency Stage)
  */
 export const ALL_CONFIGURED_APIS = [
-  { id: 'primary', name: 'Primary Node API Server', url: PRIMARY_API_URL, type: 'Primary', isPrimary: true },
+  { id: 'primary', name: 'Primary FoodyPay Production Server', url: PRIMARY_API_URL, type: 'Primary', isPrimary: true },
+  { id: 'emergency', name: 'Emergency FoodyPay Stage Server', url: EMERGENCY_API_URL, type: 'Emergency Fallback', isPrimary: false },
 ];
 
 export const TOTAL_AVAILABLE_APIS_COUNT = ALL_CONFIGURED_APIS.length;
 
+// Internal Failover State Management
+let currentActiveApiUrl = PRIMARY_API_URL;
+let isEmergencyMode = false;
+let lastFailoverTimestamp = 0;
+const FAILOVER_COOLDOWN_MS = 60000; // 60 seconds cooldown before retrying primary
+
 /**
- * Central API Base URL Resolution
+ * Dynamic API Base URL Resolution with Failover Recovery
  */
 export const getApiBaseUrl = () => {
-  if (import.meta.env.VITE_API_BASE_URL) {
-    return import.meta.env.VITE_API_BASE_URL;
+  if (isEmergencyMode && Date.now() - lastFailoverTimestamp > FAILOVER_COOLDOWN_MS) {
+    isEmergencyMode = false;
+    currentActiveApiUrl = PRIMARY_API_URL;
   }
-  return PRIMARY_API_URL;
+  return currentActiveApiUrl;
 };
 
-export const API_BASE_URL = getApiBaseUrl();
+export let API_BASE_URL = getApiBaseUrl();
 
 /**
  * Universal HTML-Safe JSON Parser helper (prevents Unexpected token '<' crashes)
@@ -44,12 +63,59 @@ export async function parseJsonResponse(res) {
 }
 
 /**
- * Unified Safe Fetch Helper (direct fast fetch to configured API_BASE_URL)
+ * Unified Safe Fetch Helper with Automatic Emergency Failover
+ * Attempts primary API (https://api.foodypay.online/api).
+ * In case of network errors (server offline, DNS, timeout) or 5xx server errors,
+ * seamlessly and transparently fails over to emergency stage API (https://api.stage.foodypay.online/api).
  */
 export async function safeFetch(path, options = {}) {
   const cleanPath = path.startsWith('/api') ? path.replace('/api', '') : (path.startsWith('/') ? path : `/${path}`);
-  const url = `${API_BASE_URL}${cleanPath}`;
-  return fetch(url, options);
+  const activeBase = getApiBaseUrl();
+  const fallbackBase = activeBase === PRIMARY_API_URL ? EMERGENCY_API_URL : PRIMARY_API_URL;
+
+  const buildUrl = (base) => `${base.replace(/\/+$/, '')}${cleanPath}`;
+
+  try {
+    const response = await fetch(buildUrl(activeBase), options);
+    // If response is a 5xx server error, failover to emergency
+    if (response.status >= 500 && fallbackBase && fallbackBase !== activeBase) {
+      console.warn(`[FoodyPay Emergency Failover] Server error ${response.status} on ${activeBase}. Retrying via emergency fallback: ${fallbackBase}`);
+      try {
+        const fallbackRes = await fetch(buildUrl(fallbackBase), options);
+        if (fallbackRes.ok || fallbackRes.status < 500) {
+          isEmergencyMode = true;
+          currentActiveApiUrl = fallbackBase;
+          API_BASE_URL = fallbackBase;
+          lastFailoverTimestamp = Date.now();
+          return fallbackRes;
+        }
+      } catch (fallbackErr) {
+        console.error('[FoodyPay Emergency Failover] Fallback server also returned error:', fallbackErr);
+      }
+    } else if (response.ok && isEmergencyMode && activeBase === PRIMARY_API_URL) {
+      isEmergencyMode = false;
+      currentActiveApiUrl = PRIMARY_API_URL;
+      API_BASE_URL = PRIMARY_API_URL;
+    }
+    return response;
+  } catch (netErr) {
+    // Network Error (server down, DNS failure, connection refused, CORS failure from 502)
+    if (fallbackBase && fallbackBase !== activeBase) {
+      console.warn(`[FoodyPay Emergency Failover] Network failure on ${activeBase} (${netErr.message}). Switching to emergency fallback: ${fallbackBase}`);
+      try {
+        const fallbackRes = await fetch(buildUrl(fallbackBase), options);
+        isEmergencyMode = true;
+        currentActiveApiUrl = fallbackBase;
+        API_BASE_URL = fallbackBase;
+        lastFailoverTimestamp = Date.now();
+        return fallbackRes;
+      } catch (fallbackErr) {
+        console.error('[FoodyPay Emergency Failover] Both Primary and Emergency APIs failed:', fallbackErr);
+        throw netErr;
+      }
+    }
+    throw netErr;
+  }
 }
 
 /**
@@ -148,8 +214,8 @@ export async function checkEmailExistsApi(email) {
  * Admin: Fetch all registered users from database
  */
 export async function fetchRegisteredUsersApi() {
-  const response = await fetch(`${API_BASE_URL}/auth/users`);
-  const data = await response.json();
+  const response = await safeFetch('/auth/users');
+  const data = await parseJsonResponse(response);
   if (!response.ok) {
     throw new Error(data.message || 'Failed to fetch registered users');
   }
@@ -160,10 +226,10 @@ export async function fetchRegisteredUsersApi() {
  * Admin: Delete registered user by ID from database
  */
 export async function deleteUserApi(userId) {
-  const response = await fetch(`${API_BASE_URL}/auth/users/${userId}`, {
+  const response = await safeFetch(`/auth/users/${userId}`, {
     method: 'DELETE',
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) {
     throw new Error(data.message || 'Failed to delete user account');
   }
@@ -174,10 +240,10 @@ export async function deleteUserApi(userId) {
  * Admin: Delete registered user by Email from database
  */
 export async function deleteUserByEmailApi(email) {
-  const response = await fetch(`${API_BASE_URL}/auth/users/email/${encodeURIComponent(email)}`, {
+  const response = await safeFetch(`/auth/users/email/${encodeURIComponent(email)}`, {
     method: 'DELETE',
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) {
     throw new Error(data.message || 'Failed to delete user account');
   }
@@ -188,12 +254,12 @@ export async function deleteUserByEmailApi(email) {
  * Admin: Toggle user account lock (requiring subscription)
  */
 export async function toggleUserLockApi(userId, isLocked, lockReason) {
-  const response = await fetch(`${API_BASE_URL}/auth/users/${userId}/lock`, {
+  const response = await safeFetch(`/auth/users/${userId}/lock`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ isLocked, lockReason }),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) {
     throw new Error(data.message || 'Failed to update user lock status');
   }
@@ -204,12 +270,12 @@ export async function toggleUserLockApi(userId, isLocked, lockReason) {
  * Admin: Update per-account subscription pricing & plan
  */
 export async function updateUserSubscriptionApi(userId, subscriptionData) {
-  const response = await fetch(`${API_BASE_URL}/auth/users/${userId}/subscription`, {
+  const response = await safeFetch(`/auth/users/${userId}/subscription`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(subscriptionData),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) {
     throw new Error(data.message || 'Failed to update user subscription pricing');
   }
@@ -221,14 +287,14 @@ export async function updateUserSubscriptionApi(userId, subscriptionData) {
  * Fetch protected Dashboard summary data using JWT token
  */
 export async function getDashboardApi(token) {
-  const response = await fetch(`${API_BASE_URL}/dashboard`, {
+  const response = await safeFetch('/dashboard', {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
     },
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) {
     throw new Error(data.message || 'Failed to fetch dashboard data');
   }
@@ -240,25 +306,17 @@ export async function getDashboardApi(token) {
    ========================================================================== */
 
 export async function fetchOrdersApi(token) {
-  try {
-    const response = await safeFetch('/orders', {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await parseJsonResponse(response);
-    if (!response.ok) throw new Error(data.message || 'Failed to fetch orders');
-    return data.data;
-  } catch (err) {
-    const response = await fetch(`${API_BASE_URL}/orders`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Failed to fetch orders');
-    return data.data;
-  }
+  const response = await safeFetch('/orders', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await parseJsonResponse(response);
+  if (!response.ok) throw new Error(data.message || 'Failed to fetch orders');
+  return data.data;
 }
 
 export async function createOrderApi(token, orderData) {
-  const response = await fetch(`${API_BASE_URL}/orders`, {
+  saveOrderToFirestore(orderData).catch(() => {});
+  const response = await safeFetch('/orders', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -266,64 +324,73 @@ export async function createOrderApi(token, orderData) {
     },
     body: JSON.stringify(orderData),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to create order');
+  if (data.data) {
+    saveOrderToFirestore(data.data).catch(() => {});
+  }
   return data.data;
 }
 
 export async function createPublicOrderApi(orderData) {
-  const response = await fetch(`${API_BASE_URL}/orders/public`, {
+  saveOrderToFirestore(orderData).catch(() => {});
+  const response = await safeFetch('/orders/public', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(orderData),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to submit public order');
+  if (data.data) {
+    saveOrderToFirestore(data.data).catch(() => {});
+  }
   return data.data;
 }
 
 export async function createRazorpayOrderApi(payload) {
-  const response = await fetch(`${API_BASE_URL}/payments/create-razorpay-order`, {
+  const response = await safeFetch('/payments/create-razorpay-order', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to create Razorpay order');
   return data;
 }
 
 export async function verifyRazorpaySignatureApi(payload) {
-  const response = await fetch(`${API_BASE_URL}/payments/verify-signature`, {
+  const response = await safeFetch('/payments/verify-signature', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to verify Razorpay signature');
   return data;
 }
 
 
 export async function updateOrderStatusApi(token, orderId, status) {
-  const url = token ? `${API_BASE_URL}/orders/${orderId}/status` : `${API_BASE_URL}/orders/public/${orderId}/status`;
+  updateOrderInFirestore(orderId, { status, kitchenSeen: true }).catch(() => {});
+  const path = token ? `/orders/${orderId}/status` : `/orders/public/${orderId}/status`;
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const response = await fetch(url, {
+  const response = await safeFetch(path, {
     method: 'PUT',
     headers,
     body: JSON.stringify({ status, kitchenSeen: true }),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to update order status');
   return data.data;
 }
 
 export async function sendToKitchenApi(token, orderId) {
-  const response = await fetch(`${API_BASE_URL}/orders/${orderId}`, {
+  updateOrderInFirestore(orderId, { sentToKitchen: true, kitchenSeen: false }).catch(() => {});
+  const response = await safeFetch(`/orders/${orderId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -331,59 +398,52 @@ export async function sendToKitchenApi(token, orderId) {
     },
     body: JSON.stringify({ sentToKitchen: true, kitchenSeen: false }),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to send order to kitchen');
   return data.data;
 }
 
 export async function markOrderSeenApi(token, orderId) {
-  const response = await fetch(`${API_BASE_URL}/orders/${orderId}/seen`, {
+  updateOrderInFirestore(orderId, { seen: true }).catch(() => {});
+  const response = await safeFetch(`/orders/${orderId}/seen`, {
     method: 'PUT',
     headers: {
       Authorization: `Bearer ${token}`,
     },
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to mark order seen');
   return data.data;
 }
 
 export async function markKitchenSeenApi(token, orderId) {
-  const url = token ? `${API_BASE_URL}/orders/${orderId}/kitchen-seen` : `${API_BASE_URL}/orders/public/${orderId}/kitchen-seen`;
+  updateOrderInFirestore(orderId, { kitchenSeen: true }).catch(() => {});
+  const path = token ? `/orders/${orderId}/kitchen-seen` : `/orders/public/${orderId}/kitchen-seen`;
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const response = await fetch(url, {
+  const response = await safeFetch(path, {
     method: 'PUT',
     headers,
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to mark kitchen order seen');
   return data.data;
 }
 
 export async function fetchOrderStatsApi(token) {
-  try {
-    const response = await safeFetch('/orders/stats', {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await parseJsonResponse(response);
-    if (!response.ok) throw new Error(data.message || 'Failed to fetch order stats');
-    return data.data;
-  } catch (err) {
-    const response = await fetch(`${API_BASE_URL}/orders/stats`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Failed to fetch order stats');
-    return data.data;
-  }
+  const response = await safeFetch('/orders/stats', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await parseJsonResponse(response);
+  if (!response.ok) throw new Error(data.message || 'Failed to fetch order stats');
+  return data.data;
 }
 
 export async function fetchDishesApi(token) {
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
-  const response = await fetch(`${API_BASE_URL}/dishes${token ? '' : '/public'}`, { headers });
-  const data = await response.json();
+  const response = await safeFetch(`/dishes${token ? '' : '/public'}`, { headers });
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to fetch catalog dishes');
   return data.data;
 }
@@ -392,8 +452,8 @@ export async function fetchPublicDishesApi(merchantId, foodypayId) {
   const queryParams = new URLSearchParams();
   if (merchantId) queryParams.append('merchantId', merchantId);
   if (foodypayId) queryParams.append('foodypayId', foodypayId);
-  const response = await fetch(`${API_BASE_URL}/dishes/public?${queryParams.toString()}`);
-  const data = await response.json();
+  const response = await safeFetch(`/dishes/public?${queryParams.toString()}`);
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to fetch catalog dishes');
   return data.data;
 }
@@ -402,8 +462,8 @@ export async function fetchPublicOrdersApi(merchantId, foodypayId) {
   const queryParams = new URLSearchParams();
   if (merchantId) queryParams.append('merchantId', merchantId);
   if (foodypayId) queryParams.append('foodypayId', foodypayId);
-  const response = await fetch(`${API_BASE_URL}/orders/public?${queryParams.toString()}`);
-  const data = await response.json();
+  const response = await safeFetch(`/orders/public?${queryParams.toString()}`);
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to fetch public orders');
   return data.data;
 }
@@ -411,9 +471,9 @@ export async function fetchPublicOrdersApi(merchantId, foodypayId) {
 export async function fetchPublicMerchantApi(identifier) {
   if (!identifier || identifier === 'undefined') return null;
   try {
-    const response = await fetch(`${API_BASE_URL}/auth/merchant/${encodeURIComponent(identifier)}`);
+    const response = await safeFetch(`/auth/merchant/${encodeURIComponent(identifier)}`);
     if (!response.ok) return null;
-    const data = await response.json();
+    const data = await parseJsonResponse(response);
     return data.data || null;
   } catch (err) {
     return null;
@@ -427,12 +487,12 @@ export async function createDishApi(token, dishData) {
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
-  const response = await fetch(`${API_BASE_URL}/dishes`, {
+  const response = await safeFetch('/dishes', {
     method: 'POST',
     headers,
     body: isFormData ? dishData : JSON.stringify(dishData),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to create dish');
   return data.data;
 }
@@ -501,17 +561,17 @@ export async function deleteReviewApi(reviewId, token) {
 }
 
 export async function toggleDishStockApi(token, dishId) {
-  const response = await fetch(`${API_BASE_URL}/dishes/${dishId}/stock`, {
+  const response = await safeFetch(`/dishes/${dishId}/stock`, {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${token}` },
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to toggle stock');
   return data.data;
 }
 
 export async function updateOrderApi(token, orderId, orderData) {
-  const response = await fetch(`${API_BASE_URL}/orders/${orderId}`, {
+  const response = await safeFetch(`/orders/${orderId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -519,14 +579,14 @@ export async function updateOrderApi(token, orderId, orderData) {
     },
     body: JSON.stringify(orderData),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to update order');
   return data.data;
 }
 
 export async function updateDishApi(token, dishId, dishData) {
   const isFormData = dishData instanceof FormData;
-  const response = await fetch(`${API_BASE_URL}/dishes/${dishId}`, {
+  const response = await safeFetch(`/dishes/${dishId}`, {
     method: 'PUT',
     headers: {
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
@@ -534,35 +594,35 @@ export async function updateDishApi(token, dishId, dishData) {
     },
     body: isFormData ? dishData : JSON.stringify(dishData),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to update dish');
   return data.data;
 }
 
 export async function deleteDishApi(token, dishId) {
-  const response = await fetch(`${API_BASE_URL}/dishes/${dishId}`, {
+  const response = await safeFetch(`/dishes/${dishId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to delete dish');
   return data.data;
 }
 
 export async function fetchCustomersApi(token) {
-  const response = await fetch(`${API_BASE_URL}/customers`, {
+  const response = await safeFetch('/customers', {
     headers: { Authorization: `Bearer ${token}` },
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to fetch CRM customers');
   return data.data;
 }
 
 export async function fetchCouponsApi(token) {
-  const response = await fetch(`${API_BASE_URL}/coupons`, {
+  const response = await safeFetch('/coupons', {
     headers: { Authorization: `Bearer ${token}` },
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to fetch coupons');
   return data.data;
 }
@@ -578,11 +638,11 @@ export async function fetchPublicCouponsApi(phone, email, merchantId) {
     const headers = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const response = await fetch(`${API_BASE_URL}/coupons/public?${queryParams.toString()}`, { headers });
+    const response = await safeFetch(`/coupons/public?${queryParams.toString()}`, { headers });
     if (!response.ok) {
       return [];
     }
-    const data = await response.json();
+    const data = await parseJsonResponse(response);
     return data.data || [];
   } catch (err) {
     return [];
@@ -590,7 +650,7 @@ export async function fetchPublicCouponsApi(phone, email, merchantId) {
 }
 
 export async function createCouponApi(token, couponData) {
-  const response = await fetch(`${API_BASE_URL}/coupons`, {
+  const response = await safeFetch('/coupons', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -598,13 +658,13 @@ export async function createCouponApi(token, couponData) {
     },
     body: JSON.stringify(couponData),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to create coupon');
   return data.data;
 }
 
 export async function sendNotificationApi(token, notificationData) {
-  const response = await fetch(`${API_BASE_URL}/notifications/send`, {
+  const response = await safeFetch('/notifications/send', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -612,31 +672,31 @@ export async function sendNotificationApi(token, notificationData) {
     },
     body: JSON.stringify(notificationData),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to send notification');
   return data.data;
 }
 
 export async function fetchNotificationsApi(token) {
-  const response = await fetch(`${API_BASE_URL}/notifications`, {
+  const response = await safeFetch('/notifications', {
     headers: { Authorization: `Bearer ${token}` },
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to fetch notifications');
   return data.data;
 }
 
 export async function fetchTablesApi(token) {
-  const response = await fetch(`${API_BASE_URL}/tables`, {
+  const response = await safeFetch('/tables', {
     headers: { Authorization: `Bearer ${token}` },
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to fetch dining tables');
   return data.data;
 }
 
 export async function createTableApi(token, tableData) {
-  const response = await fetch(`${API_BASE_URL}/tables`, {
+  const response = await safeFetch('/tables', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -644,13 +704,13 @@ export async function createTableApi(token, tableData) {
     },
     body: JSON.stringify(tableData),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to create dining table');
   return data.data;
 }
 
 export async function updateTableApi(token, tableId, tableData) {
-  const response = await fetch(`${API_BASE_URL}/tables/${tableId}`, {
+  const response = await safeFetch(`/tables/${tableId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -658,26 +718,26 @@ export async function updateTableApi(token, tableId, tableData) {
     },
     body: JSON.stringify(tableData),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to update dining table');
   return data.data;
 }
 
 export async function deleteTableApi(token, tableId) {
-  const response = await fetch(`${API_BASE_URL}/tables/${tableId}`, {
+  const response = await safeFetch(`/tables/${tableId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to delete table');
   return data;
 }
 
 export async function fetchSettingsApi(token) {
-  const response = await fetch(`${API_BASE_URL}/settings`, {
+  const response = await safeFetch('/settings', {
     headers: { Authorization: `Bearer ${token}` },
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to fetch settings');
   return data.data;
 }
@@ -688,12 +748,12 @@ export async function updateSettingsApi(token, settingsData) {
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
-  const response = await fetch(`${API_BASE_URL}/settings`, {
+  const response = await safeFetch('/settings', {
     method: 'PUT',
     headers,
     body: isFormData ? settingsData : JSON.stringify(settingsData),
   });
-  const data = await response.json();
+  const data = await parseJsonResponse(response);
   if (!response.ok) throw new Error(data.message || 'Failed to update settings');
   return data.data;
 }
@@ -863,6 +923,9 @@ export async function fetchCustomerDuesApi(token, phone = '') {
 }
 
 export async function updateCustomerDueStatusApi(token, payload) {
+  if (payload && (payload.dueId || payload.id)) {
+    settleCustomerDueInFirestore(payload.dueId || payload.id, payload).catch(() => {});
+  }
   try {
     const res = await safeFetch(`/customer-dues/settle`, {
       method: 'POST',
@@ -880,6 +943,7 @@ export async function updateCustomerDueStatusApi(token, payload) {
 }
 
 export async function moveKotTableApi(token, orderId, targetTable) {
+  moveKotTableInFirestore(orderId, targetTable).catch(() => {});
   try {
     const res = await safeFetch(`/orders/${orderId}/move-table`, {
       method: 'PATCH',

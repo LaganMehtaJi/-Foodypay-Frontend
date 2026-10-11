@@ -59,6 +59,13 @@ import {
   assignStoreZonesApi,
   assignStoreOwnerEmailApi,
 } from '../utils/api';
+import {
+  getAllBusinessUsersFromFirestore,
+  subscribeToBusinessUsers,
+  updateBusinessUserInFirestore,
+  deleteBusinessUserFromFirestore,
+  calculatePlanDates,
+} from '../utils/firestoreService';
 
 export default function AdminDebugPage({ onShowToast }) {
   const navigate = useNavigate();
@@ -520,7 +527,7 @@ export default function AdminDebugPage({ onShowToast }) {
     } catch (e) {}
   };
 
-  // Fetch Live Real Data from Backend Database
+  // Fetch Live Real Data from Cloud Firestore (Business_Users) & Backend Database
   const loadLiveAdminData = async () => {
     setLoadingData(true);
     let liveOrdersList = [];
@@ -545,23 +552,68 @@ export default function AdminDebugPage({ onShowToast }) {
     } catch (e) {}
 
     try {
-      const usersRes = await fetchRegisteredUsersApi();
-      let rawUsers = (usersRes && usersRes.success && Array.isArray(usersRes.data)) ? usersRes.data : [];
+      // 1. Fetch from Firestore Business_Users (Source of truth)
+      const firestoreBusinesses = await getAllBusinessUsersFromFirestore();
 
-      // Ensure active logged-in merchant is present in rawUsers list if missing
+      // 2. Fetch from backend API as supplemental/legacy bridge
+      let rawUsers = [];
+      try {
+        const usersRes = await fetchRegisteredUsersApi();
+        if (usersRes && usersRes.success && Array.isArray(usersRes.data)) {
+          rawUsers = usersRes.data;
+        }
+      } catch (e) {}
+
+      // Map firestore businesses to user models
+      const fsUsersMapped = (firestoreBusinesses || []).map((b) => ({
+        _id: b.uniqueId || b.id,
+        foodypayId: b.uniqueId || b.id,
+        uniqueId: b.uniqueId || b.id,
+        businessName: b.businessName || b.name || 'Restaurant',
+        name: b.ownerName || b.name || b.businessName || '',
+        email: b.email || '',
+        contactNo: b.phone || b.contactNo || '',
+        phone: b.phone || b.contactNo || '',
+        logoUrl: b.logoUrl || '',
+        plan: b.plan || 'Free',
+        subscriptionPlan: b.plan || 'Free',
+        startingDate: b.startingDate || b.createdAt || '',
+        expireDate: b.expireDate || '',
+        subscriptionExpiry: b.expireDate || '',
+        isLocked: Boolean(b.isLocked || b.status === 'Locked'),
+        lockReason: b.lockReason || 'Subscription Payment Required',
+        subscriptionStatus: b.status || (b.isLocked ? 'Locked' : 'Active'),
+        subscriptionPrice: b.plan === 'Pro' ? 999 : b.plan === 'Growth' ? 499 : b.plan === 'Basic' ? 199 : 0,
+        createdAt: b.createdAt || b.startingDate || new Date().toISOString(),
+      }));
+
+      // Merge firestore users with rawUsers (avoid duplicates by uniqueId/foodypayId/email)
+      const combined = [...fsUsersMapped];
+      rawUsers.forEach((ru) => {
+        const ruId = ru.foodypayId || ru._id;
+        const ruEmail = (ru.email || '').toLowerCase();
+        const alreadyInFs = combined.some(
+          (cu) => (ruId && (cu.foodypayId === ruId || cu._id === ruId)) || (ruEmail && cu.email.toLowerCase() === ruEmail)
+        );
+        if (!alreadyInFs) {
+          combined.push(ru);
+        }
+      });
+
+      // Ensure active logged-in merchant is present
       if (activeMerchant) {
-        const exists = rawUsers.some(
+        const exists = combined.some(
           (u) =>
             (u._id && String(u._id) === String(activeMerchant._id)) ||
             (u.foodypayId && activeMerchant.foodypayId && String(u.foodypayId) === String(activeMerchant.foodypayId)) ||
             (u.email && activeMerchant.email && String(u.email).toLowerCase() === String(activeMerchant.email).toLowerCase())
         );
         if (!exists) {
-          rawUsers.push(activeMerchant);
+          combined.push(activeMerchant);
         }
       }
 
-      const normalized = rawUsers.map((u) => {
+      const normalized = combined.map((u) => {
         const isCurrentActive =
           activeMerchant &&
           ((u._id && String(u._id) === String(activeMerchant._id)) ||
@@ -572,15 +624,15 @@ export default function AdminDebugPage({ onShowToast }) {
         const matchingOrders = liveOrdersList.filter((o) => {
           if (!o) return false;
           const oUser = String(o.user || '');
-          const oMerchantId = String(o.merchantId || '');
+          const oMerchantId = String(o.merchantId || o.businessId || '');
           const oFpId = String(o.foodypayId || '');
           const uId = String(u._id || '');
-          const uFpId = String(u.foodypayId || '');
+          const uFpId = String(u.foodypayId || u.uniqueId || '');
 
           if (oUser && uId && oUser === uId) return true;
           if (oMerchantId && (oMerchantId === uId || oMerchantId === uFpId)) return true;
           if (oFpId && uFpId && oFpId === uFpId) return true;
-          if (isCurrentActive && (!o.user && !o.merchantId && !o.foodypayId)) return true; // Unassigned local orders belong to current merchant
+          if (isCurrentActive && (!o.user && !o.merchantId && !o.foodypayId && !o.businessId)) return true;
           return false;
         });
 
@@ -590,34 +642,38 @@ export default function AdminDebugPage({ onShowToast }) {
         const totalSalesVal = Math.max(dbSales, computedSales);
         const totalOrdersVal = Math.max(Number(u.totalOrders) || 0, matchingOrders.length);
 
-        const subPriceVal = u.subscriptionPrice !== undefined && u.subscriptionPrice !== null ? Number(u.subscriptionPrice) : 0;
-        const subPlanVal = u.subscriptionPlan || (subPriceVal > 0 ? 'Pro Business Plan' : 'Free Trial (14 Days)');
+        const subPriceVal = u.subscriptionPrice !== undefined && u.subscriptionPrice !== null ? Number(u.subscriptionPrice) : (u.plan === 'Pro' ? 999 : u.plan === 'Growth' ? 499 : u.plan === 'Basic' ? 199 : 0);
+        const planNameVal = u.plan || u.subscriptionPlan || (subPriceVal > 0 ? 'Basic' : 'Free');
 
         return {
-          _id: u._id || `user_${Math.random()}`,
+          _id: u._id || u.uniqueId || `user_${Math.random()}`,
+          uniqueId: u.uniqueId || u.foodypayId || u._id || 'FP-REST',
           email: u.email || '',
           name: u.name || '',
           businessName: u.businessName || u.name || '',
           contactNo: u.contactNo || u.phone || '',
           logoUrl: u.logo?.url || u.logoUrl || u.picture || '',
-          foodypayId: u.foodypayId || '',
+          foodypayId: u.foodypayId || u.uniqueId || '',
           isLocked: Boolean(u.isLocked),
           lockReason: u.lockReason || 'Subscription Payment Required',
+          plan: planNameVal,
           subscriptionPrice: subPriceVal,
-          subscriptionStatus: u.subscriptionStatus || (u.isLocked ? 'Locked' : (subPriceVal > 0 ? 'Active' : 'Trial')),
-          subscriptionPlan: subPlanVal,
-          subscriptionExpiry: u.subscriptionExpiry || '',
+          subscriptionStatus: u.subscriptionStatus || (u.isLocked ? 'Locked' : (subPriceVal > 0 ? 'Active' : 'Free')),
+          subscriptionPlan: planNameVal,
+          startingDate: u.startingDate || u.createdAt || new Date().toISOString(),
+          expireDate: u.expireDate || u.subscriptionExpiry || '',
+          subscriptionExpiry: u.expireDate || u.subscriptionExpiry || '',
           totalSales: totalSalesVal,
           totalOrders: totalOrdersVal,
-          totalBilled: u.totalBilled !== undefined ? Number(u.totalBilled) : (subPriceVal > 0 ? subPriceVal : 0),
+          totalBilled: u.totalBilled !== undefined ? Number(u.totalBilled) : subPriceVal,
           dishCount: Number(u.dishCount) || (u.dishes ? u.dishes.length : 0),
           dishes: u.dishes || [],
-          createdAt: u.createdAt || new Date().toISOString(),
+          createdAt: u.createdAt || u.startingDate || new Date().toISOString(),
         };
       });
 
       setRegisteredUsers(normalized);
-      if (onShowToast) onShowToast(' Live Database Records & Sales Reloaded Cleanly!');
+      if (onShowToast) onShowToast('⚡ Live Firestore Business_Users & Telemetry Synced!');
     } catch (err) {
       console.warn('Backend load error:', err.message);
     } finally {
@@ -628,6 +684,53 @@ export default function AdminDebugPage({ onShowToast }) {
   useEffect(() => {
     if (isAdminAuthenticated) {
       loadLiveAdminData();
+      // Also attach real-time listener to Business_Users
+      const unsubscribe = subscribeToBusinessUsers((businesses) => {
+        if (Array.isArray(businesses) && businesses.length > 0) {
+          setRegisteredUsers((prev) => {
+            const updated = [...prev];
+            businesses.forEach((b) => {
+              const idx = updated.findIndex((u) => u.uniqueId === b.uniqueId || u.foodypayId === b.uniqueId || u.email === b.email);
+              const bPrice = b.plan === 'Pro' ? 999 : b.plan === 'Growth' ? 499 : b.plan === 'Basic' ? 199 : 0;
+              const bEntry = {
+                _id: b.uniqueId,
+                uniqueId: b.uniqueId,
+                foodypayId: b.uniqueId,
+                businessName: b.businessName,
+                name: b.ownerName || b.businessName,
+                email: b.email,
+                contactNo: b.phone,
+                phone: b.phone,
+                plan: b.plan || 'Free',
+                subscriptionPlan: b.plan || 'Free',
+                startingDate: b.startingDate,
+                expireDate: b.expireDate,
+                subscriptionExpiry: b.expireDate,
+                isLocked: Boolean(b.isLocked || b.status === 'Locked'),
+                lockReason: b.lockReason || 'Subscription Payment Required',
+                subscriptionStatus: b.status || (b.isLocked ? 'Locked' : 'Active'),
+                subscriptionPrice: bPrice,
+                totalSales: idx !== -1 ? updated[idx].totalSales : 0,
+                totalOrders: idx !== -1 ? updated[idx].totalOrders : 0,
+                totalBilled: bPrice,
+                dishCount: idx !== -1 ? updated[idx].dishCount : 0,
+                dishes: idx !== -1 ? updated[idx].dishes : [],
+                createdAt: b.createdAt || b.startingDate,
+              };
+              if (idx !== -1) {
+                updated[idx] = { ...updated[idx], ...bEntry };
+              } else {
+                updated.push(bEntry);
+              }
+            });
+            return updated;
+          });
+        }
+      });
+
+      return () => {
+        if (typeof unsubscribe === 'function') unsubscribe();
+      };
     }
   }, [isAdminAuthenticated]);
 
@@ -655,7 +758,21 @@ export default function AdminDebugPage({ onShowToast }) {
   const handleExecuteAccountLockToggle = async () => {
     if (!lockModalUser) return;
     const targetUserId = lockModalUser._id;
+    const targetUniqueId = lockModalUser.uniqueId || lockModalUser.foodypayId || targetUserId;
     const nextLockedState = !lockModalUser.isLocked;
+
+    // Update in Firestore Business_Users
+    try {
+      if (targetUniqueId) {
+        await updateBusinessUserInFirestore(targetUniqueId, {
+          isLocked: nextLockedState,
+          lockReason: lockReasonInput,
+          status: nextLockedState ? 'Locked' : 'Active',
+        });
+      }
+    } catch (e) {
+      console.warn('Firestore lock update notice:', e);
+    }
 
     try {
       if (targetUserId && !targetUserId.startsWith('user_')) {
@@ -667,12 +784,13 @@ export default function AdminDebugPage({ onShowToast }) {
 
     setRegisteredUsers((prev) =>
       prev.map((u) => {
-        if (u._id === targetUserId) {
+        if (u._id === targetUserId || u.uniqueId === targetUniqueId) {
           return {
             ...u,
             isLocked: nextLockedState,
             lockReason: lockReasonInput,
             subscriptionStatus: nextLockedState ? 'Locked' : 'Active',
+            status: nextLockedState ? 'Locked' : 'Active',
           };
         }
         return u;
@@ -682,20 +800,35 @@ export default function AdminDebugPage({ onShowToast }) {
     if (onShowToast) {
       onShowToast(
         nextLockedState
-          ? ` Account ${lockModalUser.email} is now LOCKED (Subscription Required)`
-          : ` Account ${lockModalUser.email} has been UNLOCKED & Activated!`
+          ? `🔒 Business ${lockModalUser.businessName || lockModalUser.email} is now LOCKED in Firestore`
+          : `✅ Business ${lockModalUser.businessName || lockModalUser.email} UNLOCKED & Activated in Firestore!`
       );
     }
 
     setLockModalUser(null);
   };
 
-  // 2. Subscription Pricing Update Handler
+  // 2. Subscription Pricing & Plan Update Handler
   const handleSaveUserSubscription = async (e) => {
     e.preventDefault();
     if (!subModalUser) return;
     const targetUserId = subModalUser._id;
+    const targetUniqueId = subModalUser.uniqueId || subModalUser.foodypayId || targetUserId;
     const isSuspendedVal = subForm.status === 'Suspended' || Boolean(subForm.isSuspended);
+
+    // Update in Firestore Business_Users
+    try {
+      if (targetUniqueId) {
+        await updateBusinessUserInFirestore(targetUniqueId, {
+          plan: subForm.plan,
+          expireDate: subForm.expiry,
+          status: isSuspendedVal ? 'Suspended' : subForm.status,
+          isLocked: subForm.status === 'Locked' || subForm.status === 'Expired' || isSuspendedVal,
+        });
+      }
+    } catch (e) {
+      console.warn('Firestore subscription update notice:', e);
+    }
 
     try {
       if (targetUserId && !targetUserId.startsWith('user_')) {
@@ -707,12 +840,14 @@ export default function AdminDebugPage({ onShowToast }) {
 
     setRegisteredUsers((prev) =>
       prev.map((u) => {
-        if (u._id === targetUserId || u.email === subModalUser.email) {
+        if (u._id === targetUserId || u.uniqueId === targetUniqueId || u.email === subModalUser.email) {
           return {
             ...u,
+            plan: subForm.plan,
             subscriptionPrice: Number(subForm.price) || 0,
             subscriptionPlan: subForm.plan,
             subscriptionStatus: isSuspendedVal ? 'Suspended' : subForm.status,
+            expireDate: subForm.expiry,
             subscriptionExpiry: subForm.expiry,
             isLocked: subForm.status === 'Locked' || subForm.status === 'Expired' || isSuspendedVal,
             isSuspended: isSuspendedVal,
@@ -727,13 +862,15 @@ export default function AdminDebugPage({ onShowToast }) {
       const rawU = localStorage.getItem('foodypay_user');
       if (rawU) {
         const u = JSON.parse(rawU);
-        if (u.email === subModalUser.email || u._id === targetUserId || u.foodypayId === subModalUser.foodypayId) {
+        if (u.email === subModalUser.email || u._id === targetUserId || u.foodypayId === targetUniqueId) {
           const updated = {
             ...u,
+            plan: subForm.plan,
             subscriptionPlan: subForm.plan,
             subscriptionPrice: Number(subForm.price) || 0,
             subscriptionStatus: isSuspendedVal ? 'Suspended' : subForm.status,
             subscriptionExpiry: subForm.expiry,
+            expireDate: subForm.expiry,
             isLocked: subForm.status === 'Locked' || subForm.status === 'Expired' || isSuspendedVal,
             isSuspended: isSuspendedVal,
           };
@@ -746,8 +883,8 @@ export default function AdminDebugPage({ onShowToast }) {
     if (onShowToast) {
       onShowToast(
         isSuspendedVal
-          ? ` Account ${subModalUser.email} has been SUSPENDED!`
-          : ` Subscription for ${subModalUser.email} updated to ${subForm.plan} (₹${subForm.price}/mo)!`
+          ? `⚠️ Business ${subModalUser.businessName || subModalUser.email} has been SUSPENDED!`
+          : `✨ Plan for ${subModalUser.businessName || subModalUser.email} updated to ${subForm.plan} in Firestore!`
       );
     }
 
@@ -765,7 +902,17 @@ export default function AdminDebugPage({ onShowToast }) {
 
     setIsDeleting(true);
     const targetUserId = deleteModalUser._id;
+    const targetUniqueId = deleteModalUser.uniqueId || deleteModalUser.foodypayId || targetUserId;
     const targetEmail = deleteModalUser.email;
+
+    // Delete from Firestore Business_Users
+    try {
+      if (targetUniqueId) {
+        await deleteBusinessUserFromFirestore(targetUniqueId);
+      }
+    } catch (e) {
+      console.warn('Firestore delete notice:', e);
+    }
 
     try {
       if (targetUserId && !targetUserId.startsWith('user_')) {
@@ -777,10 +924,10 @@ export default function AdminDebugPage({ onShowToast }) {
       console.warn('Delete API note:', err.message);
     }
 
-    setRegisteredUsers((prev) => prev.filter((u) => u._id !== targetUserId && u.email !== targetEmail));
+    setRegisteredUsers((prev) => prev.filter((u) => u._id !== targetUserId && u.uniqueId !== targetUniqueId && u.email !== targetEmail));
 
     if (onShowToast) {
-      onShowToast(`️ User account (${targetEmail}) deleted permanently from database!`);
+      onShowToast(`🗑️ Business account (${deleteModalUser.businessName || targetEmail}) deleted from Firestore!`);
     }
 
     setIsDeleting(false);
@@ -1279,34 +1426,46 @@ export default function AdminDebugPage({ onShowToast }) {
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13.5px' }}>
                     <thead>
                       <tr style={{ backgroundColor: '#161F33', borderBottom: '1px solid #1E293B', color: '#94A3B8', fontSize: '12px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        <th style={{ padding: '14px 18px' }}>Business Name &amp; Logo</th>
+                        <th style={{ padding: '14px 18px' }}>Business Name &amp; Unique ID</th>
                         <th style={{ padding: '14px 18px' }}>Email &amp; Contact</th>
-                        <th style={{ padding: '14px 18px' }}>Active Plan Status</th>
+                        <th style={{ padding: '14px 18px' }}>Plan (Free/Basic/Growth/Pro)</th>
                         <th style={{ padding: '14px 18px' }}>Starting Date</th>
-                        <th style={{ padding: '14px 18px' }}>Total Store Sales</th>
-                        <th style={{ padding: '14px 18px' }}>SaaS Plan Billed</th>
+                        <th style={{ padding: '14px 18px' }}>Expire Date</th>
+                        <th style={{ padding: '14px 18px' }}>Total Sales</th>
                         <th style={{ padding: '14px 18px', textAlign: 'right' }}>Account Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredUsers.map((user) => {
-                        const createdDateStr = user.createdAt
-                          ? new Date(user.createdAt).toLocaleDateString('en-IN', {
+                        const startDateStr = user.startingDate || user.createdAt
+                          ? new Date(user.startingDate || user.createdAt).toLocaleDateString('en-IN', {
                               day: '2-digit',
                               month: 'short',
                               year: 'numeric',
                             })
                           : 'Recent';
 
-                        const isFreeTrial =
-                          user.subscriptionPrice === 0 ||
-                          (user.subscriptionPlan && user.subscriptionPlan.toLowerCase().includes('free'));
+                        const expireDateStr = user.expireDate || user.subscriptionExpiry
+                          ? new Date(user.expireDate || user.subscriptionExpiry).toLocaleDateString('en-IN', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                            })
+                          : 'No Expiry Set';
 
-                        const saasBilledAmount = user.totalBilled !== undefined ? user.totalBilled : (isFreeTrial ? 0 : user.subscriptionPrice || 499);
+                        const currentPlan = user.plan || user.subscriptionPlan || 'Free';
+                        const isExpired = user.expireDate && new Date(user.expireDate) < new Date();
+
+                        const planBadgeColor = {
+                          Free: { bg: '#FEF3C7', text: '#D97706', border: '#FCD34D' },
+                          Basic: { bg: '#DCFCE7', text: '#15803D', border: '#86EFAC' },
+                          Growth: { bg: '#F3E8FF', text: '#7E22CE', border: '#D8B4FE' },
+                          Pro: { bg: '#E0F2FE', text: '#0369A1', border: '#7DD3FC' },
+                        }[currentPlan] || { bg: '#1E293B', text: '#94A3B8', border: '#334155' };
 
                         return (
                           <tr key={user._id} style={{ borderBottom: '1px solid #1E293B', backgroundColor: user.isLocked ? '#1A0B0E' : 'transparent' }}>
-                            {/* 1. BUSINESS NAME & LOGO */}
+                            {/* 1. BUSINESS NAME & UNIQUE ID */}
                             <td style={{ padding: '16px 18px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                 {user.logoUrl ? (
@@ -1350,7 +1509,9 @@ export default function AdminDebugPage({ onShowToast }) {
                                   {user.name && user.businessName && user.name !== user.businessName && (
                                     <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '1px' }}> Owner: {user.name}</div>
                                   )}
-                                  <div style={{ fontSize: '11.5px', color: '#38BDF8', marginTop: '2px', fontWeight: 600 }}>ID: {user.foodypayId}</div>
+                                  <div style={{ fontSize: '11.5px', color: '#38BDF8', marginTop: '2px', fontWeight: 800 }}>
+                                    Unique ID: <code style={{ backgroundColor: '#0284C7', color: '#FFF', padding: '1px 5px', borderRadius: '4px' }}>{user.uniqueId || user.foodypayId}</code>
+                                  </div>
                                 </div>
                               </div>
                             </td>
@@ -1361,11 +1522,11 @@ export default function AdminDebugPage({ onShowToast }) {
                                  {user.email}
                               </div>
                               <div style={{ fontSize: '12.5px', color: '#F1F5F9', marginTop: '4px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                 {user.contactNo || 'No Phone Added'}
+                                 {user.contactNo || user.phone || 'No Phone Added'}
                               </div>
                             </td>
 
-                            {/* 3. ACTIVE PLAN STATUS (FREE vs SUBSCRIPTION) */}
+                            {/* 3. MULTI-TENANT PLAN TIER */}
                             <td style={{ padding: '16px 18px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span
@@ -1374,53 +1535,54 @@ export default function AdminDebugPage({ onShowToast }) {
                                     fontWeight: 900,
                                     padding: '3px 8px',
                                     borderRadius: '8px',
-                                    backgroundColor: isFreeTrial ? '#FEF3C7' : '#DCFCE7',
-                                    color: isFreeTrial ? '#D97706' : '#15803D',
-                                    border: isFreeTrial ? '1px solid #FCD34D' : '1px solid #86EFAC',
+                                    backgroundColor: planBadgeColor.bg,
+                                    color: planBadgeColor.text,
+                                    border: `1px solid ${planBadgeColor.border}`,
+                                    textTransform: 'uppercase',
                                   }}
                                 >
-                                  {isFreeTrial ? '🟡 FREE TRIAL' : '🟢 PRO SUBSCRIPTION'}
+                                  {currentPlan} PLAN
                                 </span>
-                                <span style={{ fontSize: '13px', fontWeight: 900, color: isFreeTrial ? '#F59E0B' : '#10B981' }}>
-                                  ₹{user.subscriptionPrice}/mo
-                                </span>
+                                {isExpired && (
+                                  <span style={{ fontSize: '10px', backgroundColor: '#7F1D1D', color: '#FCA5A5', padding: '2px 5px', borderRadius: '4px', fontWeight: 800 }}>
+                                    EXPIRED
+                                  </span>
+                                )}
                               </div>
                               <button
                                 onClick={() => {
                                   setSubModalUser(user);
                                   setSubForm({
                                     price: user.subscriptionPrice,
-                                    plan: user.subscriptionPlan,
+                                    plan: currentPlan,
                                     status: user.subscriptionStatus,
-                                    expiry: user.subscriptionExpiry ? user.subscriptionExpiry.split('T')[0] : '',
+                                    expiry: user.expireDate ? user.expireDate.split('T')[0] : (user.subscriptionExpiry ? user.subscriptionExpiry.split('T')[0] : ''),
                                   });
                                 }}
                                 style={{ background: 'none', border: 'none', color: '#38BDF8', cursor: 'pointer', padding: 0, fontSize: '11.5px', fontWeight: 700, marginTop: '4px', textDecoration: 'underline' }}
                               >
-                                ️ Edit Plan / Pricing
+                                ✏️ Change Plan / Expire Date
                               </button>
                             </td>
 
                             {/* 4. STARTING DATE */}
                             <td style={{ padding: '16px 18px' }}>
-                              <div style={{ fontWeight: 700, color: '#F1F5F9' }}>{createdDateStr}</div>
-                              <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px' }}>Joined Platform</div>
+                              <div style={{ fontWeight: 700, color: '#F1F5F9' }}>{startDateStr}</div>
+                              <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '2px' }}>Starting Date</div>
                             </td>
 
-                            {/* 5. TOTAL STORE SALES */}
+                            {/* 5. EXPIRE DATE */}
+                            <td style={{ padding: '16px 18px' }}>
+                              <div style={{ fontWeight: 700, color: isExpired ? '#EF4444' : '#34D399' }}>{expireDateStr}</div>
+                              <div style={{ fontSize: '11px', color: isExpired ? '#FCA5A5' : '#94A3B8', marginTop: '2px' }}>
+                                {isExpired ? '⚠️ Expired' : 'Active Until'}
+                              </div>
+                            </td>
+
+                            {/* 6. TOTAL STORE SALES */}
                             <td style={{ padding: '16px 18px' }}>
                               <div style={{ fontWeight: 900, color: '#F59E0B', fontSize: '15px' }}>₹{user.totalSales.toLocaleString('en-IN')}</div>
-                              <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>{user.totalOrders} Orders • {user.dishCount} Dishes</div>
-                            </td>
-
-                            {/* 6. SAAS BILLING PAID SO FAR */}
-                            <td style={{ padding: '16px 18px' }}>
-                              <div style={{ fontWeight: 900, color: saasBilledAmount > 0 ? '#10B981' : '#94A3B8', fontSize: '14.5px' }}>
-                                ₹{saasBilledAmount.toLocaleString('en-IN')}
-                              </div>
-                              <div style={{ fontSize: '11px', color: saasBilledAmount > 0 ? '#34D399' : '#64748B', marginTop: '2px', fontWeight: 700 }}>
-                                {isFreeTrial ? 'Free Trial (Unbilled)' : 'Subscription Paid'}
-                              </div>
+                              <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>{user.totalOrders} Orders</div>
                             </td>
 
                             {/* 7. ACCOUNT ACTIONS & LOCK STATUS */}
@@ -2110,24 +2272,30 @@ export default function AdminDebugPage({ onShowToast }) {
               {/* Quick Plan Preset Selector */}
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#94A3B8', marginBottom: '4px' }}>
-                  Select Subscription Plan Tier
+                  Select Multi-Tenant Plan Tier (Cloud Firestore)
                 </label>
                 <select
                   value={subForm.plan}
                   onChange={(e) => {
                     const p = e.target.value;
-                    let pr = subForm.price;
-                    if (p === 'Starter Free') pr = 0;
-                    if (p === 'Growth Pro') pr = 35;
-                    if (p === 'Enterprise Max') pr = 75;
-                    setSubForm({ ...subForm, plan: p, price: pr });
+                    let pr = 0;
+                    if (p === 'Basic') pr = 199;
+                    if (p === 'Growth') pr = 499;
+                    if (p === 'Pro') pr = 999;
+                    const calculated = calculatePlanDates(p);
+                    setSubForm({
+                      ...subForm,
+                      plan: p,
+                      price: pr,
+                      expiry: calculated.expireDate ? calculated.expireDate.split('T')[0] : '',
+                    });
                   }}
                   style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #334155', backgroundColor: '#1E293B', color: '#FFF', fontSize: '14px', outline: 'none', boxSizing: 'border-box' }}
                 >
-                  <option value="Starter Free">Starter Free ($0/mo)</option>
-                  <option value="Growth Pro">Growth Pro ($35/mo)</option>
-                  <option value="Enterprise Max">Enterprise Max ($75/mo)</option>
-                  <option value="Custom Plan">Custom Plan</option>
+                  <option value="Free">🟡 Free (14 Days Trial - ₹0)</option>
+                  <option value="Basic">🟢 Basic (30 Days - ₹199/mo)</option>
+                  <option value="Growth">🟣 Growth (90 Days - ₹499/quarter)</option>
+                  <option value="Pro">💎 Pro (365 Days - ₹999/yr)</option>
                 </select>
               </div>
 

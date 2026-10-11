@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { playFoodPreparing, playFoodReady, startKitchenAlarm, stopKitchenAlarm, sortOrdersNewestFirst } from '../utils/soundEffects';
 import { fetchOrdersApi, fetchPublicOrdersApi, updateOrderStatusApi, markKitchenSeenApi } from '../utils/api';
+import { subscribeToOrders } from '../utils/firestoreService';
 import { validateKitchenLogin, getPartnerCredentials } from '../utils/partnerAuth';
 
 export default function KitchenDisplayPage({ onShowToast }) {
@@ -39,7 +40,17 @@ export default function KitchenDisplayPage({ onShowToast }) {
   };
 
   const storeName = formatSlug(restaurantSlug);
-  const effectiveMerchantId = merchantId || 'FP-397310';
+  const effectiveMerchantId =
+    merchantId ||
+    localStorage.getItem('foodypay_active_business_id') ||
+    (() => {
+      try {
+        const u = localStorage.getItem('foodypay_user');
+        if (u) return JSON.parse(u).foodypayId || JSON.parse(u).uniqueId;
+      } catch (e) {}
+      return 'FP-348330';
+    })() ||
+    'FP-348330';
 
   // State
   const [orders, setOrders] = useState([]);
@@ -196,6 +207,16 @@ export default function KitchenDisplayPage({ onShowToast }) {
     loadOrders();
     const pollInterval = setInterval(loadOrders, 4000);
 
+    // Live real-time Firestore sync for Kitchen KDS
+    let unsubscribeFs = () => {};
+    try {
+      unsubscribeFs = subscribeToOrders(effectiveMerchantId || merchantId, (liveOrders) => {
+        if (Array.isArray(liveOrders) && liveOrders.length > 0) {
+          setOrders(sortOrdersNewestFirst(liveOrders));
+        }
+      });
+    } catch (e) {}
+
     const handleStorage = (e) => {
       if (!e || e.key === 'foodypay_crm_orders_v3') {
         loadOrders();
@@ -228,13 +249,14 @@ export default function KitchenDisplayPage({ onShowToast }) {
     window.addEventListener('foodypay_admin_settings_updated', handleAdminSync);
 
     return () => {
+      if (typeof unsubscribeFs === 'function') unsubscribeFs();
       clearInterval(pollInterval);
       if (bc) bc.close();
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('foodypay_order_created', loadOrders);
       window.removeEventListener('foodypay_admin_settings_updated', handleAdminSync);
     };
-  }, []);
+  }, [effectiveMerchantId, merchantId]);
 
   // Live Clock Update
   useEffect(() => {

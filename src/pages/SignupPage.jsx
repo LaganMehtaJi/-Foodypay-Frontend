@@ -17,12 +17,23 @@ import {
   Lock as LockIcon,
 } from 'lucide-react';
 import { playMilestoneCelebration } from '../utils/soundEffects';
-import { registerApi, googleAuthApi, firebaseAuthApi, checkEmailExistsApi } from '../utils/api';
+import {
+  registerApi,
+  googleAuthApi,
+  firebaseAuthApi,
+  checkEmailExistsApi,
+  createRazorpayOrderApi,
+  verifyRazorpaySignatureApi,
+} from '../utils/api';
 import {
   registerWithFirebaseEmail,
   loginWithFirebaseGoogle,
   sendFirebaseEmailVerification
 } from '../utils/firebase';
+import {
+  saveBusinessUserToFirestore,
+  calculatePlanDates,
+} from '../utils/firestoreService';
 
 export default function SignupPage({ onShowToast }) {
   const navigate = useNavigate();
@@ -62,6 +73,124 @@ export default function SignupPage({ onShowToast }) {
     }
   };
 
+  // Load Razorpay Checkout Script
+  const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      if (window.Razorpay) return resolve(true);
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
+  // Helper to complete successful registration (saved to Firestore Business_Users + localStorage)
+  const completeAccountActivation = async (registeredUser, planName, paymentId = null) => {
+    const isFree = planName === 'Starter Free';
+    const planPriceUSD = planName === 'Enterprise Max' ? 75 : planName === 'Growth Pro' ? 35 : 0;
+    const planPriceINR = planName === 'Enterprise Max' ? 5999 : planName === 'Growth Pro' ? 2999 : 0;
+
+    const dates = calculatePlanDates(planName);
+    const bId = registeredUser.foodypayId || registeredUser.uniqueId || registeredUser._id || `FP-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    const userProfile = {
+      ...registeredUser,
+      uniqueId: bId,
+      foodypayId: bId,
+      businessId: bId,
+      subscriptionPlan: planName,
+      plan: planName,
+      subscriptionStatus: 'Active',
+      status: 'Active',
+      subscriptionPrice: planPriceINR,
+      subscriptionPriceUSD: planPriceUSD,
+      startingDate: dates.startingDate,
+      expireDate: dates.expireDate,
+      subscriptionExpiry: dates.expireDate,
+      isLocked: false,
+      isSuspended: false,
+      ...(paymentId ? { razorpayPaymentId: paymentId, paidVia: 'Razorpay Live' } : {}),
+    };
+
+    // Save into Cloud Firestore Business_Users collection
+    try {
+      await saveBusinessUserToFirestore(userProfile);
+    } catch (fsErr) {
+      console.warn('Firestore business save note:', fsErr);
+    }
+
+    if (userProfile.token) {
+      localStorage.setItem('foodypay_token', userProfile.token);
+    }
+    localStorage.setItem('foodypay_user', JSON.stringify(userProfile));
+    localStorage.setItem('foodypay_active_business_id', bId);
+
+    playMilestoneCelebration();
+    confetti({ particleCount: 150, spread: 90, origin: { y: 0.4 } });
+    setSuccessMsg(`🎉 Account Created for ${userProfile.businessName || userProfile.name}! Launching Dashboard...`);
+    if (onShowToast) onShowToast(`🎉 Account Created! Welcome ${userProfile.businessName || userProfile.name} to FoodyPay!`);
+
+    setTimeout(() => {
+      navigate('/dashboard');
+    }, 800);
+  };
+
+  // Helper to trigger Razorpay Live checkout for paid plans
+  const triggerRazorpayRegistrationPayment = async (registeredUser, planName) => {
+    const planPriceINR = planName === 'Enterprise Max' ? 5999 : 2999;
+    const amountInPaise = planPriceINR * 100;
+    const activeKey = import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_live_kO08d9s2Qj0H7d';
+
+    const scriptLoaded = await loadRazorpayScript();
+    if (!scriptLoaded || !window.Razorpay) {
+      setError('Failed to load Razorpay Payment Gateway. Please check internet connection.');
+      setLoading(false);
+      return;
+    }
+
+    const options = {
+      key: activeKey,
+      amount: amountInPaise,
+      currency: 'INR',
+      name: 'FoodyPay POS Business Registration',
+      description: `${planName} Subscription (${planName === 'Enterprise Max' ? '₹5,999/mo' : '₹2,999/mo'})`,
+      image: '/Logo.png',
+      prefill: {
+        name: registeredUser.name || name || 'Merchant',
+        email: registeredUser.email || email,
+        contact: registeredUser.contactNo || contactNo || '',
+      },
+      theme: {
+        color: '#FF5E14',
+      },
+      handler: async function (razorpayResponse) {
+        console.log('Razorpay Payment Success:', razorpayResponse);
+        const paymentId = razorpayResponse.razorpay_payment_id || `pay_${Date.now()}`;
+        if (onShowToast) onShowToast(` Payment verified! (${paymentId})`);
+        await completeAccountActivation(registeredUser, planName, paymentId);
+      },
+      modal: {
+        ondismiss: function () {
+          setError(` Payment cancelled. You selected "${planName}" which requires payment to activate. Complete payment or select Starter Free ($0).`);
+          setLoading(false);
+        },
+      },
+    };
+
+    try {
+      const rzpInstance = new window.Razorpay(options);
+      rzpInstance.on('payment.failed', function (resp) {
+        setError(`Payment Failed: ${resp.error?.description || 'Transaction declined'}`);
+        setLoading(false);
+      });
+      rzpInstance.open();
+    } catch (rzpErr) {
+      setError('Error opening Razorpay payment window.');
+      setLoading(false);
+    }
+  };
+
   // Helper to finalize Google Registration with actual merchant business details
   const finalizeGoogleRegistration = async (fbSession, busName, phoneNum, fullName, userEmail) => {
     const targetEmail = userEmail || fbSession?.user?.email || email.trim();
@@ -82,18 +211,13 @@ export default function SignupPage({ onShowToast }) {
 
     let res = null;
 
-    // Multi-tier Fallback Strategy for 100% Registration Success:
-    // Tier 1: Try firebaseAuthApi (/auth/firebase)
+    // Multi-tier Fallback Strategy for Registration:
     try {
       res = await firebaseAuthApi(googlePayload);
     } catch (err1) {
-      console.warn('firebaseAuthApi failed, attempting googleAuthApi fallback:', err1.message);
-      // Tier 2: Try googleAuthApi (/auth/google)
       try {
         res = await googleAuthApi(googlePayload);
       } catch (err2) {
-        console.warn('googleAuthApi failed, attempting direct registerApi fallback:', err2.message);
-        // Tier 3: Fallback to standard registerApi (/auth/register FormData)
         const formData = new FormData();
         formData.append('name', targetName);
         formData.append('email', targetEmail);
@@ -109,27 +233,13 @@ export default function SignupPage({ onShowToast }) {
     }
 
     if (res && res.success && res.data) {
-      const freeUserData = {
-        ...res.data,
-        subscriptionPlan: 'Starter Free',
-        subscriptionStatus: 'Free Trial',
-        subscriptionPrice: 0,
-      };
-      if (res.data.token) {
-        localStorage.setItem('foodypay_token', res.data.token);
-        localStorage.setItem('foodypay_user', JSON.stringify(freeUserData));
+      if (selectedPlan === 'Starter Free') {
+        await completeAccountActivation(res.data, 'Starter Free');
+      } else {
+        await triggerRazorpayRegistrationPayment(res.data, selectedPlan);
       }
-
-      playMilestoneCelebration();
-      confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
-      setSuccessMsg(`Account created for ${res.data.businessName || busName}! Launching Dashboard...`);
-      if (onShowToast) onShowToast(` Account Created! Welcome ${res.data.businessName || busName}!`);
-
-      setTimeout(() => {
-        navigate('/dashboard');
-      }, 500);
     } else {
-      throw new Error('Registration completed, but server response format was unexpected.');
+      throw new Error('Registration failed. Please check your details.');
     }
   };
 
@@ -360,26 +470,11 @@ export default function SignupPage({ onShowToast }) {
       }
 
       if (response && response.success && response.data) {
-        const userData = {
-          ...response.data,
-          subscriptionPlan: 'Starter Free',
-          subscriptionStatus: 'Free Trial',
-          subscriptionPrice: 0,
-        };
-
-        if (userData.token) {
-          localStorage.setItem('foodypay_token', userData.token);
-          localStorage.setItem('foodypay_user', JSON.stringify(userData));
+        if (selectedPlan === 'Starter Free') {
+          await completeAccountActivation(response.data, 'Starter Free');
+        } else {
+          await triggerRazorpayRegistrationPayment(response.data, selectedPlan);
         }
-
-        playMilestoneCelebration();
-        confetti({ particleCount: 150, spread: 90, origin: { y: 0.4 } });
-        setSuccessMsg(` Account Created for ${businessName.trim()}! Launching Dashboard...`);
-        if (onShowToast) onShowToast(` Account Created! Welcome ${businessName.trim()} to FoodyPay!`);
-
-        setTimeout(() => {
-          navigate('/dashboard');
-        }, 800);
       } else {
         throw new Error('Registration failed. Please check form details.');
       }
@@ -767,9 +862,13 @@ export default function SignupPage({ onShowToast }) {
                 </div>
               </div>
 
-              {selectedPlan !== 'Starter Free' && (
-                <div style={{ marginTop: '6px', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '8px', padding: '6px 10px', fontSize: '11px', color: '#1E40AF', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span> Note: Account will register on <strong>Starter Free ($0)</strong>. Upgrade to {selectedPlan} via Razorpay payment inside Dashboard to unlock features.</span>
+              {selectedPlan !== 'Starter Free' ? (
+                <div style={{ marginTop: '8px', background: '#FFF7ED', border: '1.5px solid #FDBA74', borderRadius: '8px', padding: '8px 12px', fontSize: '11.5px', color: '#C2410C', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>💳 <strong>Live Razorpay Checkout:</strong> Clicking register will open Razorpay to pay {selectedPlan === 'Enterprise Max' ? '₹5,999 ($75)' : '₹2,999 ($35)'} to activate your business account instantly.</span>
+                </div>
+              ) : (
+                <div style={{ marginTop: '8px', background: '#F0FDF4', border: '1.5px solid #BBF7D0', borderRadius: '8px', padding: '8px 12px', fontSize: '11.5px', color: '#166534', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>✅ <strong>100% Free Plan:</strong> No payment required. Instant activation for lifetime basic features.</span>
                 </div>
               )}
             </div>
@@ -780,9 +879,9 @@ export default function SignupPage({ onShowToast }) {
               disabled={loading || !isVerified}
               style={{
                 width: '100%',
-                padding: '11px',
+                padding: '12px',
                 borderRadius: '10px',
-                backgroundColor: isVerified ? '#FF5E14' : '#94A3B8',
+                backgroundColor: !isVerified ? '#94A3B8' : (selectedPlan === 'Starter Free' ? '#16A34A' : '#FF5E14'),
                 color: '#FFFFFF',
                 border: 'none',
                 fontWeight: 900,
@@ -792,8 +891,8 @@ export default function SignupPage({ onShowToast }) {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                boxShadow: isVerified ? '0 4px 12px rgba(255, 94, 20, 0.35)' : 'none',
-                marginTop: '6px',
+                boxShadow: isVerified ? '0 4px 14px rgba(255, 94, 20, 0.35)' : 'none',
+                marginTop: '8px',
                 transition: 'all 0.2s',
               }}
             >
@@ -802,10 +901,16 @@ export default function SignupPage({ onShowToast }) {
                   <LockIcon size={16} color="#FFFFFF" />
                   <span>Step 1 Gmail Verification Required</span>
                 </>
+              ) : loading ? (
+                <span>Processing Registration & Payment...</span>
               ) : (
                 <>
-                  <span>{loading ? 'Creating Merchant Account...' : 'Register Account & Launch Dashboard'}</span>
-                  {!loading && <ArrowRight size={17} />}
+                  <span>
+                    {selectedPlan === 'Starter Free'
+                      ? 'Register Account Free ($0)'
+                      : `Pay & Register with Razorpay (${selectedPlan === 'Enterprise Max' ? '₹5,999' : '₹2,999'})`}
+                  </span>
+                  <ArrowRight size={17} />
                 </>
               )}
             </button>

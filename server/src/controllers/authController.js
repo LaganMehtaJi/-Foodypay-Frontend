@@ -1,10 +1,11 @@
 import User from '../models/userModel.js';
-import Setting from '../models/settingModel.js';
 import Dish from '../models/dishModel.js';
 import Order from '../models/orderModel.js';
 import generateToken from '../utils/generateToken.js';
 import { uploadToCloudinary } from '../utils/cloudinaryUpload.js';
 import { OAuth2Client } from 'google-auth-library';
+import { db, isFirestoreReady } from '../config/firebase.js';
+import { backupUserToMongo } from '../utils/dualDbSync.js';
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -58,6 +59,31 @@ export const registerUser = async (req, res, next) => {
     });
 
 
+    // 1. PRIMARY STORAGE: Save into Cloud Firestore Business_Users collection
+    if (isFirestoreReady()) {
+      try {
+        await db.collection('Business_Users').doc(foodypayId).set({
+          uniqueId: foodypayId,
+          businessId: foodypayId,
+          id: foodypayId,
+          businessName: finalBusinessName,
+          name: name.trim(),
+          email: cleanEmail,
+          phone: finalContactNo,
+          plan: 'Free',
+          startingDate: new Date().toISOString(),
+          expireDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+          status: 'Active',
+          logoUrl: logoData.url || '',
+          authProvider: 'local',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+      } catch (fsErr) {
+        console.warn('⚠️ Firestore Business_Users save warning:', fsErr.message);
+      }
+    }
+
     if (user) {
       const token = generateToken(user._id);
 
@@ -98,16 +124,9 @@ export const loginUser = async (req, res, next) => {
     }
 
     const cleanEmail = email.toLowerCase().trim();
-    const cleanPassword = password.trim();
-    const escapedEmail = cleanEmail.replace(/[-[\]{}()*+?#\\^$|]/g, '\\$&');
 
-    // Find user and explicitly select password (using exact cleanEmail or case-insensitive regex fallback)
-    const user = await User.findOne({
-      $or: [
-        { email: cleanEmail },
-        { email: { $regex: new RegExp(`^${escapedEmail}$`, 'i') } }
-      ]
-    }).select('+password');
+    // Find user and explicitly select password
+    const user = await User.findOne({ email: cleanEmail }).select('+password');
 
     if (!user) {
       res.status(401);
@@ -124,7 +143,7 @@ export const loginUser = async (req, res, next) => {
       throw new Error(`Account Locked: ${user.lockReason || 'Active subscription required. Please contact Admin.'}`);
     }
 
-    const isMatch = await user.matchPassword(cleanPassword);
+    const isMatch = await user.matchPassword(password);
 
     if (user && isMatch) {
       if (!user.foodypayId) {
@@ -492,33 +511,9 @@ export const getPublicMerchantDetails = async (req, res, next) => {
     }
 
     if (!user) {
-      const idUpper = (identifier || '').toUpperCase();
-      if (idUpper === 'FP-985569' || idUpper === 'FP-348330' || idUpper === 'FOOD-101' || idUpper === 'FOOD-102' || idUpper.startsWith('FP-')) {
-        return res.json({
-          success: true,
-          data: {
-            _id: 'merchant_' + idUpper,
-            foodypayId: idUpper,
-            businessName: idUpper === 'FP-348330' ? 'Snack Rack' : 'FoodyPay Store',
-            name: idUpper === 'FP-348330' ? 'Snack Rack' : 'FoodyPay Store',
-            contactNo: '+91 98765 43210',
-            logo: { url: '/Logo.png' },
-            gstPercent: 5,
-            upiId: '7496888449@ptsbi',
-            storeStatus: true,
-            deliveryStatus: true,
-            pickupStatus: true,
-          },
-        });
-      }
-
       res.status(404);
       throw new Error('Merchant restaurant account not found');
     }
-
-    const setting = await Setting.findOne({ user: user._id }).lean();
-    const upiId = (setting && setting.upiId && setting.upiId.trim()) ? setting.upiId.trim() : (user.upiId || 'merchant@icici');
-    const gstPercent = setting ? (setting.gstPercent || 5) : 5;
 
     res.json({
       success: true,
@@ -529,8 +524,8 @@ export const getPublicMerchantDetails = async (req, res, next) => {
         name: user.name,
         contactNo: user.contactNo,
         logo: user.logo,
-        gstPercent,
-        upiId,
+        gstPercent: 5,
+        upiId: 'merchant@icici',
       },
     });
   } catch (error) {

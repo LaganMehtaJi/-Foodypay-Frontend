@@ -42,15 +42,13 @@ export const getPublicCustomerCoupons = async (req, res, next) => {
     const cleanPhone = (phone || '').trim();
     const cleanEmail = (email || '').trim().toLowerCase();
 
-    const safePhoneRegex = cleanPhone.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
     // Query active coupons that are assignedToAll OR assigned specifically to matching phone/email
     const filterConditions = {
       ...userQuery,
       status: 'Active',
       $or: [
         { assignedToAll: true },
-        ...(cleanPhone ? [{ assignedCustomerPhone: { $regex: safePhoneRegex, $options: 'i' } }] : []),
+        ...(cleanPhone ? [{ assignedCustomerPhone: { $regex: cleanPhone, $options: 'i' } }] : []),
         ...(cleanEmail ? [{ assignedCustomerEmail: cleanEmail }] : []),
       ],
     };

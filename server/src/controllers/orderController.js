@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import Order from '../models/orderModel.js';
 import Customer from '../models/customerModel.js';
 import User from '../models/userModel.js';
+import { db, isFirestoreReady } from '../config/firebase.js';
+import { backupOrderToMongo } from '../utils/dualDbSync.js';
 
 /**
  * MongoDB Aggregation Pipeline to calculate Today's Sales & Today's Orders
@@ -113,9 +115,10 @@ export const createPublicOrder = async (req, res, next) => {
     const count = await Order.countDocuments({ user: targetUser._id });
     const orderId = `#FP-${1080 + count + 1}`;
 
-    const order = await Order.create({
-      user: targetUser._id,
+    const orderData = {
       orderId,
+      _id: orderId,
+      id: orderId,
       type: type || 'Dine-In',
       table: table || 'Table 1',
       customer: customer || 'Walk-in Guest',
@@ -124,42 +127,68 @@ export const createPublicOrder = async (req, res, next) => {
       paymentMode: paymentMode || 'Cash',
       status: 'new',
       seen: false, // Unseen by merchant -> triggers sound notification
-      sentToKitchen: false, // Must be approved/sent to Kitchen from POS Dashboard first
-      kitchenSeen: false, // Unseen by kitchen staff -> triggers alarm bell until acknowledged
       paymentStatus: paymentStatus || 'cash',
       paymentLabel: paymentLabel || 'Cash on Counter',
       items: items || [],
       note: note || '',
-      subtotal: subtotal || 0,
-      discount: discount || 0,
-      tax: tax || 0,
-      total: total || 0,
-    });
+      subtotal: Number(subtotal) || 0,
+      discount: Number(discount) || 0,
+      tax: Number(tax) || 0,
+      total: Number(total) || 0,
+      businessId: (foodypayId || targetUser.foodypayId || merchantId || '').toString().toUpperCase(),
+      merchantFilter: (foodypayId || targetUser.foodypayId || merchantId || '').toString().toUpperCase(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
 
-    // Auto CRM Sync for Customer
-    if (customer && customer !== 'Walk-in Guest') {
-      const existingCustomer = await Customer.findOne({ user: targetUser._id, name: customer });
-      if (existingCustomer) {
-        existingCustomer.ordersCount += 1;
-        existingCustomer.totalSales += total || 0;
-        existingCustomer.lastOrdered = 'Just now';
-        await existingCustomer.save();
-      } else {
-        await Customer.create({
-          user: targetUser._id,
-          name: customer,
-          phone: phone || '',
-          ordersCount: 1,
-          totalSales: total || 0,
-          lastOrdered: 'Just now',
-          tags: ['QR Diner'],
-        });
+    // 1. PRIMARY STORAGE: Save into Cloud Firestore
+    let savedInFirestore = false;
+    if (isFirestoreReady()) {
+      try {
+        await db.collection('orders').doc(orderId).set(orderData, { merge: true });
+        savedInFirestore = true;
+      } catch (fsErr) {
+        console.warn('⚠️ Firestore primary save warning:', fsErr.message);
       }
+    }
+
+    // 2. BACKGROUND BACKUP: Save silently into MongoDB (Zero latency impact)
+    let mongoOrder = null;
+    try {
+      mongoOrder = await Order.create({
+        user: targetUser._id,
+        ...orderData,
+      });
+
+      // Auto CRM Sync for Customer in MongoDB
+      if (customer && customer !== 'Walk-in Guest') {
+        const existingCustomer = await Customer.findOne({ user: targetUser._id, name: customer });
+        if (existingCustomer) {
+          existingCustomer.ordersCount += 1;
+          existingCustomer.totalSales += total || 0;
+          existingCustomer.lastOrdered = 'Just now';
+          await existingCustomer.save();
+        } else {
+          await Customer.create({
+            user: targetUser._id,
+            name: customer,
+            phone: phone || '',
+            ordersCount: 1,
+            totalSales: total || 0,
+            lastOrdered: 'Just now',
+            tags: ['QR Diner'],
+          });
+        }
+      }
+    } catch (mErr) {
+      // MongoDB backup silent catch if Mongo cluster is unreachable
+      console.warn('⚠️ MongoDB background backup notice:', mErr.message);
     }
 
     res.status(201).json({
       success: true,
-      data: order,
+      data: mongoOrder || orderData,
+      storage: savedInFirestore ? 'firestore_with_mongo_backup' : 'mongo_fallback',
     });
   } catch (error) {
     next(error);
@@ -177,15 +206,54 @@ export const getOrders = async (req, res, next) => {
     const limit = parseInt(req.query.limit) || 100;
     const skip = (page - 1) * limit;
 
-    const total = await Order.countDocuments({ user: req.user._id });
+    const bId = (req.user?.foodypayId || req.user?._id || '').toString().trim().toUpperCase();
+
+    // 1. PRIMARY: Fetch from Cloud Firestore
+    if (isFirestoreReady() && bId) {
+      try {
+        const snap = await db.collection('orders')
+          .where('merchantFilter', '==', bId)
+          .limit(limit)
+          .get();
+
+        if (!snap.empty) {
+          const fsOrders = [];
+          snap.forEach((doc) => {
+            const d = doc.data();
+            fsOrders.push({ id: doc.id, _id: doc.id, ...d });
+            // Background silent backup to MongoDB
+            backupOrderToMongo(d).catch(() => {});
+          });
+
+          fsOrders.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+          return res.json({
+            success: true,
+            source: 'firestore_primary',
+            count: fsOrders.length,
+            total: fsOrders.length,
+            totalPages: 1,
+            currentPage: 1,
+            data: fsOrders,
+          });
+        }
+      } catch (fsErr) {
+        console.warn('⚠️ Firestore orders fetch notice, falling back to MongoDB:', fsErr.message);
+      }
+    }
+
+    // 2. FALLBACK: Fetch from MongoDB cluster if Firestore is empty or fails
+    const total = await Order.countDocuments({ user: req.user._id }).catch(() => 0);
     const orders = await Order.find({ user: req.user._id })
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit);
-    const todayStats = await calculateTodayOrderStats(req.user._id);
+      .limit(limit)
+      .catch(() => []);
+    const todayStats = await calculateTodayOrderStats(req.user._id).catch(() => ({}));
 
     res.json({
       success: true,
+      source: 'mongo_fallback',
       count: orders.length,
       total,
       totalPages: Math.ceil(total / limit) || 1,
@@ -210,27 +278,65 @@ export const getPublicOrders = async (req, res, next) => {
     const limit = parseInt(req.query.limit) || 100;
     const skip = (page - 1) * limit;
 
+    const targetBid = (foodypayId || merchantId || '').toString().trim().toUpperCase();
+
+    // 1. PRIMARY: Fetch from Cloud Firestore
+    if (isFirestoreReady() && targetBid) {
+      try {
+        const snap = await db.collection('orders')
+          .where('merchantFilter', '==', targetBid)
+          .limit(limit)
+          .get();
+
+        if (!snap.empty) {
+          const fsOrders = [];
+          snap.forEach((doc) => {
+            const d = doc.data();
+            fsOrders.push({ id: doc.id, _id: doc.id, ...d });
+            backupOrderToMongo(d).catch(() => {});
+          });
+
+          fsOrders.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+          return res.json({
+            success: true,
+            source: 'firestore_primary',
+            count: fsOrders.length,
+            total: fsOrders.length,
+            totalPages: 1,
+            currentPage: 1,
+            data: fsOrders,
+          });
+        }
+      } catch (fsErr) {
+        console.warn('⚠️ Firestore public orders notice, falling back to MongoDB:', fsErr.message);
+      }
+    }
+
+    // 2. FALLBACK: Fetch from MongoDB
     let targetUser = null;
 
     if (merchantId && merchantId !== 'undefined') {
       targetUser = await User.findById(merchantId).catch(() => null);
     }
     if (!targetUser && foodypayId && foodypayId !== 'undefined') {
-      targetUser = await User.findOne({ foodypayId });
+      targetUser = await User.findOne({ foodypayId }).catch(() => null);
     }
 
     if (!targetUser) {
       return res.json({ success: true, count: 0, total: 0, totalPages: 0, currentPage: page, data: [] });
     }
 
-    const total = await Order.countDocuments({ user: targetUser._id });
+    const total = await Order.countDocuments({ user: targetUser._id }).catch(() => 0);
     const orders = await Order.find({ user: targetUser._id })
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .catch(() => []);
 
     res.json({
       success: true,
+      source: 'mongo_fallback',
       count: orders.length,
       total,
       totalPages: Math.ceil(total / limit) || 1,
@@ -306,40 +412,25 @@ export const createOrder = async (req, res, next) => {
 };
 
 /**
- * Helper to find order safely by Mongo _id or string orderId
- */
-const findOrderByIdOrCode = async (idParam, userId = null) => {
-  const query = userId ? { user: userId } : {};
-  let order = null;
-  if (mongoose.Types.ObjectId.isValid(idParam)) {
-    order = await Order.findOne({ _id: idParam, ...query });
-  }
-  if (!order) {
-    order = await Order.findOne({ orderId: idParam, ...query });
-  }
-  return order;
-};
-
-/**
  * @desc    Update existing order (Items, Customer info, Payment, Totals)
  * @route   PUT /api/orders/:id
  * @access  Private
  */
 export const updateOrder = async (req, res, next) => {
   try {
-    const order = await findOrderByIdOrCode(req.params.id, req.user._id);
+    const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
 
     if (!order) {
       res.status(404);
       throw new Error('Order not found');
     }
 
-    const { type, table, customer, phone, items, note, paymentStatus, paymentLabel, subtotal, discount, tax, total, status, sentToKitchen, kitchenSeen, isPaid, dueNote, dueMarkedAt, dueClearedAt, dueClearedMode } = req.body;
-
-    if (order.status !== 'new' && items && !status && !paymentStatus) {
+    if (order.status !== 'new') {
       res.status(400);
-      throw new Error('Cannot edit order items once cooking has started');
+      throw new Error('Cannot edit order once cooking has started');
     }
+
+    const { type, table, customer, phone, items, note, paymentStatus, paymentLabel, subtotal, discount, tax, total, status } = req.body;
 
     if (type) order.type = type;
     if (table) order.table = table;
@@ -349,18 +440,11 @@ export const updateOrder = async (req, res, next) => {
     if (note !== undefined) order.note = note;
     if (paymentStatus) order.paymentStatus = paymentStatus;
     if (paymentLabel) order.paymentLabel = paymentLabel;
-    if (isPaid !== undefined) order.isPaid = isPaid;
-    if (dueNote !== undefined) order.dueNote = dueNote;
-    if (dueMarkedAt !== undefined) order.dueMarkedAt = dueMarkedAt;
-    if (dueClearedAt !== undefined) order.dueClearedAt = dueClearedAt;
-    if (dueClearedMode !== undefined) order.dueClearedMode = dueClearedMode;
     if (subtotal !== undefined) order.subtotal = subtotal;
     if (discount !== undefined) order.discount = discount;
     if (tax !== undefined) order.tax = tax;
     if (total !== undefined) order.total = total;
     if (status) order.status = status;
-    if (sentToKitchen !== undefined) order.sentToKitchen = sentToKitchen;
-    if (kitchenSeen !== undefined) order.kitchenSeen = kitchenSeen;
 
     await order.save();
     const todayStats = await calculateTodayOrderStats(req.user._id);
@@ -382,8 +466,8 @@ export const updateOrder = async (req, res, next) => {
  */
 export const updateOrderStatus = async (req, res, next) => {
   try {
-    const { status, paymentStatus, paymentLabel, sentToKitchen, kitchenSeen } = req.body;
-    const order = await findOrderByIdOrCode(req.params.id, req.user._id);
+    const { status, paymentStatus, paymentLabel } = req.body;
+    const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
 
     if (!order) {
       res.status(404);
@@ -393,15 +477,8 @@ export const updateOrderStatus = async (req, res, next) => {
     if (status) order.status = status;
     if (paymentStatus) order.paymentStatus = paymentStatus;
     if (paymentLabel) order.paymentLabel = paymentLabel;
-    if (sentToKitchen !== undefined) order.sentToKitchen = sentToKitchen;
-    if (kitchenSeen !== undefined) order.kitchenSeen = kitchenSeen;
-    if (status === 'completed' || status === 'ready') {
+    if (status === 'completed' || status === 'preparing' || status === 'ready') {
       order.seen = true;
-      order.kitchenSeen = true;
-    } else if (status === 'preparing') {
-      order.seen = true;
-      order.sentToKitchen = true;
-      order.kitchenSeen = false;
     }
 
     await order.save();
@@ -424,7 +501,7 @@ export const updateOrderStatus = async (req, res, next) => {
  */
 export const markOrderSeen = async (req, res, next) => {
   try {
-    const order = await findOrderByIdOrCode(req.params.id, req.user._id);
+    const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
     if (!order) {
       res.status(404);
       throw new Error('Order not found');
@@ -445,102 +522,18 @@ export const markOrderSeen = async (req, res, next) => {
 };
 
 /**
- * @desc    Mark order as SEEN by kitchen staff (stops kitchen alarm bell)
- * @route   PUT /api/orders/:id/kitchen-seen
- * @access  Private
- */
-export const markKitchenSeen = async (req, res, next) => {
-  try {
-    const order = await findOrderByIdOrCode(req.params.id, req.user._id);
-    if (!order) {
-      res.status(404);
-      throw new Error('Order not found');
-    }
-    order.kitchenSeen = true;
-    await order.save();
-
-    const todayStats = await calculateTodayOrderStats(req.user._id);
-
-    res.json({
-      success: true,
-      data: order,
-      todayStats,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc    Public status update for Kitchen Display System (unauthenticated KDS screen)
- * @route   PUT /api/orders/public/:id/status
- * @access  Public
- */
-export const updatePublicOrderStatus = async (req, res, next) => {
-  try {
-    const { status, kitchenSeen, sentToKitchen } = req.body;
-    const order = await findOrderByIdOrCode(req.params.id);
-
-    if (!order) {
-      return res.status(404).json({ success: false, message: 'Order not found' });
-    }
-
-    if (status) order.status = status;
-    if (kitchenSeen !== undefined) order.kitchenSeen = kitchenSeen;
-    if (sentToKitchen !== undefined) order.sentToKitchen = sentToKitchen;
-    if (status === 'preparing' || status === 'ready' || status === 'completed') {
-      order.kitchenSeen = true;
-    }
-
-    await order.save();
-
-    res.json({
-      success: true,
-      data: order,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc    Public mark kitchen seen for Kitchen Display System
- * @route   PUT /api/orders/public/:id/kitchen-seen
- * @access  Public
- */
-export const markPublicKitchenSeen = async (req, res, next) => {
-  try {
-    const order = await findOrderByIdOrCode(req.params.id);
-    if (!order) {
-      return res.status(404).json({ success: false, message: 'Order not found' });
-    }
-    order.kitchenSeen = true;
-    await order.save();
-
-    res.json({
-      success: true,
-      data: order,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
  * @desc    Delete order
  * @route   DELETE /api/orders/:id
  * @access  Private
  */
 export const deleteOrder = async (req, res, next) => {
   try {
-    const order = await findOrderByIdOrCode(req.params.id, req.user._id);
+    const order = await Order.findOneAndDelete({ _id: req.params.id, user: req.user._id });
 
     if (!order) {
       res.status(404);
       throw new Error('Order not found');
     }
-
-    await order.deleteOne();
 
     const todayStats = await calculateTodayOrderStats(req.user._id);
 
@@ -548,39 +541,6 @@ export const deleteOrder = async (req, res, next) => {
       success: true,
       message: 'Order deleted successfully',
       todayStats,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc    Move KOT / Shift order to another table
- * @route   PATCH /api/orders/:id/move-table
- * @access  Private
- */
-export const moveKotTable = async (req, res, next) => {
-  try {
-    const { targetTable } = req.body;
-    if (!targetTable) {
-      return res.status(400).json({ success: false, message: 'targetTable is required' });
-    }
-
-    const order = await findOrderByIdOrCode(req.params.id, req.user._id);
-    if (!order) {
-      return res.status(404).json({ success: false, message: 'Order not found' });
-    }
-
-    const previousTable = order.table;
-    order.table = targetTable;
-    order.note = order.note ? `${order.note} (Shifted from ${previousTable} to ${targetTable})` : `Shifted from ${previousTable} to ${targetTable}`;
-
-    await order.save();
-
-    res.json({
-      success: true,
-      message: `Order successfully shifted from ${previousTable} to ${targetTable}`,
-      data: order,
     });
   } catch (error) {
     next(error);

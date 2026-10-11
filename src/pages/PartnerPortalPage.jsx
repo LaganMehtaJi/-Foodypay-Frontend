@@ -41,6 +41,7 @@ import {
   triggerAdminSyncBroadcast
 } from '../utils/partnerAuth';
 import { fetchOrdersApi, fetchOrderStatsApi } from '../utils/api';
+import { subscribeToOrders } from '../utils/firestoreService';
 
 export default function PartnerPortalPage({ onShowToast }) {
   const navigate = useNavigate();
@@ -89,13 +90,23 @@ export default function PartnerPortalPage({ onShowToast }) {
     return () => window.removeEventListener('storage', loadData);
   }, []);
 
-  // Fetch live order stats
+  // Fetch live order stats with real-time Firestore sync
   useEffect(() => {
+    let unsubscribeFs = () => {};
+    try {
+      unsubscribeFs = subscribeToOrders(null, (liveOrders) => {
+        if (Array.isArray(liveOrders) && liveOrders.length > 0) {
+          setOrders(liveOrders);
+          setLoadingOrders(false);
+        }
+      });
+    } catch (e) {}
+
     const loadTelemetry = async () => {
       setLoadingOrders(true);
       try {
         const fetched = await fetchOrdersApi();
-        if (Array.isArray(fetched)) setOrders(fetched);
+        if (Array.isArray(fetched) && fetched.length > 0) setOrders(fetched);
       } catch (err) {
         console.warn('Partner telemetry load warning:', err);
       } finally {
@@ -103,6 +114,10 @@ export default function PartnerPortalPage({ onShowToast }) {
       }
     };
     loadTelemetry();
+
+    return () => {
+      if (typeof unsubscribeFs === 'function') unsubscribeFs();
+    };
   }, []);
 
   // Day-Wise Calendar & Date Range Filter State

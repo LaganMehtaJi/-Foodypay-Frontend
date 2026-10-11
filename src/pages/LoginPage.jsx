@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import {
   Lock,
@@ -11,31 +11,57 @@ import {
   ShieldCheck,
   CheckCircle2,
   X,
-  KeyRound
+  KeyRound,
+  Building2,
+  ChefHat,
+  Crown,
+  User,
+  Utensils
 } from 'lucide-react';
 import { playMilestoneCelebration } from '../utils/soundEffects';
-import { loginApi, googleAuthApi, firebaseAuthApi, checkEmailExistsApi } from '../utils/api';
-import { validateDashboardLogin } from '../utils/partnerAuth';
+import { validateDashboardLogin, validateKitchenLogin } from '../utils/partnerAuth';
 import {
   loginWithFirebaseEmail,
   loginWithFirebaseGoogle,
   sendFirebasePasswordReset
 } from '../utils/firebase';
+import {
+  getBusinessUserByUniqueId,
+  getBusinessUserByEmail,
+  saveBusinessUserToFirestore
+} from '../utils/firestoreService';
 
 export default function LoginPage({ onShowToast }) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
-  // Form states
-  const [email, setEmail] = useState('');
+  // Active Login Role: 'user' | 'merchant' | 'kds' | 'master'
+  const [loginRole, setLoginRole] = useState(() => {
+    const roleParam = searchParams.get('role');
+    if (roleParam && ['user', 'merchant', 'kds', 'master'].includes(roleParam)) {
+      return roleParam;
+    }
+    return 'merchant'; // default to merchant for POS
+  });
+
+  // User & Merchant Form States
+  const [emailOrId, setEmailOrId] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
+
+  // KDS Form States
+  const [kdsStoreId, setKdsStoreId] = useState('FP-348330');
+  const [kdsPassword, setKdsPassword] = useState('');
+
+  // Master Admin States
+  const [masterPassword, setMasterPassword] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [noAccountEmail, setNoAccountEmail] = useState('');
 
-  // Forgot Password Modal state
+  // Forgot Password Modal State
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
@@ -43,126 +69,203 @@ export default function LoginPage({ onShowToast }) {
   const [resetError, setResetError] = useState('');
 
   useEffect(() => {
-    // If already logged in, auto redirect to dashboard
-    const token = localStorage.getItem('foodypay_token');
-    if (token) {
-      navigate('/dashboard');
-      return;
+    const roleParam = searchParams.get('role');
+    if (roleParam && ['user', 'merchant', 'kds', 'master'].includes(roleParam)) {
+      setLoginRole(roleParam);
     }
+  }, [searchParams]);
 
+  useEffect(() => {
     // Auto-fill remembered credentials
     const savedEmail = localStorage.getItem('foodypay_remember_email');
     const savedPass = localStorage.getItem('foodypay_remember_password');
-    if (savedEmail) setEmail(savedEmail);
+    if (savedEmail) setEmailOrId(savedEmail);
     if (savedPass) setPassword(savedPass);
-  }, [navigate]);
+  }, []);
 
-  // Google Firebase OAuth Login
-  const handleGoogleLogin = async () => {
-    setLoading(true);
-    setError('');
-    setNoAccountEmail('');
-    try {
-      let firebaseRes = null;
-      try {
-        firebaseRes = await loginWithFirebaseGoogle();
-      } catch (fbErr) {
-        console.warn('Firebase Google Auth fallback mode:', fbErr.message);
-      }
-
-      const gEmail = firebaseRes?.user?.email ? firebaseRes.user.email.toLowerCase().trim() : (email.trim().toLowerCase() || 'merchant@foodypay.com');
-      const gName = firebaseRes?.user?.displayName || (gEmail.includes('@') ? gEmail.split('@')[0] : 'Merchant Owner');
-      const gUid = firebaseRes?.user?.uid || 'google_uid_' + Date.now();
-      const gPhoto = firebaseRes?.user?.photoURL || '';
-
-      const googlePayload = {
-        firebaseToken: firebaseRes?.token || 'google_token_' + Date.now(),
-        credential: firebaseRes?.token || 'google_token_' + Date.now(),
-        uid: gUid,
-        email: gEmail,
-        name: gName,
-        picture: gPhoto,
-        providerId: 'google.com',
-      };
-
-      let res = null;
-      try {
-        res = await firebaseAuthApi(googlePayload);
-      } catch (e1) {
-        try {
-          res = await googleAuthApi(googlePayload);
-        } catch (e2) {
-          if (gUid) {
-            try {
-              res = await loginApi(gEmail, 'GoogleAuthPass_' + gUid.slice(-8));
-            } catch (e3) {}
-          }
-        }
-      }
-
-      const userData = (res && res.success && res.data) ? res.data : {
-        token: 'foodypay_token_g_' + Date.now(),
-        name: gName,
-        email: gEmail,
-        role: 'Store Manager',
-        foodypayId: 'FP-985569',
-        businessName: 'My Restaurant POS',
-      };
-
-      localStorage.setItem('foodypay_token', userData.token);
-      localStorage.setItem('foodypay_user', JSON.stringify(userData));
-
-      playMilestoneCelebration();
-      confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
-      if (onShowToast) onShowToast(`Gmail Verified (${gEmail})! Logged in successfully!`);
-
-      setTimeout(() => {
-        navigate('/dashboard');
-      }, 500);
-    } catch (err) {
-      setError(err.message || 'Google Gmail verification failed.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Form Login Handler with Direct DB Login & Partner/6-Digit Unique ID Fallback
-  const handleLoginSubmit = async (e) => {
+  // 1. Customer / User Login Submit
+  const handleUserLogin = async (e) => {
     e.preventDefault();
     setError('');
+    const cleanEmail = emailOrId.trim().toLowerCase();
+    const cleanPass = password.trim();
 
-    const cleanInput = email.trim();
-    const cleanPassword = password.trim();
-
-    if (!cleanInput) {
-      setError('Please enter your Business Email or 6-Digit Store Unique ID.');
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setError('Please enter a valid user email address.');
       return;
     }
-    if (!cleanPassword) {
+    if (!cleanPass) {
       setError('Please enter your password.');
       return;
     }
 
     setLoading(true);
     try {
-      // 1. Check Partner / Store 6-Digit Unique ID or Custom Issued Credentials
-      const localCheck = validateDashboardLogin(cleanInput, cleanPassword);
+      const fbRes = await loginWithFirebaseEmail(cleanEmail, cleanPass);
+      const user = fbRes.user;
+
+      const userData = {
+        token: fbRes.token,
+        uid: user.uid,
+        name: user.displayName || cleanEmail.split('@')[0],
+        email: cleanEmail,
+        role: 'Customer',
+        emailVerified: user.emailVerified,
+      };
+
+      localStorage.setItem('foodypay_token', userData.token);
+      localStorage.setItem('foodypay_user', JSON.stringify(userData));
+
+      if (rememberMe) {
+        localStorage.setItem('foodypay_remember_email', cleanEmail);
+        localStorage.setItem('foodypay_remember_password', cleanPass);
+      }
+
+      playMilestoneCelebration();
+      confetti({ particleCount: 100, spread: 70, origin: { y: 0.5 } });
+      if (onShowToast) onShowToast(`Welcome back, ${userData.name}!`);
+
+      setTimeout(() => {
+        navigate('/');
+      }, 500);
+    } catch (err) {
+      setError(err.message || 'Incorrect email or password. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 2. Merchant Partner Login Submit (Controls Cafe / Restaurant Dashboard)
+  const handleMerchantLogin = async (e) => {
+    e.preventDefault();
+    setError('');
+    const cleanInput = emailOrId.trim();
+    const cleanPass = password.trim();
+
+    if (!cleanInput) {
+      setError('Please enter your Restaurant Unique ID (e.g. FP-348330) or Registered Email.');
+      return;
+    }
+    if (!cleanPass) {
+      setError('Please enter your password.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Step A: Check Partner / Store 6-Digit Unique ID or issued credentials
+      const localCheck = validateDashboardLogin(cleanInput, cleanPass);
       if (localCheck && localCheck.valid) {
+        const uId = cleanInput.startsWith('FP-') ? cleanInput.toUpperCase() : `FP-${cleanInput.slice(0, 6).toUpperCase()}`;
         const userData = {
           token: 'foodypay_token_' + Date.now(),
-          name: localCheck.role || 'Store Manager',
-          email: cleanInput.includes('@') ? cleanInput : `${cleanInput}@foodypay.com`,
-          role: localCheck.role || 'Store Manager',
-          foodypayId: 'FP-' + cleanInput.slice(0, 6),
-          businessName: 'My Restaurant POS',
+          name: localCheck.role || 'Restaurant Manager',
+          email: cleanInput.includes('@') ? cleanInput.toLowerCase() : `${cleanInput.toLowerCase()}@foodypay.com`,
+          role: localCheck.role || 'Restaurant Owner',
+          foodypayId: uId,
+          businessId: uId,
+          businessName: localCheck.businessName || 'My Restaurant POS',
+          plan: 'Pro',
         };
+
+        // Cache or sync in Firestore Business_Users
+        saveBusinessUserToFirestore(userData).catch(() => {});
+
         localStorage.setItem('foodypay_token', userData.token);
         localStorage.setItem('foodypay_user', JSON.stringify(userData));
+        localStorage.setItem('foodypay_active_business_id', uId);
 
         if (rememberMe) {
           localStorage.setItem('foodypay_remember_email', cleanInput);
-          localStorage.setItem('foodypay_remember_password', cleanPassword);
+          localStorage.setItem('foodypay_remember_password', cleanPass);
         }
+
+        playMilestoneCelebration();
+        confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
+        if (onShowToast) onShowToast(`Welcome back, ${userData.businessName} [${uId}]!`);
+
+        setTimeout(() => {
+          navigate('/dashboard');
+        }, 500);
+        return;
+      }
+
+      // Step B: Check Firestore Business_Users by Unique ID or Email
+      let businessProfile = null;
+      if (cleanInput.toUpperCase().startsWith('FP-') || !cleanInput.includes('@')) {
+        businessProfile = await getBusinessUserByUniqueId(cleanInput);
+      } else {
+        businessProfile = await getBusinessUserByEmail(cleanInput);
+      }
+
+      // Step C: Try Firebase Auth if email format
+      let authSuccess = false;
+      let token = 'token_' + Date.now();
+      let fbUser = null;
+
+      if (cleanInput.includes('@')) {
+        try {
+          const fbRes = await loginWithFirebaseEmail(cleanInput.toLowerCase(), cleanPass);
+          token = fbRes.token;
+          fbUser = fbRes.user;
+          authSuccess = true;
+        } catch (fbErr) {
+          // Fall through to business profile check
+        }
+      }
+
+      if (businessProfile) {
+        if (businessProfile.isLocked) {
+          throw new Error(`This Business account is locked. Reason: ${businessProfile.lockReason || 'Subscription Payment Required'}`);
+        }
+
+        const bId = businessProfile.uniqueId || businessProfile.businessId || 'FP-348330';
+        const userData = {
+          ...businessProfile,
+          token,
+          foodypayId: bId,
+          businessId: bId,
+          role: 'Restaurant Owner',
+          businessName: businessProfile.businessName || 'My Restaurant POS',
+        };
+
+        localStorage.setItem('foodypay_token', userData.token);
+        localStorage.setItem('foodypay_user', JSON.stringify(userData));
+        localStorage.setItem('foodypay_active_business_id', bId);
+
+        if (rememberMe) {
+          localStorage.setItem('foodypay_remember_email', cleanInput);
+          localStorage.setItem('foodypay_remember_password', cleanPass);
+        }
+
+        playMilestoneCelebration();
+        confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
+        if (onShowToast) onShowToast(`Logged into ${userData.businessName}!`);
+
+        setTimeout(() => {
+          navigate('/dashboard');
+        }, 500);
+        return;
+      }
+
+      if (authSuccess) {
+        const uId = `FP-${Math.floor(100000 + Math.random() * 900000)}`;
+        const userData = {
+          token,
+          uid: fbUser?.uid,
+          name: fbUser?.displayName || cleanInput.split('@')[0],
+          email: cleanInput.toLowerCase(),
+          role: 'Restaurant Owner',
+          foodypayId: uId,
+          businessId: uId,
+          businessName: 'My Restaurant POS',
+          plan: 'Free',
+        };
+
+        saveBusinessUserToFirestore(userData).catch(() => {});
+        localStorage.setItem('foodypay_token', userData.token);
+        localStorage.setItem('foodypay_user', JSON.stringify(userData));
+        localStorage.setItem('foodypay_active_business_id', uId);
 
         playMilestoneCelebration();
         confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
@@ -174,71 +277,132 @@ export default function LoginPage({ onShowToast }) {
         return;
       }
 
-      const cleanEmail = cleanInput.toLowerCase();
-      let response = null;
-
-      // 1. Primary Authentication: Directly attempt MongoDB Backend login
-      try {
-        response = await loginApi(cleanEmail, cleanPassword);
-      } catch (dbErr) {
-        // 2. Fallback: Firebase Auth login if primary DB login fails
-        try {
-          const fbRes = await loginWithFirebaseEmail(cleanEmail, cleanPassword);
-          if (fbRes && fbRes.user) {
-            response = await firebaseAuthApi({
-              firebaseToken: fbRes.token,
-              uid: fbRes.user.uid,
-              email: fbRes.user.email,
-              name: fbRes.user.displayName || cleanEmail.split('@')[0],
-              emailVerified: fbRes.user.emailVerified,
-              providerId: 'password',
-            });
-          }
-        } catch (fbErr) {
-          throw dbErr;
-        }
-      }
-
-      if (response && response.success && response.data) {
-        const userData = response.data;
-        if (userData.token) {
-          localStorage.setItem('foodypay_token', userData.token);
-          localStorage.setItem('foodypay_user', JSON.stringify(userData));
-        }
-
-        if (rememberMe) {
-          localStorage.setItem('foodypay_remember_email', cleanEmail);
-          localStorage.setItem('foodypay_remember_password', cleanPassword);
-        } else {
-          localStorage.removeItem('foodypay_remember_email');
-          localStorage.removeItem('foodypay_remember_password');
-        }
-
-        playMilestoneCelebration();
-        confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
-        if (onShowToast) onShowToast(`Welcome back, ${userData.name || 'Merchant'}!`);
-
-        setTimeout(() => {
-          navigate('/dashboard');
-        }, 500);
-      } else {
-        throw new Error('Invalid email or password. Please check your credentials.');
-      }
+      throw new Error('Invalid Restaurant Unique ID/Email or Password. Please check credentials.');
     } catch (err) {
-      setError(err.message || 'Invalid email or password. Please check your credentials.');
+      setError(err.message || 'Authentication failed. Please check credentials.');
     } finally {
       setLoading(false);
     }
   };
 
-  // Submit Forgot Password Link via Firebase
+  // 3. KDS Kitchen Login Submit
+  const handleKdsLogin = (e) => {
+    e.preventDefault();
+    setError('');
+    const cleanStoreId = (kdsStoreId || 'FP-348330').trim().toUpperCase();
+    const cleanPass = kdsPassword.trim();
+
+    if (!cleanPass) {
+      setError('Please enter Kitchen Password.');
+      return;
+    }
+
+    const check = validateKitchenLogin(cleanStoreId, cleanPass, cleanStoreId);
+    const isSnackRackPass = cleanPass === 'SnackRack400' || cleanPass.toLowerCase() === 'snackrack400';
+
+    if ((check && check.valid) || isSnackRackPass) {
+      localStorage.setItem('foodypay_kitchen_logged_in', 'true');
+      localStorage.setItem('foodypay_kitchen_store_id', cleanStoreId);
+      localStorage.setItem('foodypay_kitchen_role', (check && check.role) || 'Kitchen Chef');
+
+      playMilestoneCelebration();
+      confetti({ particleCount: 100, spread: 70, origin: { y: 0.5 } });
+      if (onShowToast) onShowToast(`Kitchen KDS Authenticated for Store ${cleanStoreId}!`);
+
+      setTimeout(() => {
+        navigate(`/kds`);
+      }, 500);
+    } else {
+      setError('Invalid Kitchen Password. Use store kitchen password or SnackRack400.');
+    }
+  };
+
+  // 4. Master Admin Login Submit (Controls All Businesses Across System)
+  const handleMasterLogin = (e) => {
+    e.preventDefault();
+    setError('');
+    const cleanPass = masterPassword.trim();
+
+    if (cleanPass === '12345678') {
+      sessionStorage.setItem('foodypay_admin_authed', 'true');
+      playMilestoneCelebration();
+      confetti({ particleCount: 150, spread: 90, origin: { y: 0.5 } });
+      if (onShowToast) onShowToast('👑 Master SuperAdmin Access Granted! Loading all businesses...');
+
+      setTimeout(() => {
+        navigate('/admin');
+      }, 500);
+    } else {
+      setError('Incorrect Master Password! Enter the Master Admin Security Key.');
+    }
+  };
+
+  // Google Firebase OAuth Login
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const fbRes = await loginWithFirebaseGoogle();
+      const gEmail = fbRes?.user?.email ? fbRes.user.email.toLowerCase().trim() : 'merchant@foodypay.com';
+      const gName = fbRes?.user?.displayName || gEmail.split('@')[0];
+      const gUid = fbRes?.user?.uid;
+
+      // Check if Business User profile exists
+      let bProfile = await getBusinessUserByEmail(gEmail);
+      if (!bProfile) {
+        const generatedId = `FP-${Math.floor(100000 + Math.random() * 900000)}`;
+        bProfile = {
+          uniqueId: generatedId,
+          businessId: generatedId,
+          foodypayId: generatedId,
+          businessName: `${gName}'s Restaurant`,
+          ownerName: gName,
+          email: gEmail,
+          plan: 'Free',
+          status: 'Active',
+          isLocked: false,
+        };
+        await saveBusinessUserToFirestore(bProfile);
+      }
+
+      const userData = {
+        token: fbRes?.token || 'token_' + Date.now(),
+        uid: gUid,
+        name: gName,
+        email: gEmail,
+        role: 'Restaurant Owner',
+        foodypayId: bProfile.uniqueId,
+        businessId: bProfile.uniqueId,
+        businessName: bProfile.businessName,
+        plan: bProfile.plan || 'Free',
+      };
+
+      localStorage.setItem('foodypay_token', userData.token);
+      localStorage.setItem('foodypay_user', JSON.stringify(userData));
+      localStorage.setItem('foodypay_active_business_id', bProfile.uniqueId);
+
+      playMilestoneCelebration();
+      confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
+      if (onShowToast) onShowToast(`Gmail Verified (${gEmail})! Logged into Dashboard!`);
+
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 500);
+    } catch (err) {
+      setError(err.message || 'Google Gmail authentication failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Real Working Password Reset via Firebase Auth Email Link
   const handleResetPasswordSubmit = async (e) => {
     e.preventDefault();
     setResetMsg('');
     setResetError('');
 
     if (!resetEmail.trim() || !resetEmail.includes('@')) {
-      setResetError('Please enter a valid email address.');
+      setResetError('Please enter a valid registered email address.');
       return;
     }
 
@@ -246,16 +410,16 @@ export default function LoginPage({ onShowToast }) {
     try {
       const result = await sendFirebasePasswordReset(resetEmail.trim());
       setResetMsg(result.message);
-      if (onShowToast) onShowToast(`Reset link sent to ${resetEmail.trim()} via Firebase!`);
+      if (onShowToast) onShowToast(`Reset email sent to ${resetEmail.trim()}! Check inbox.`);
     } catch (err) {
-      setResetError(err.message || 'Failed to send password reset email.');
+      setResetError(err.message || 'Failed to dispatch password reset email.');
     } finally {
       setResetLoading(false);
     }
   };
 
   return (
-    <div style={{ height: '100vh', maxHeight: '100vh', backgroundColor: '#F8FAFC', display: 'flex', flexDirection: 'column', fontFamily: 'system-ui, -apple-system, sans-serif', overflow: 'hidden' }}>
+    <div style={{ minHeight: '100vh', backgroundColor: '#F8FAFC', display: 'flex', flexDirection: 'column', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
       
       {/* TOP HEADER */}
       <header className="auth-header">
@@ -268,7 +432,7 @@ export default function LoginPage({ onShowToast }) {
         </Link>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span className="auth-header-subtext">New to FoodyPay?</span>
+          <span className="auth-header-subtext">New Business?</span>
           <Link
             to="/register"
             style={{
@@ -283,37 +447,38 @@ export default function LoginPage({ onShowToast }) {
               whiteSpace: 'nowrap',
             }}
           >
-            Create Account
+            Register Cafe / Restaurant
           </Link>
         </div>
       </header>
 
-      {/* MAIN CONTENT SPLIT LAYOUT */}
+      {/* MAIN CONTAINER */}
       <main className="auth-main-container">
         <div className="auth-card-grid">
+
           {/* LEFT BRANDING PANEL */}
           <div className="auth-left-panel">
             <div>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(255, 94, 20, 0.15)', color: '#FF5E14', padding: '4px 12px', borderRadius: '20px', fontSize: '11.5px', fontWeight: 800, border: '1px solid rgba(255, 94, 20, 0.3)', marginBottom: '16px' }}>
                 <Sparkles size={14} />
-                <span>Smart Restaurant Operating System</span>
+                <span>Multi-Tenant Cloud Restaurant OS</span>
               </div>
 
               <h2 style={{ fontSize: '22px', fontWeight: 900, lineHeight: 1.25, margin: '0 0 12px', letterSpacing: '-0.3px' }}>
-                Sign In &amp; Control Your Restaurant POS &amp; QR Ordering
+                Unified Portal for Restaurants, KDS, Customers &amp; Master Admin
               </h2>
 
               <p style={{ fontSize: '13px', color: '#94A3B8', lineHeight: 1.5, margin: '0 0 20px' }}>
-                Manage live table QR orders, kitchen KDS displays, digital menus, loyalty cohorts, and billings from one Cloud POS.
+                Every Cafe and Restaurant has an isolated Unique ID across all products, orders, coupons, tables &amp; customers in Cloud Firestore.
               </p>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {[
-                  'Firebase Authenticated & Secured Login',
-                  'Instant Self-Service Table QR Ordering',
+                  'Unique ID for Each Cafe & Restaurant',
+                  'Plan Tiers: Free, Basic, Growth & Pro',
+                  'Firebase Auth Real Password Reset to Inbox',
                   'Dedicated Kitchen Display System (KDS)',
-                  '0% Commission Direct Customer Payments',
-                  'Real-Time Sales Telemetry & Reports',
+                  'Master Admin Full Multi-Business Overview',
                 ].map((feature, idx) => (
                   <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', fontWeight: 700, color: '#E2E8F0' }}>
                     <CheckCircle2 size={16} color="#FF5E14" />
@@ -326,222 +491,355 @@ export default function LoginPage({ onShowToast }) {
             <div style={{ marginTop: '20px', paddingTop: '14px', borderTop: '1px solid #334155', display: 'flex', alignItems: 'center', gap: '10px' }}>
               <ShieldCheck size={24} color="#10B981" />
               <div>
-                <div style={{ fontSize: '12px', fontWeight: 800, color: '#F8FAFC' }}>Firebase Auth 256-Bit SSL Encrypted</div>
-                <div style={{ fontSize: '11px', color: '#94A3B8' }}>Trusted by 10,000+ top restaurants &amp; dhabas</div>
+                <div style={{ fontSize: '12px', fontWeight: 800, color: '#F8FAFC' }}>Cloud Firestore 100% Persistent Database</div>
+                <div style={{ fontSize: '11px', color: '#94A3B8' }}>Sub-second real-time sync with Google Firebase</div>
               </div>
             </div>
           </div>
 
           {/* RIGHT LOGIN FORM */}
-          <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <div style={{ marginBottom: '18px' }}>
-              <h2 style={{ fontSize: '20px', fontWeight: 900, color: '#0F172A', margin: '0 0 4px', letterSpacing: '-0.3px' }}>
-                Merchant Login
+          <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            
+            {/* 4 LOGIN ROLE SWITCHER TABS */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', backgroundColor: '#F1F5F9', padding: '4px', borderRadius: '12px' }}>
+                {[
+                  { id: 'user', label: 'Customer', icon: User, badgeColor: '#3B82F6' },
+                  { id: 'merchant', label: 'Merchant', icon: Building2, badgeColor: '#FF5E14' },
+                  { id: 'kds', label: 'Kitchen', icon: ChefHat, badgeColor: '#8B5CF6' },
+                  { id: 'master', label: 'Master', icon: Crown, badgeColor: '#10B981' },
+                ].map((tab) => {
+                  const Icon = tab.icon;
+                  const isActive = loginRole === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => {
+                        setLoginRole(tab.id);
+                        setError('');
+                      }}
+                      style={{
+                        padding: '8px 4px',
+                        borderRadius: '9px',
+                        border: 'none',
+                        backgroundColor: isActive ? '#FFFFFF' : 'transparent',
+                        color: isActive ? tab.badgeColor : '#64748B',
+                        fontWeight: isActive ? 900 : 700,
+                        fontSize: '11.5px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '4px',
+                        boxShadow: isActive ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <Icon size={16} color={isActive ? tab.badgeColor : '#64748B'} />
+                      <span>{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* TAB TITLE & SUBTEXT */}
+            <div style={{ marginBottom: '16px' }}>
+              <h2 style={{ fontSize: '19px', fontWeight: 900, color: '#0F172A', margin: '0 0 3px', letterSpacing: '-0.3px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {loginRole === 'user' && '👤 Customer / User Login'}
+                {loginRole === 'merchant' && '🏢 Merchant Partner Login'}
+                {loginRole === 'kds' && '🍳 Kitchen Display (KDS) Login'}
+                {loginRole === 'master' && '👑 Master SuperAdmin Login'}
               </h2>
-              <p style={{ fontSize: '13px', color: '#64748B', margin: 0 }}>
-                Enter credentials or use Google to access your Dashboard
+              <p style={{ fontSize: '12.5px', color: '#64748B', margin: 0 }}>
+                {loginRole === 'user' && 'Sign in to access order history, saved addresses & loyalty points'}
+                {loginRole === 'merchant' && 'Manage your cafe, restaurant menu, tables, bills & reports'}
+                {loginRole === 'kds' && 'Enter your Kitchen Unique ID & Password to open live orders screen'}
+                {loginRole === 'master' && 'Master access to view ALL businesses, plans & platform telemetry'}
               </p>
             </div>
 
             {error && (
-              <div style={{ backgroundColor: '#FEF2F2', border: '1.5px solid #FCA5A5', color: '#991B1B', padding: '12px 16px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 700, marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+              <div style={{ backgroundColor: '#FEF2F2', border: '1.5px solid #FCA5A5', color: '#991B1B', padding: '10px 14px', borderRadius: '10px', fontSize: '12px', fontWeight: 700, marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                 <div>{error}</div>
                 {(noAccountEmail || error.toLowerCase().includes('register') || error.toLowerCase().includes('not found')) && (
                   <Link
                     to="/register"
                     style={{
-                      padding: '7px 14px',
-                      borderRadius: '8px',
+                      padding: '5px 10px',
+                      borderRadius: '6px',
                       backgroundColor: '#FF5E14',
                       color: '#FFFFFF',
                       textDecoration: 'none',
-                      fontSize: '12.5px',
-                      fontWeight: 900,
+                      fontSize: '11px',
+                      fontWeight: 800,
                       whiteSpace: 'nowrap',
-                      boxShadow: '0 2px 8px rgba(255, 94, 20, 0.3)',
                     }}
                   >
-                    Register Account Now →
+                    Register Now →
                   </Link>
                 )}
               </div>
             )}
 
-            {/* GOOGLE GMAIL ONE-CLICK SIGN IN */}
-            <button
-              type="button"
-              onClick={handleGoogleLogin}
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '10px',
-                borderRadius: '10px',
-                backgroundColor: '#FFFFFF',
-                border: '1.5px solid #CBD5E1',
-                color: '#334155',
-                fontWeight: 800,
-                fontSize: '13px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '10px',
-                transition: 'all 0.2s',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
-                marginBottom: '16px',
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-              </svg>
-              <span>Continue with Google</span>
-            </button>
-
-            <div style={{ display: 'flex', alignItems: 'center', margin: '0 0 16px', gap: '10px' }}>
-              <div style={{ flex: 1, height: '1px', backgroundColor: '#E2E8F0' }} />
-              <span style={{ fontSize: '11px', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase' }}>Or Login with Email</span>
-              <div style={{ flex: 1, height: '1px', backgroundColor: '#E2E8F0' }} />
-            </div>
-
-            {/* LOGIN FORM */}
-            <form onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '12.5px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
-                  Business Email Address or 6-Digit Unique Store ID
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <Mail size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
-                  <input
-                    type="text"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="owner@restaurant.com or 6-digit ID (e.g. 888888)"
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px 10px 38px',
-                      borderRadius: '10px',
-                      border: '1.5px solid #CBD5E1',
-                      fontSize: '13.5px',
-                      fontWeight: 600,
-                      outline: 'none',
-                      boxSizing: 'border-box',
-                    }}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                  <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#334155' }}>
-                    Password
+            {/* ========================================================= */}
+            {/* 1. CUSTOMER LOGIN FORM */}
+            {/* ========================================================= */}
+            {loginRole === 'user' && (
+              <form onSubmit={handleUserLogin} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    Your Email Address
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setResetEmail(email);
-                      setResetMsg('');
-                      setResetError('');
-                      setShowForgotModal(true);
-                    }}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: '#FF5E14',
-                      fontSize: '12px',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      padding: 0,
-                    }}
-                  >
-                    Forgot Password?
-                  </button>
+                  <div style={{ position: 'relative' }}>
+                    <Mail size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                    <input
+                      type="email"
+                      value={emailOrId}
+                      onChange={(e) => setEmailOrId(e.target.value)}
+                      placeholder="customer@gmail.com"
+                      style={{ width: '100%', padding: '9px 12px 9px 38px', borderRadius: '9px', border: '1.5px solid #CBD5E1', fontSize: '13px', fontWeight: 600, outline: 'none', boxSizing: 'border-box' }}
+                      required
+                    />
+                  </div>
                 </div>
-                <div style={{ position: 'relative' }}>
-                  <Lock size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    style={{
-                      width: '100%',
-                      padding: '10px 38px 10px 38px',
-                      borderRadius: '10px',
-                      border: '1.5px solid #CBD5E1',
-                      fontSize: '13.5px',
-                      fontWeight: 600,
-                      outline: 'none',
-                      boxSizing: 'border-box',
-                    }}
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
+
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 800, color: '#334155' }}>Password</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResetEmail(emailOrId);
+                        setResetMsg('');
+                        setResetError('');
+                        setShowForgotModal(true);
+                      }}
+                      style={{ background: 'none', border: 'none', color: '#FF5E14', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer', padding: 0 }}
+                    >
+                      Forgot Password?
+                    </button>
+                  </div>
+                  <div style={{ position: 'relative' }}>
+                    <Lock size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      style={{ width: '100%', padding: '9px 38px 9px 38px', borderRadius: '9px', border: '1.5px solid #CBD5E1', fontSize: '13px', fontWeight: 600, outline: 'none', boxSizing: 'border-box' }}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '2px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12.5px', fontWeight: 600, color: '#475569' }}>
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    style={{ width: '15px', height: '15px', accentColor: '#FF5E14' }}
-                  />
-                  <span>Remember my login</span>
-                </label>
-              </div>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{ width: '100%', padding: '10px', borderRadius: '9px', background: 'linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)', color: '#FFFFFF', border: 'none', fontWeight: 900, fontSize: '13.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)', marginTop: '4px' }}
+                >
+                  {loading ? 'Signing in...' : 'Sign In as Customer →'}
+                </button>
+              </form>
+            )}
 
-              <button
-                type="submit"
-                disabled={loading}
-                style={{
-                  width: '100%',
-                  padding: '11px',
-                  borderRadius: '10px',
-                  background: 'linear-gradient(135deg, #FF5E14 0%, #D97706 100%)',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  fontWeight: 900,
-                  fontSize: '14.5px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  boxShadow: '0 4px 12px rgba(255, 94, 20, 0.35)',
-                  transition: 'all 0.2s',
-                  marginTop: '4px',
-                }}
-              >
-                {loading ? (
-                  <>
-                    <span className="spinner-icon-fast" />
-                    <span>Authenticating...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Sign In to Dashboard</span>
-                    <ArrowRight size={17} />
-                  </>
-                )}
-              </button>
-            </form>
+            {/* ========================================================= */}
+            {/* 2. MERCHANT PARTNER LOGIN FORM */}
+            {/* ========================================================= */}
+            {loginRole === 'merchant' && (
+              <>
+                {/* GOOGLE GMAIL ONE-CLICK SIGN IN */}
+                <button
+                  type="button"
+                  onClick={handleGoogleLogin}
+                  disabled={loading}
+                  style={{ width: '100%', padding: '9px', borderRadius: '9px', backgroundColor: '#FFFFFF', border: '1.5px solid #CBD5E1', color: '#334155', fontWeight: 800, fontSize: '12.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', marginBottom: '12px' }}
+                >
+                  <svg width="17" height="17" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                  </svg>
+                  <span>Quick Sign In with Google</span>
+                </button>
 
-            <div style={{ marginTop: '20px', textAlign: 'center', borderTop: '1px solid #E2E8F0', paddingTop: '14px' }}>
-              <Link to="/partner-login" style={{ fontSize: '12.5px', color: '#10B981', fontWeight: 800, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <ShieldCheck size={16} /> Partner / SuperAdmin Login ↗
-              </Link>
-            </div>
+                <div style={{ display: 'flex', alignItems: 'center', margin: '0 0 12px', gap: '8px' }}>
+                  <div style={{ flex: 1, height: '1px', backgroundColor: '#E2E8F0' }} />
+                  <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase' }}>Or Sign In With Unique ID / Email</span>
+                  <div style={{ flex: 1, height: '1px', backgroundColor: '#E2E8F0' }} />
+                </div>
+
+                <form onSubmit={handleMerchantLogin} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                      Restaurant Unique ID (e.g. FP-348330) or Registered Email
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <Building2 size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                      <input
+                        type="text"
+                        value={emailOrId}
+                        onChange={(e) => setEmailOrId(e.target.value)}
+                        placeholder="FP-348330 or owner@restaurant.com"
+                        style={{ width: '100%', padding: '9px 12px 9px 38px', borderRadius: '9px', border: '1.5px solid #CBD5E1', fontSize: '13px', fontWeight: 600, outline: 'none', boxSizing: 'border-box' }}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 800, color: '#334155' }}>Password</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setResetEmail(emailOrId.includes('@') ? emailOrId : '');
+                          setResetMsg('');
+                          setResetError('');
+                          setShowForgotModal(true);
+                        }}
+                        style={{ background: 'none', border: 'none', color: '#FF5E14', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer', padding: 0 }}
+                      >
+                        Forgot Password?
+                      </button>
+                    </div>
+                    <div style={{ position: 'relative' }}>
+                      <Lock size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="••••••••"
+                        style={{ width: '100%', padding: '9px 38px 9px 38px', borderRadius: '9px', border: '1.5px solid #CBD5E1', fontSize: '13px', fontWeight: 600, outline: 'none', boxSizing: 'border-box' }}
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}
+                      >
+                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600, color: '#475569' }}>
+                      <input
+                        type="checkbox"
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        style={{ width: '14px', height: '14px', accentColor: '#FF5E14' }}
+                      />
+                      <span>Remember credentials</span>
+                    </label>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    style={{ width: '100%', padding: '10px', borderRadius: '9px', background: 'linear-gradient(135deg, #FF5E14 0%, #D97706 100%)', color: '#FFFFFF', border: 'none', fontWeight: 900, fontSize: '13.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(255, 94, 20, 0.35)', marginTop: '4px' }}
+                  >
+                    {loading ? 'Authenticating...' : 'Sign In to Restaurant POS Dashboard →'}
+                  </button>
+                </form>
+              </>
+            )}
+
+            {/* ========================================================= */}
+            {/* 3. KDS KITCHEN DISPLAY SYSTEM LOGIN FORM */}
+            {/* ========================================================= */}
+            {loginRole === 'kds' && (
+              <form onSubmit={handleKdsLogin} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    Restaurant Unique ID
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <Building2 size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                    <input
+                      type="text"
+                      value={kdsStoreId}
+                      onChange={(e) => setKdsStoreId(e.target.value)}
+                      placeholder="e.g. FP-348330"
+                      style={{ width: '100%', padding: '9px 12px 9px 38px', borderRadius: '9px', border: '1.5px solid #CBD5E1', fontSize: '13px', fontWeight: 700, outline: 'none', boxSizing: 'border-box' }}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    Kitchen Security Password / Passcode
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <Lock size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                    <input
+                      type="password"
+                      value={kdsPassword}
+                      onChange={(e) => setKdsPassword(e.target.value)}
+                      placeholder="Kitchen passcode (e.g. SnackRack400)"
+                      style={{ width: '100%', padding: '9px 12px 9px 38px', borderRadius: '9px', border: '1.5px solid #CBD5E1', fontSize: '13px', fontWeight: 600, outline: 'none', boxSizing: 'border-box' }}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  style={{ width: '100%', padding: '10px', borderRadius: '9px', background: 'linear-gradient(135deg, #8B5CF6 0%, #6D28D9 100%)', color: '#FFFFFF', border: 'none', fontWeight: 900, fontSize: '13.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(139, 92, 246, 0.35)', marginTop: '4px' }}
+                >
+                  <ChefHat size={17} />
+                  <span>Launch Live Kitchen Display (KDS) →</span>
+                </button>
+              </form>
+            )}
+
+            {/* ========================================================= */}
+            {/* 4. MASTER SUPERADMIN LOGIN FORM */}
+            {/* ========================================================= */}
+            {loginRole === 'master' && (
+              <form onSubmit={handleMasterLogin} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', padding: '10px 12px', borderRadius: '8px', color: '#166534', fontSize: '12px', fontWeight: 700 }}>
+                  👑 Master Admin Overview: View all Cafe &amp; Restaurant profiles, plan subscriptions, live revenue &amp; manage global records.
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    Master Admin Master Key Password
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <KeyRound size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                    <input
+                      type="password"
+                      value={masterPassword}
+                      onChange={(e) => setMasterPassword(e.target.value)}
+                      placeholder="Master Security Password (Default: 12345678)"
+                      style={{ width: '100%', padding: '9px 12px 9px 38px', borderRadius: '9px', border: '1.5px solid #CBD5E1', fontSize: '13px', fontWeight: 600, outline: 'none', boxSizing: 'border-box' }}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  style={{ width: '100%', padding: '10px', borderRadius: '9px', background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)', color: '#FFFFFF', border: 'none', fontWeight: 900, fontSize: '13.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)', marginTop: '4px' }}
+                >
+                  <Crown size={17} />
+                  <span>Enter Master Admin Panel →</span>
+                </button>
+              </form>
+            )}
+
           </div>
         </div>
       </main>
@@ -561,12 +859,12 @@ export default function LoginPage({ onShowToast }) {
             </div>
 
             <p style={{ fontSize: '13px', color: '#64748B', lineHeight: 1.5, margin: '0 0 16px' }}>
-              Enter your registered email address below. Firebase will send an instant password reset link directly to your inbox.
+              Enter your registered email address below. Firebase will dispatch an actual password reset email link directly to your inbox.
             </p>
 
             {resetMsg && (
               <div style={{ backgroundColor: '#ECFDF5', border: '1px solid #6EE7B7', color: '#065F46', padding: '10px 14px', borderRadius: '10px', fontSize: '12.5px', fontWeight: 700, marginBottom: '14px' }}>
-                 {resetMsg}
+                ✓ {resetMsg}
               </div>
             )}
 

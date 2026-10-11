@@ -120,17 +120,22 @@ import {
   ALL_CONFIGURED_APIS,
   TOTAL_AVAILABLE_APIS_COUNT,
 } from '../utils/api';
-import { SNACK_RACK_FULL_MENU } from '../data/snackRackMenuData';
+import {
+  subscribeToOrders,
+  subscribeToTables,
+  subscribeToCustomerDues,
+  saveCustomerDueToFirestore,
+  settleCustomerDueInFirestore,
+  updateOrderInFirestore,
+  saveOrderToFirestore,
+  subscribeToProducts,
+  saveProductToFirestore,
+  deleteProductFromFirestore,
+} from '../utils/firestoreService';
 import './Dashboard.css';
 
-const DEFAULT_SNACK_RACK_DISHES = SNACK_RACK_FULL_MENU.map((d) => ({
-  ...d,
-  foodypayId: 'FP-348330',
-  merchantId: 'FP-348330',
-}));
-
-// Initial Mock Datasets
-const INITIAL_DISHES = DEFAULT_SNACK_RACK_DISHES;
+// Initial Datasets
+const INITIAL_DISHES = [];
 
 const INITIAL_ORDERS = [];
 
@@ -254,11 +259,7 @@ export default function DashboardPage({ onShowToast }) {
         }
       }
     } catch (e) {}
-    return DEFAULT_SNACK_RACK_DISHES.map((d) => ({
-      ...d,
-      foodypayId: activeMerchantId,
-      merchantId: activeMerchantId,
-    }));
+    return [];
   });
   const [customers, setCustomers] = useState([]);
   const [custSearch, setCustSearch] = useState('');
@@ -457,17 +458,11 @@ export default function DashboardPage({ onShowToast }) {
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return {
-      enabled: true,
-      title: 'STEAL DEAL WEEKEND',
-      badgePrice: '9',
-      subtitle: ' GET ANY ONE ITEM AT SPECIAL PRICE ',
-      items: [
-        { id: 'steal_1', name: 'Corn Cob (Bhutta)', unit: '1 pc', price: 9, originalPrice: 22, unlockAt: 499, isVeg: true, image: 'https://images.unsplash.com/photo-1551754655-cd27e38d2076?w=400&auto=format&fit=crop&q=80' },
-        { id: 'steal_2', name: 'Sleepy Owl Assorted Instant Coffee', unit: '10 pcs', price: 29, originalPrice: 49, unlockAt: 899, isVeg: true, image: 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=400&auto=format&fit=crop&q=80' },
-        { id: 'steal_3', name: 'Farmley Dark Choco Orange Date Bites', unit: '20 g', price: 9, originalPrice: 40, unlockAt: 499, isVeg: true, image: 'https://images.unsplash.com/photo-1549007994-cb92caebd54b?w=400&auto=format&fit=crop&q=80' },
-        { id: 'steal_4', name: 'Fresh Full Cream Milk (1L)', unit: '1 L', price: 49, originalPrice: 66, unlockAt: 299, isVeg: true, image: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=500&auto=format&fit=crop&q=80' },
-        { id: 'steal_5', name: 'Crispy Potato Chips Pack (Salted)', unit: '50 g', price: 9, originalPrice: 20, unlockAt: 199, isVeg: true, image: 'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400&auto=format&fit=crop&q=80' },
-      ]
+      enabled: false,
+      title: 'STEAL DEALS',
+      badgePrice: '',
+      subtitle: '',
+      items: []
     };
   });
 
@@ -1459,13 +1454,30 @@ export default function DashboardPage({ onShowToast }) {
 
     const handleNewOrderEvent = () => {
       try {
+        const activeBid = String(
+          localStorage.getItem('foodypay_active_business_id') ||
+          currentUser?.foodypayId ||
+          currentUser?.uniqueId ||
+          currentUser?._id ||
+          storeControls.foodypayId ||
+          ''
+        ).trim().toUpperCase();
+
         const savedOrders = localStorage.getItem('foodypay_crm_orders_v3');
         if (savedOrders) {
           const parsed = JSON.parse(savedOrders);
           if (Array.isArray(parsed) && parsed.length > 0) {
+            // Strictly filter by current restaurant businessId
+            const matchedOrders = parsed.filter((po) => {
+              if (!po) return false;
+              if (!activeBid || activeBid === 'MASTER' || activeBid === 'ALL') return true;
+              const poBid = String(po.businessId || po.merchantFilter || po.merchantId || po.foodypayId || '').trim().toUpperCase();
+              return poBid === activeBid;
+            });
+
             setOrders((prev) => {
               const prevMap = new Map((prev || []).map((o) => [String(o._id || o.id || o.orderId), o]));
-              parsed.forEach((po) => {
+              matchedOrders.forEach((po) => {
                 const poId = String(po._id || po.id || po.orderId);
                 if (!prevMap.has(poId)) {
                   prevMap.set(poId, po);
@@ -1473,7 +1485,7 @@ export default function DashboardPage({ onShowToast }) {
               });
               return sortOrdersNewestFirst(Array.from(prevMap.values()));
             });
-            parsed.forEach((order) => notifyIfNewOrder(order));
+            matchedOrders.forEach((order) => notifyIfNewOrder(order));
           }
         }
       } catch (e) {
@@ -1539,6 +1551,53 @@ export default function DashboardPage({ onShowToast }) {
       }
     };
 
+    // Real-time Cloud Firestore live listener for sub-second order dispatch & dish catalog isolation
+    let unsubscribeFirestore = () => {};
+    let unsubscribeFirestoreDishes = () => {};
+    try {
+      const activeBusinessId =
+        localStorage.getItem('foodypay_active_business_id') ||
+        currentUser?.foodypayId ||
+        currentUser?.uniqueId ||
+        currentUser?._id ||
+        storeControls.foodypayId ||
+        'FP-348330';
+
+      unsubscribeFirestore = subscribeToOrders(activeBusinessId, (liveOrders) => {
+        if (Array.isArray(liveOrders) && liveOrders.length > 0) {
+          setOrders((prevLocalOrders) => {
+            const localMap = new Map();
+            (prevLocalOrders || []).forEach((lo) => {
+              const idKey = String(lo._id || lo.id || lo.orderId);
+              localMap.set(idKey, lo);
+            });
+
+            liveOrders.forEach((o) => {
+              const oId = String(o._id || o.id || o.orderId);
+              const localOrd = localMap.get(oId);
+              localMap.set(oId, {
+                ...o,
+                seen: Boolean(o.seen || (localOrd && localOrd.seen)),
+              });
+            });
+
+            const merged = sortOrdersNewestFirst(Array.from(localMap.values()));
+            liveOrders.forEach((order) => notifyIfNewOrder(order));
+            return merged;
+          });
+        }
+      });
+
+      // Strict real-time dish catalog subscription per businessId
+      unsubscribeFirestoreDishes = subscribeToProducts(activeBusinessId, (liveDishes) => {
+        if (Array.isArray(liveDishes) && liveDishes.length > 0) {
+          setDishes(liveDishes);
+        }
+      });
+    } catch (fsErr) {
+      console.warn('Firestore live order listener notice:', fsErr);
+    }
+
     const pollInterval = setInterval(pollBackendOrders, 5000);
 
     const handleAdminSyncRefresh = () => {
@@ -1573,13 +1632,15 @@ export default function DashboardPage({ onShowToast }) {
     window.addEventListener('foodypay_admin_settings_updated', handleAdminSyncRefresh);
     window.addEventListener('storage', handleStorageEvent);
     return () => {
+      if (typeof unsubscribeFirestore === 'function') unsubscribeFirestore();
+      if (typeof unsubscribeFirestoreDishes === 'function') unsubscribeFirestoreDishes();
       clearInterval(pollInterval);
       if (bc) bc.close();
       window.removeEventListener('foodypay_order_created', handleNewOrderEvent);
       window.removeEventListener('foodypay_admin_settings_updated', handleAdminSyncRefresh);
       window.removeEventListener('storage', handleStorageEvent);
     };
-  }, [soundEnabled]);
+  }, [soundEnabled, currentUser?.foodypayId, currentUser?._id]);
 
 
   // Continuous Bell Alarm Controller for Unseen Orders
@@ -1865,13 +1926,13 @@ export default function DashboardPage({ onShowToast }) {
               if (Array.isArray(parsed) && parsed.length > 0) {
                 setDishes(parsed.map((d) => ({ ...d, foodypayId: storeFpId, merchantId: storeFpId })));
               } else {
-                setDishes(DEFAULT_SNACK_RACK_DISHES.map((d) => ({ ...d, foodypayId: storeFpId, merchantId: storeFpId })));
+                setDishes([]);
               }
             } else {
-              setDishes(DEFAULT_SNACK_RACK_DISHES.map((d) => ({ ...d, foodypayId: storeFpId, merchantId: storeFpId })));
+              setDishes([]);
             }
           } catch (e) {
-            setDishes(DEFAULT_SNACK_RACK_DISHES.map((d) => ({ ...d, foodypayId: storeFpId, merchantId: storeFpId })));
+            setDishes([]);
           }
         }
 
@@ -2060,6 +2121,9 @@ export default function DashboardPage({ onShowToast }) {
     } catch (e) {}
   }, [posTableViewMode]);
 
+  // Table Status Filter State for Visual POS Table View ('all' | 'available' | 'eating' | 'waiting' | 'bill_ready' | 'paid')
+  const [tableStatusFilter, setTableStatusFilter] = useState('all');
+
   // Move KOT / Items to another Table Modal State
   const [isMoveKotModalOpen, setIsMoveKotModalOpen] = useState(false);
   const [moveKotSourceOrder, setMoveKotSourceOrder] = useState(null);
@@ -2176,11 +2240,7 @@ export default function DashboardPage({ onShowToast }) {
   ]);
 
   const handleEditOrder = (order) => {
-    if (order.status !== 'new') {
-      addToast('Cooking has already started! Order items are locked.', <Lock size={18} />);
-      return;
-    }
-
+    if (!order) return;
     setEditingOrderId(order._id || order.id);
     setManualOrderType(order.type || 'Dine-In');
     setManualTable(order.table || 'Table 1');
@@ -2192,6 +2252,7 @@ export default function DashboardPage({ onShowToast }) {
     setManualCategory('All');
 
     const itemsMap = {};
+    const isOrderServed = order.status === 'ready' || order.status === 'printed' || order.status === 'paid' || order.status === 'completed';
     (order.items || []).forEach((it, idx) => {
       const key = `item_${idx}_${Date.now()}`;
       itemsMap[key] = {
@@ -2200,6 +2261,9 @@ export default function DashboardPage({ onShowToast }) {
         price: it.price,
         qty: it.qty,
         isVeg: it.isVeg !== undefined ? it.isVeg : true,
+        kotSent: true, // Existing items were already sent to kitchen
+        kotSentQty: it.qty, // Quantity that has already been dispatched to kitchen
+        isServed: it.isServed !== undefined ? it.isServed : isOrderServed, // Food already prepared & served stamp
       };
     });
     setManualItems(itemsMap);
@@ -2233,30 +2297,35 @@ export default function DashboardPage({ onShowToast }) {
           sizeName: options.sizeName || (existing ? existing.sizeName : ''),
           bunName: options.bunName || (existing ? existing.bunName : ''),
           toppings: options.toppings || (existing ? existing.toppings : []),
+          kotSent: existing ? existing.kotSent : false,
+          kotSentQty: existing ? (existing.kotSentQty || 0) : 0,
         },
       };
     });
   };
 
   const handleClearAllSampleData = () => {
-    if (!window.confirm('Are you sure you want to clear all sample data (orders, reviews, meal combos)? All new data will be created fresh!')) return;
+    if (!window.confirm('Are you sure you want to clear all sample data (products, orders, reviews, meal combos)? All new data will be created fresh!')) return;
     try {
       localStorage.removeItem('foodypay_crm_orders_v3');
+      localStorage.removeItem('foodypay_crm_dishes_v3');
       localStorage.removeItem('foodypay_crm_reviews_v1');
       localStorage.removeItem('foodypay_crm_meals_v1');
       localStorage.removeItem('foodypay_crm_customers_v1');
+      localStorage.removeItem('foodypay_steal_deals_config');
       Object.keys(localStorage).forEach((key) => {
-        if (key.startsWith('foodypay_orders_')) {
+        if (key.startsWith('foodypay_orders_') || key.startsWith('foodypay_dishes_')) {
           localStorage.removeItem(key);
         }
       });
     } catch (e) {}
 
+    setDishes([]);
     setOrders([]);
     setCustomers([]);
     setReviews([]);
     setMealsCollection([]);
-    addToast(' All sample data wiped cleanly! Database is completely fresh.', <Check size={18} />);
+    addToast('All sample products & data wiped cleanly! Database is completely fresh.', <Check size={18} />);
   };
 
   const manualSubtotal = Object.values(manualItems).reduce((sum, item) => sum + item.price * item.qty, 0);
@@ -2265,8 +2334,8 @@ export default function DashboardPage({ onShowToast }) {
   const manualTax = manualGstEnabled ? Math.round((manualSubtotal - mDiscountAmt) * 0.05) : 0;
   const manualTotal = Math.max(0, manualSubtotal - mDiscountAmt + manualTax);
 
-  const handleCreateManualOrderSubmit = async (e, forceConfirm = false) => {
-    if (e) e.preventDefault();
+  const handleCreateManualOrderSubmit = async (e, forceConfirm = false, sendKot = false) => {
+    if (e && e.preventDefault) e.preventDefault();
     if (isSubmittingManualOrder) return;
 
     if (manualSubtotal <= 0) {
@@ -2311,8 +2380,52 @@ export default function DashboardPage({ onShowToast }) {
           qty: it.qty,
           price: it.price,
           isVeg: it.isVeg,
+          kotSent: sendKot ? true : Boolean(it.kotSent),
+          kotSentQty: sendKot ? it.qty : (it.kotSentQty || 0),
         };
       });
+
+      // Calculate incremental KOT items: only items that were added anew or increased in quantity
+      const newlyAddedKotItems = [];
+      Object.values(manualItems).forEach((it) => {
+        let displayName = it.name;
+        const extras = [];
+        if (it.sizeName) extras.push(it.sizeName);
+        if (it.bunName) extras.push(it.bunName);
+        if (it.toppings && it.toppings.length > 0) extras.push(...it.toppings);
+        if (extras.length > 0) displayName += ` [${extras.join(', ')}]`;
+
+        const unsentQty = Math.max(0, it.qty - (it.kotSentQty || 0));
+        if (unsentQty > 0) {
+          newlyAddedKotItems.push({
+            name: displayName,
+            qty: unsentQty,
+            price: it.price,
+            isVeg: it.isVeg,
+          });
+        }
+      });
+
+      const existingOrder = editingOrderId ? (orders || []).find((o) => o._id === editingOrderId || o.id === editingOrderId) : null;
+
+      let orderStatus = 'running';
+      let isSentToKitchen = false;
+      let hasPendingKot = false;
+
+      if (sendKot) {
+        orderStatus = 'preparing';
+        isSentToKitchen = true;
+        hasPendingKot = true;
+      } else if (existingOrder) {
+        orderStatus = existingOrder.status || 'running';
+        isSentToKitchen = Boolean(existingOrder.sentToKitchen);
+        hasPendingKot = Boolean(existingOrder.hasPendingKot);
+      } else {
+        // Fresh order saved with "Order Placed"
+        orderStatus = 'running';
+        isSentToKitchen = false;
+        hasPendingKot = false;
+      }
 
       const newOrderPayload = {
         type: manualOrderType,
@@ -2328,30 +2441,65 @@ export default function DashboardPage({ onShowToast }) {
         discount: mDiscountAmt,
         tax: manualTax,
         total: manualTotal,
+        status: orderStatus,
+        sentToKitchen: isSentToKitchen,
+        hasPendingKot: hasPendingKot,
+        billPrinted: false, // Reset bill printed status whenever items change or KOT is fired
       };
 
       if (editingOrderId) {
         // Edit existing order
+        let updatedList = [];
         if (token) {
           try {
             const updated = await updateOrderApi(token, editingOrderId, newOrderPayload);
-            setOrders((prev) => prev.map((o) => (o._id === editingOrderId || o.id === editingOrderId ? updated : o)));
+            updatedList = orders.map((o) => (o._id === editingOrderId || o.id === editingOrderId ? { ...o, ...newOrderPayload, ...updated } : o));
+            setOrders(updatedList);
           } catch (err) {
-            console.warn('API error updating order:', err);
+            updatedList = orders.map((o) => (o._id === editingOrderId || o.id === editingOrderId ? { ...o, ...newOrderPayload } : o));
+            setOrders(updatedList);
           }
         } else {
-          setOrders((prev) =>
-            prev.map((o) => (o.id === editingOrderId || o._id === editingOrderId ? { ...o, ...newOrderPayload } : o))
-          );
+          updatedList = orders.map((o) => (o.id === editingOrderId || o._id === editingOrderId ? { ...o, ...newOrderPayload } : o));
+          setOrders(updatedList);
         }
-        addToast(`Order ${editingOrderId} updated successfully!`, <Check size={18} />);
+
+        try {
+          localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updatedList));
+          window.dispatchEvent(new Event('foodypay_order_created'));
+          window.dispatchEvent(new Event('storage'));
+          const bc = new BroadcastChannel('foodypay_live_orders_channel');
+          if (sendKot) {
+            bc.postMessage({
+              type: 'NEW_KOT',
+              orderId: editingOrderId,
+              table: newOrderPayload.table,
+              items: newlyAddedKotItems.length > 0 ? newlyAddedKotItems : formattedItems,
+            });
+          }
+          bc.postMessage({ type: 'ORDER_UPDATED' });
+          bc.close();
+        } catch (e) {}
+
+        if (sendKot) {
+          triggerSound(playOrderPlaced);
+          addToast(`🍳 KOT sent to Kitchen for Table ${newOrderPayload.table}! (${(newlyAddedKotItems.length > 0 ? newlyAddedKotItems : formattedItems).length} new items)`, <ChefHat size={18} />);
+        } else {
+          addToast(`✓ Order updated & saved for Table ${newOrderPayload.table}!`, <Check size={18} />);
+        }
       } else {
         // Create new order
         const nextId = `#FP-${1080 + orders.length + 1}`;
+        let createdFinalOrder = null;
         if (token) {
           try {
             const createdOrder = await createOrderApi(token, newOrderPayload);
-            setOrders((prev) => [{ ...createdOrder, seen: true }, ...prev]);
+            createdFinalOrder = { ...createdOrder, seen: true, status: orderStatus, sentToKitchen: isSentToKitchen, hasPendingKot };
+            const updatedList = [createdFinalOrder, ...orders];
+            setOrders(updatedList);
+            try {
+              localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updatedList));
+            } catch (e) {}
             const updatedCustomers = await fetchCustomersApi(token);
             setCustomers(updatedCustomers || []);
             const stats = await fetchOrderStatsApi(token);
@@ -2359,27 +2507,49 @@ export default function DashboardPage({ onShowToast }) {
           } catch (err) {
             console.warn('API error creating order:', err);
           }
-        } else {
+        }
+        if (!createdFinalOrder) {
           const newOrder = {
             ...newOrderPayload,
             id: nextId,
             _id: 'ord_' + Date.now(),
             time: 'Just now',
             timestamp: Date.now(),
-            status: 'new',
-            seen: true, // Auto-seen for manual orders
+            status: orderStatus,
+            seen: true,
           };
-          setOrders((prev) => [newOrder, ...prev]);
+          createdFinalOrder = newOrder;
+          const updatedList = [newOrder, ...orders];
+          setOrders(updatedList);
+          try {
+            localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updatedList));
+          } catch (e) {}
         }
 
         try {
-          localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(orders));
           window.dispatchEvent(new Event('foodypay_order_created'));
+          window.dispatchEvent(new Event('storage'));
+          const bc = new BroadcastChannel('foodypay_live_orders_channel');
+          if (sendKot) {
+            bc.postMessage({
+              type: 'NEW_KOT',
+              orderId: createdFinalOrder._id || createdFinalOrder.id,
+              table: newOrderPayload.table,
+              items: formattedItems,
+            });
+          }
+          bc.postMessage({ type: 'ORDER_UPDATED' });
+          bc.close();
         } catch (e) {}
 
         triggerSound(playOrderPlaced);
         confetti({ particleCount: 75, spread: 75, origin: { y: 0.3 } });
-        addToast(`Manual Order ${nextId} created!`, <Check size={18} />);
+
+        if (sendKot) {
+          addToast(`🍳 Order created & KOT sent to Kitchen for Table ${newOrderPayload.table}!`, <ChefHat size={18} />);
+        } else {
+          addToast(`✓ Order Placed for Table ${newOrderPayload.table}!`, <Check size={18} />);
+        }
       }
 
       setIsManualOrderOpen(false);
@@ -2387,6 +2557,108 @@ export default function DashboardPage({ onShowToast }) {
     } finally {
       setIsSubmittingManualOrder(false);
     }
+  };
+
+  // Quick Table State Transition Helpers (Matching Table View Lifecycle)
+  const handleMarkFoodServed = (order) => {
+    if (!order) return;
+    const orderId = order._id || order.id;
+    const updated = orders.map((o) =>
+      (o._id === orderId || o.id === orderId)
+        ? {
+            ...o,
+            status: 'ready',
+            hasPendingKot: false,
+            items: (o.items || []).map((it) => ({ ...it, isServed: true })),
+            updatedAt: new Date().toISOString()
+          }
+        : o
+    );
+    setOrders(updated);
+    try {
+      localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updated));
+      window.dispatchEvent(new Event('foodypay_order_created'));
+      window.dispatchEvent(new Event('storage'));
+      const bc = new BroadcastChannel('foodypay_live_orders_channel');
+      bc.postMessage({ type: 'ORDER_UPDATED', orderId, newStatus: 'ready' });
+      bc.close();
+    } catch (e) {}
+    if (token) {
+      updateOrderStatusApi(token, order._id || orderId, 'ready').catch(() => {});
+    }
+    triggerSound(playOrderPlaced);
+    addToast(`Table ${order.table} food marked SERVED / READY! Table is now Running (Blue).`, <Check size={18} />);
+  };
+
+  const handlePrintTableBill = (order) => {
+    if (!order) return;
+    const orderId = order._id || order.id;
+    const updated = orders.map((o) =>
+      (o._id === orderId || o.id === orderId)
+        ? { ...o, billPrinted: true, status: 'printed', updatedAt: new Date().toISOString() }
+        : o
+    );
+    setOrders(updated);
+    try {
+      localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updated));
+      window.dispatchEvent(new Event('foodypay_order_created'));
+      window.dispatchEvent(new Event('storage'));
+      const bc = new BroadcastChannel('foodypay_live_orders_channel');
+      bc.postMessage({ type: 'ORDER_UPDATED', orderId, billPrinted: true });
+      bc.close();
+    } catch (e) {}
+    if (token) {
+      updateOrderApi(token, order._id || orderId, { ...order, billPrinted: true, status: 'printed' }).catch(() => {});
+    }
+    triggerSound(playOrderPlaced);
+    addToast(`Bill printed for Table ${order.table}! Table is now Bill Ready (Green).`, <Printer size={18} />);
+  };
+
+  const handleMarkTablePaid = (order) => {
+    if (!order) return;
+    const orderId = order._id || order.id;
+    const updated = orders.map((o) =>
+      (o._id === orderId || o.id === orderId)
+        ? { ...o, isPaid: true, status: 'paid', paymentStatus: 'paid-cash', paymentLabel: 'Paid', updatedAt: new Date().toISOString() }
+        : o
+    );
+    setOrders(updated);
+    try {
+      localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updated));
+      window.dispatchEvent(new Event('foodypay_order_created'));
+      window.dispatchEvent(new Event('storage'));
+      const bc = new BroadcastChannel('foodypay_live_orders_channel');
+      bc.postMessage({ type: 'ORDER_UPDATED', orderId, isPaid: true, status: 'paid' });
+      bc.close();
+    } catch (e) {}
+    if (token) {
+      updateOrderApi(token, order._id || orderId, { ...order, isPaid: true, status: 'paid' }).catch(() => {});
+    }
+    triggerSound(playBillPaid);
+    addToast(`Table ${order.table} bill marked PAID! Table is now Paid Table (Red).`, <Check size={18} />);
+  };
+
+  const handleVacateTable = (order) => {
+    if (!order) return;
+    const orderId = order._id || order.id;
+    const updated = orders.map((o) =>
+      (o._id === orderId || o.id === orderId)
+        ? { ...o, status: 'completed', isPaid: true, tableCleared: true, updatedAt: new Date().toISOString() }
+        : o
+    );
+    setOrders(updated);
+    try {
+      localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updated));
+      window.dispatchEvent(new Event('foodypay_order_created'));
+      window.dispatchEvent(new Event('storage'));
+      const bc = new BroadcastChannel('foodypay_live_orders_channel');
+      bc.postMessage({ type: 'ORDER_SETTLED', orderId, status: 'completed' });
+      bc.close();
+    } catch (e) {}
+    if (token) {
+      updateOrderApi(token, order._id || orderId, { ...order, status: 'completed', isPaid: true }).catch(() => {});
+    }
+    addToast(`Table ${order.table} vacated & cleared! Table is now BLANK and ready.`, <Check size={18} />);
   };
 
   // Bill Settlement Handlers
@@ -2475,6 +2747,41 @@ export default function DashboardPage({ onShowToast }) {
     triggerSound(playBillPaid);
     confetti({ particleCount: 60, spread: 60 });
     addToast(`Bill for Order ${activeBillSettlementOrder.orderId || orderId} settled (₹${finalTotal}) via CASH!`, <Check size={18} />);
+    setActiveBillSettlementOrder(null);
+  };
+
+  const handleSettleBillCard = async () => {
+    if (!activeBillSettlementOrder) return;
+    const orderId = activeBillSettlementOrder._id || activeBillSettlementOrder.id;
+    const { finalTotal } = getSettleCalculations();
+
+    const updatedList = orders.map((ord) =>
+      ord.id === orderId || ord._id === orderId
+        ? { ...ord, total: finalTotal, status: 'completed', isPaid: true, seen: true, paymentStatus: 'paid-card', paymentLabel: 'Debit/Credit Card (Paid)' }
+        : ord
+    );
+    setOrders(updatedList);
+
+    try {
+      localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updatedList));
+      window.dispatchEvent(new Event('foodypay_order_created'));
+      window.dispatchEvent(new Event('storage'));
+      const bc = new BroadcastChannel('foodypay_live_orders_channel');
+      bc.postMessage({ type: 'ORDER_SETTLED', orderId, status: 'completed', paymentStatus: 'paid-card' });
+      bc.close();
+    } catch (e) {}
+
+    if (token) {
+      try {
+        await updateOrderApi(token, orderId, { ...activeBillSettlementOrder, total: finalTotal, status: 'completed', isPaid: true, seen: true, paymentStatus: 'paid-card' });
+        const stats = await fetchOrderStatsApi(token);
+        if (stats) setTodayStats(stats);
+      } catch (err) {}
+    }
+
+    triggerSound(playBillPaid);
+    confetti({ particleCount: 60, spread: 60 });
+    addToast(`Bill for Order ${activeBillSettlementOrder.orderId || orderId} settled (₹${finalTotal}) via CARD POS!`, <Check size={18} />);
     setActiveBillSettlementOrder(null);
   };
 
@@ -2744,6 +3051,26 @@ export default function DashboardPage({ onShowToast }) {
     setCustomerDuesMap(existingMap);
     setOrders(updatedList);
 
+    // Sync cleared orders and due entries with Cloud Firestore
+    dueOrders.forEach((o) => {
+      const oId = String(o._id || o.id);
+      updateOrderInFirestore(oId, {
+        isPaid: true,
+        paymentStatus: payMode.toLowerCase() === 'upi' ? 'paid-upi' : 'paid-cash',
+        paymentLabel: `Paid via ${payMode} (Due Cleared)`,
+        dueClearedAt: new Date().toISOString(),
+        dueClearedMode: payMode,
+      }).catch(() => {});
+    });
+
+    if (existingMap[phoneKey] && Array.isArray(existingMap[phoneKey].entries)) {
+      existingMap[phoneKey].entries.forEach((e) => {
+        if (e.id) {
+          settleCustomerDueInFirestore(e.id, { mode: payMode, amount: e.amount }).catch(() => {});
+        }
+      });
+    }
+
     try {
       localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updatedList));
       localStorage.setItem('foodypay_customer_dues_v1', JSON.stringify(existingMap));
@@ -2770,6 +3097,17 @@ export default function DashboardPage({ onShowToast }) {
       date: new Date().toISOString(),
       status: 'pending',
     };
+
+    // Sync directly to Cloud Firestore
+    saveCustomerDueToFirestore({
+      id: newEntry.id,
+      customer: cust.name,
+      phone: cust.phone || '',
+      amount: Number(amount),
+      dueNote: reason || 'Manual Khata Due Entry',
+      status: 'unpaid',
+      createdAt: new Date().toISOString(),
+    }).catch(() => {});
 
     const existingMap = { ...customerDuesMap };
     const currentList = (existingMap[phoneKey] && existingMap[phoneKey].entries) || [];
@@ -3088,6 +3426,7 @@ export default function DashboardPage({ onShowToast }) {
       const newDish = {
         id: 'p_' + Date.now(),
         _id: 'p_' + Date.now(),
+        businessId: storeFpId,
         foodypayId: storeFpId,
         merchantId: storeFpId,
         name: newProductForm.name.trim().toUpperCase(),
@@ -3105,6 +3444,24 @@ export default function DashboardPage({ onShowToast }) {
         images: rawImages,
       };
       setDishes((prev) => [newDish, ...prev]);
+    }
+
+    // Direct Firestore multi-tenant persistence
+    try {
+      saveProductToFirestore(storeFpId, {
+        name: newProductForm.name.trim().toUpperCase(),
+        category: newProductForm.category,
+        price: Number(newProductForm.price),
+        originalPrice: newProductForm.originalPrice ? Number(newProductForm.originalPrice) : null,
+        isVeg: newProductForm.isVeg,
+        isSpecial: newProductForm.isSpecial,
+        inStock: true,
+        desc: newProductForm.desc || 'Prepared fresh with high quality ingredients.',
+        image: finalImage,
+        images: rawImages,
+      });
+    } catch (fsErr) {
+      console.warn('Firestore product save notice:', fsErr);
     }
 
     setIsAddProductModalOpen(false);
@@ -3188,6 +3545,17 @@ export default function DashboardPage({ onShowToast }) {
         })
       );
     }
+    // Firestore update persistence
+    try {
+      saveProductToFirestore(storeFpId, {
+        id: dishId,
+        _id: dishId,
+        ...updateData,
+      });
+    } catch (fsErr) {
+      console.warn('Firestore update dish error:', fsErr);
+    }
+
     addToast('Product & Photos Updated Successfully!', <Check size={14}/>);
     setIsEditProductModalOpen(false);
     setEditProductForm(null);
@@ -3196,6 +3564,9 @@ export default function DashboardPage({ onShowToast }) {
   const handleDeleteDish = async (dishId) => {
     if (!window.confirm('Are you sure you want to delete this dish from your catalog?')) return;
     setDishes((prev) => prev.filter((d) => (d._id || d.id) !== dishId));
+    try {
+      deleteProductFromFirestore(dishId);
+    } catch (fsErr) {}
     if (token && dishId) {
       try {
         await deleteDishApi(token, dishId);
@@ -4515,12 +4886,103 @@ export default function DashboardPage({ onShowToast }) {
             </div>
           </div>
 
-          <div className="crm-header-right">
-            {/* Live Clock Badge */}
-            <div className="crm-header-clock-badge">
-              <Clock size={15} color="#1D4ED8" />
-              <span>{currentTime}</span>
-            </div>
+          <div className="crm-header-right" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {/* 1. Add Table Button */}
+            <button
+              type="button"
+              onClick={() => handleOpenAddTableModal(null)}
+              style={{
+                background: '#DC2626',
+                color: '#FFFFFF',
+                border: 'none',
+                padding: '7px 14px',
+                borderRadius: '8px',
+                fontSize: '12.5px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                boxShadow: '0 2px 6px rgba(220,38,38,0.25)',
+              }}
+              title="Add a new dining table"
+            >
+              <Plus size={15} />
+              <span>Add Table</span>
+            </button>
+
+            {/* 2. Delivery Button */}
+            <button
+              type="button"
+              onClick={() => handleOpenManualOrder(null, 'Home Delivery')}
+              style={{
+                background: '#DC2626',
+                color: '#FFFFFF',
+                border: 'none',
+                padding: '7px 14px',
+                borderRadius: '8px',
+                fontSize: '12.5px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                boxShadow: '0 2px 6px rgba(220,38,38,0.25)',
+              }}
+              title="Create Home Delivery Order"
+            >
+              <Bike size={15} />
+              <span>Delivery</span>
+            </button>
+
+            {/* 3. Pick Up Button */}
+            <button
+              type="button"
+              onClick={() => handleOpenManualOrder(null, 'Takeaway')}
+              style={{
+                background: '#DC2626',
+                color: '#FFFFFF',
+                border: 'none',
+                padding: '7px 14px',
+                borderRadius: '8px',
+                fontSize: '12.5px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                boxShadow: '0 2px 6px rgba(220,38,38,0.25)',
+              }}
+              title="Create Counter Takeaway / Pickup Order"
+            >
+              <ShoppingBag size={15} />
+              <span>Pick Up</span>
+            </button>
+
+            {/* 4. New POS Order Button */}
+            <button
+              type="button"
+              className="btn-create-order-primary desktop-create-btn"
+              onClick={() => handleOpenManualOrder()}
+              style={{
+                background: '#0F172A',
+                color: '#FFFFFF',
+                border: 'none',
+                padding: '7px 16px',
+                borderRadius: '8px',
+                fontSize: '12.5px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                boxShadow: '0 2px 8px rgba(15,23,42,0.3)',
+              }}
+              title="Create counter or dine-in order"
+            >
+              <Plus size={15} />
+              <span>+ New POS Order</span>
+            </button>
 
             {/* Sound Mute/Unmute */}
             <button
@@ -4528,6 +4990,14 @@ export default function DashboardPage({ onShowToast }) {
               className="crm-header-sound-btn"
               style={{
                 color: soundEnabled ? '#1D4ED8' : '#94A3B8',
+                border: '1.5px solid #CBD5E1',
+                background: '#FFFFFF',
+                padding: '6px 8px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
               }}
               title={soundEnabled ? 'Audio Alerts Enabled' : 'Audio Alerts Muted'}
               onClick={() => {
@@ -4536,27 +5006,6 @@ export default function DashboardPage({ onShowToast }) {
               }}
             >
               {soundEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
-            </button>
-
-            {/* Quick Manual Order Button */}
-            <button
-              type="button"
-              className="crm-header-pos-btn desktop-only-pos"
-              onClick={() => handleOpenManualOrder()}
-            >
-              <Plus size={16} />
-              <span className="crm-header-pos-text">Counter POS Order</span>
-            </button>
-
-            {/* Logout Header Button */}
-            <button
-              type="button"
-              className="crm-header-logout-btn"
-              title="Log Out of Merchant Account"
-              onClick={handleLogout}
-            >
-              <LogOut size={16} />
-              <span className="crm-header-logout-text">Log Out</span>
             </button>
           </div>
         </header>
@@ -4647,9 +5096,33 @@ export default function DashboardPage({ onShowToast }) {
           <div className="crm-orders-page-wrap animate-fade-in" key={activeTab}>
 
 
-            {/* FILTER BAR WITH CARDS PER ROW SELECTOR & ORDER SEARCH */}
-            <div className="crm-filter-bar" style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', alignItems: 'stretch' }}>
-              <div className="crm-filter-tabs-container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', flexWrap: 'wrap', gap: '12px' }}>
+            {/* FILTER BAR WITH CLEAN MODERN SEARCH & STATUS TABS */}
+            <div
+              className="crm-filter-bar"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+                width: '100%',
+                backgroundColor: '#FFFFFF',
+                padding: '12px 16px',
+                borderRadius: '16px',
+                border: '1px solid #E2E8F0',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)',
+                boxSizing: 'border-box'
+              }}
+            >
+              {/* TOP ROW: VIEW TABS & STATUS FILTERS */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                  width: '100%'
+                }}
+              >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                   {/* View Switcher: Table View vs Orders Card View */}
                   <div style={{ display: 'inline-flex', background: '#F1F5F9', padding: '3px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
@@ -4700,7 +5173,7 @@ export default function DashboardPage({ onShowToast }) {
                   </div>
 
                   {posTableViewMode === 'cards' && (
-                    <div className="crm-filter-tabs">
+                    <div className="crm-filter-tabs" style={{ display: 'flex', gap: '6px', overflowX: 'auto' }}>
                       {[
                         { key: 'all', label: 'All Orders' },
                         { key: 'new', label: 'New Orders' },
@@ -4716,6 +5189,12 @@ export default function DashboardPage({ onShowToast }) {
                             setOrderTabFilter(f.key);
                             setOrderSearchQuery('');
                           }}
+                          style={{
+                            padding: '6px 12px',
+                            fontSize: '12.5px',
+                            fontWeight: 700,
+                            borderRadius: '8px'
+                          }}
                         >
                           {f.label}
                         </button>
@@ -4723,98 +5202,28 @@ export default function DashboardPage({ onShowToast }) {
                     </div>
                   )}
                 </div>
-
-                {/* Quick Action Buttons matching reference image */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto', flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenAddTableModal(null)}
-                    style={{
-                      background: '#DC2626',
-                      color: '#FFFFFF',
-                      border: 'none',
-                      padding: '7px 14px',
-                      borderRadius: '8px',
-                      fontSize: '12.5px',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      boxShadow: '0 2px 6px rgba(220,38,38,0.25)',
-                    }}
-                    title="Add a new dining table"
-                  >
-                    <Plus size={15} />
-                    <span>Add Table</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleOpenManualOrder(null, 'Home Delivery')}
-                    style={{
-                      background: '#DC2626',
-                      color: '#FFFFFF',
-                      border: 'none',
-                      padding: '7px 14px',
-                      borderRadius: '8px',
-                      fontSize: '12.5px',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      boxShadow: '0 2px 6px rgba(220,38,38,0.25)',
-                    }}
-                    title="Create Home Delivery Order"
-                  >
-                    <Bike size={15} />
-                    <span>Delivery</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleOpenManualOrder(null, 'Takeaway')}
-                    style={{
-                      background: '#DC2626',
-                      color: '#FFFFFF',
-                      border: 'none',
-                      padding: '7px 14px',
-                      borderRadius: '8px',
-                      fontSize: '12.5px',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      boxShadow: '0 2px 6px rgba(220,38,38,0.25)',
-                    }}
-                    title="Create Counter Takeaway / Pickup Order"
-                  >
-                    <ShoppingBag size={15} />
-                    <span>Pick Up</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    className="btn-create-order-primary desktop-create-btn"
-                    onClick={() => handleOpenManualOrder()}
-                    style={{ background: '#0F172A' }}
-                    title="Create counter or dine-in order"
-                  >
-                    <Plus size={16} />
-                    <span>+ New POS Order</span>
-                  </button>
-                </div>
               </div>
 
-              <div className="crm-search-and-actions-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', flexWrap: 'wrap', gap: '12px' }}>
-                {/* GLOBAL ORDER SEARCH BOX (SEARCH BY NAME, PHONE, ORDER #, TABLE, DISH) */}
-                <div className="crm-search-box-wrap" style={{ flex: 1, minWidth: '240px' }}>
-                  <Search size={16} color="#64748B" style={{ flexShrink: 0 }} />
+              {/* BOTTOM ROW: CLEAN MODERN SEARCH BAR (Only visible in Order Cards view) */}
+              {posTableViewMode === 'cards' && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    backgroundColor: '#F8FAFC',
+                    border: '1.5px solid #E2E8F0',
+                    borderRadius: '12px',
+                    padding: '8px 14px',
+                    transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
+                    width: '100%',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  <Search size={17} color="#64748B" style={{ flexShrink: 0 }} />
                   <input
                     type="text"
-                    placeholder="Search Order #, Name, Mobile, Table, Dish..."
+                    placeholder="Search orders by customer name, phone number, table, order #, or dish name..."
                     value={orderSearchQuery}
                     onChange={(e) => setOrderSearchQuery(e.target.value)}
                     style={{
@@ -4824,7 +5233,7 @@ export default function DashboardPage({ onShowToast }) {
                       fontSize: '13px',
                       fontWeight: 500,
                       color: '#0F172A',
-                      background: 'transparent',
+                      backgroundColor: 'transparent'
                     }}
                   />
                   {orderSearchQuery && (
@@ -4833,17 +5242,17 @@ export default function DashboardPage({ onShowToast }) {
                       onClick={() => setOrderSearchQuery('')}
                       style={{
                         border: 'none',
-                        background: '#E2E8F0',
+                        backgroundColor: '#E2E8F0',
                         borderRadius: '50%',
-                        width: '18px',
-                        height: '18px',
+                        width: '20px',
+                        height: '20px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         cursor: 'pointer',
                         color: '#475569',
                         padding: 0,
-                        flexShrink: 0,
+                        flexShrink: 0
                       }}
                       title="Clear Search"
                     >
@@ -4851,29 +5260,11 @@ export default function DashboardPage({ onShowToast }) {
                     </button>
                   )}
                 </div>
-
-                {/* 1 to 3 CARDS PER ROW SELECTOR CONTROL (DESKTOP ONLY) */}
-                <div className="crm-grid-columns-control" style={{ marginLeft: 'auto' }}>
-                  <span className="crm-grid-control-label">
-                    <SlidersHorizontal size={14} /> Cards / Row:
-                  </span>
-                  {[1, 2, 3].map((num) => (
-                    <button
-                      key={num}
-                      type="button"
-                      className={`crm-grid-col-btn ${cardsPerRow === num ? 'active' : ''}`}
-                      onClick={() => setCardsPerRow(num)}
-                      title={num === 1 ? '1 Card per Row (Full Width)' : `${num} Cards per Row`}
-                    >
-                      {num}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              )}
             </div>
 
             {/* SEARCH ACTIVE STATUS BANNER */}
-            {orderSearchQuery.trim() && (
+            {posTableViewMode === 'cards' && orderSearchQuery.trim() && (
               <div
                 style={{
                   margin: '12px 0 4px 0',
@@ -5018,269 +5409,305 @@ export default function DashboardPage({ onShowToast }) {
 
                   return (
                     <>
-                      {/* Top Bar matching screenshot: Legend Pills & Move KOT Action */}
-                      <div
-                        style={{
-                          background: '#FFFFFF',
-                          borderRadius: '14px',
-                          border: '1.5px solid #E2E8F0',
-                          padding: '12px 18px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          flexWrap: 'wrap',
-                          gap: '12px',
-                        }}
-                      >
-                        {/* Move KOT button */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const running = (orders || []).find((o) => o && o.status !== 'completed' && o.status !== 'cancelled');
-                              setMoveKotSourceOrder(running || null);
-                              setIsMoveKotModalOpen(true);
-                            }}
-                            style={{
-                              background: '#EFF6FF',
-                              border: '1.5px solid #BFDBFE',
-                              color: '#1D4ED8',
-                              padding: '7px 14px',
-                              borderRadius: '8px',
-                              fontSize: '12.5px',
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                            }}
-                          >
-                            <ArrowRightLeft size={14} color="#1D4ED8" />
-                            <span>Move KOT / Shift Table</span>
-                          </button>
+                      {/* TOP FILTER PILLS BAR (MATCHING USER REFERENCE DESIGN) */}
+                      <div className="pos-table-filter-bar">
+                        {(() => {
+                          // Compute dynamic counts across all tables in displaySections
+                          const allFlatTables = displaySections.flatMap((s) => s.tables);
+                          const totalTablesCount = allFlatTables.length;
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const slug = (storeControls.restName || 'thefoodypay').toLowerCase().replace(/\s+/g, '-');
-                              const mid = storeControls.foodypayId || 'FP-790044';
-                              window.open(`/${slug}/${mid}`, '_blank');
-                            }}
-                            style={{
-                              background: '#DC2626',
-                              border: 'none',
-                              color: '#FFFFFF',
-                              padding: '7px 12px',
-                              borderRadius: '8px',
-                              fontSize: '12px',
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                            }}
-                          >
-                            <Plus size={13} />
-                            <span>Contactless QR Order</span>
-                          </button>
-                        </div>
+                          let availableCount = 0;
+                          let eatingCount = 0;
+                          let waitingCount = 0;
+                          let billReadyCount = 0;
+                          let paidCount = 0;
 
-                        {/* Status Legend Matching Image */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap', fontSize: '12px', fontWeight: 700 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#E2E8F0', border: '1px solid #CBD5E1' }} />
-                            <span style={{ color: '#64748B' }}>Blank Table</span>
-                          </div>
+                          allFlatTables.forEach((tbl) => {
+                            const ord = getRunningOrderForTable(tbl.name);
+                            if (!ord) {
+                              availableCount += 1;
+                            } else if (ord.status === 'paid' || (ord.isPaid && !ord.tableCleared)) {
+                              paidCount += 1;
+                            } else if (ord.billPrinted || ord.status === 'printed') {
+                              billReadyCount += 1;
+                            } else if (ord.status === 'preparing' || ord.hasPendingKot || ord.status === 'new') {
+                              waitingCount += 1;
+                            } else {
+                              eatingCount += 1;
+                            }
+                          });
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#38BDF8', border: '1px solid #0284C7' }} />
-                            <span style={{ color: '#0369A1' }}>Running Table</span>
-                          </div>
+                          const filtersList = [
+                            { key: 'all', label: 'All', count: totalTablesCount, dotColor: null },
+                            { key: 'available', label: 'Available', count: availableCount, dotColor: '#94A3B8' },
+                            { key: 'eating', label: 'Eating', count: eatingCount, dotColor: '#06B6D4' },
+                            { key: 'waiting', label: 'Waiting for food', count: waitingCount, dotColor: '#F97316' },
+                            { key: 'bill_ready', label: 'Bill ready', count: billReadyCount, dotColor: '#10B981' },
+                            { key: 'paid', label: 'Paid', count: paidCount, dotColor: '#EF4444' },
+                          ];
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#6EE7B7', border: '1px solid #059669' }} />
-                            <span style={{ color: '#065F46' }}>Printed Table (Bill Ready)</span>
-                          </div>
-
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#FCA5A5', border: '1px solid #DC2626' }} />
-                            <span style={{ color: '#991B1B' }}>Paid Table</span>
-                          </div>
-
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#FDE047', border: '1px solid #CA8A04' }} />
-                            <span style={{ color: '#854D0E' }}>Running KOT Table</span>
-                          </div>
-                        </div>
+                          return filtersList.map((f) => (
+                            <button
+                              key={f.key}
+                              type="button"
+                              className={`pos-filter-pill ${tableStatusFilter === f.key ? 'active' : ''}`}
+                              onClick={() => setTableStatusFilter(f.key)}
+                            >
+                              {f.dotColor && (
+                                <span className="status-dot" style={{ backgroundColor: f.dotColor }} />
+                              )}
+                              <span>{f.label}</span>
+                              <span className="pill-badge">{f.count}</span>
+                            </button>
+                          ));
+                        })()}
                       </div>
 
-                      {/* Sections List */}
-                      {displaySections.map((section) => (
-                        <div key={section.name} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                          <div style={{ fontSize: '15px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <Store size={17} color="#475569" />
-                            <span>{section.name}</span>
-                            <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>({section.tables.length} Tables)</span>
-                          </div>
+                      {/* SECTIONS & TABLE CARDS */}
+                      {displaySections.map((section) => {
+                        // Filter tables within this section based on active tableStatusFilter
+                        const sectionFilteredTables = section.tables.filter((tbl) => {
+                          if (tableStatusFilter === 'all') return true;
+                          const ord = getRunningOrderForTable(tbl.name);
+                          if (tableStatusFilter === 'available') return !ord;
+                          if (!ord) return false;
+                          if (tableStatusFilter === 'paid') return ord.status === 'paid' || (ord.isPaid && !ord.tableCleared);
+                          if (tableStatusFilter === 'bill_ready') return ord.billPrinted || ord.status === 'printed';
+                          if (tableStatusFilter === 'waiting') return ord.status === 'preparing' || ord.hasPendingKot || ord.status === 'new';
+                          if (tableStatusFilter === 'eating') return ord.status === 'ready' || ord.status === 'served' || (!ord.billPrinted && ord.status !== 'paid');
+                          return true;
+                        });
 
-                          {/* Grid of Tables in this Section */}
-                          <div
-                            style={{
-                              display: 'grid',
-                              gridTemplateColumns: 'repeat(auto-fill, minmax(105px, 1fr))',
-                              gap: '12px',
-                            }}
-                          >
-                            {section.tables.map((tbl, tIdx) => {
-                              const runningOrder = getRunningOrderForTable(tbl.name);
-                              const isOccupied = Boolean(runningOrder);
+                        if (sectionFilteredTables.length === 0 && tableStatusFilter !== 'all') {
+                          return null;
+                        }
 
-                              // Elapsed minutes calculation
-                              let elapsedMinutes = 0;
-                              if (runningOrder) {
-                                const createdTimestamp = runningOrder.timestamp || (runningOrder.createdAt ? new Date(runningOrder.createdAt).getTime() : Date.now());
-                                elapsedMinutes = Math.max(1, Math.round((Date.now() - createdTimestamp) / (1000 * 60)));
-                              }
+                        return (
+                          <div key={section.name} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            {/* Section Header: e.g. "Restaurant 12 tables" */}
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', padding: '0 4px' }}>
+                              <h3 style={{ fontSize: '18px', fontWeight: 900, color: '#0F172A', margin: 0 }}>
+                                {section.name}
+                              </h3>
+                              <span style={{ fontSize: '13px', fontWeight: 600, color: '#64748B' }}>
+                                {section.tables.length} tables
+                              </span>
+                            </div>
 
-                              // Card appearance based on screenshot status
-                              let bg = '#F1F5F9';
-                              let border = '#CBD5E1';
-                              let textColor = '#475569';
+                            {/* Tables Grid */}
+                            <div className="pos-tables-grid">
+                              {sectionFilteredTables.map((tbl, tIdx) => {
+                                const runningOrder = getRunningOrderForTable(tbl.name);
+                                const isOccupied = Boolean(runningOrder);
 
-                              if (isOccupied) {
-                                if (runningOrder.status === 'ready' || runningOrder.billPrinted) {
-                                  // Green (Printed Table)
-                                  bg = '#A7F3D0';
-                                  border = '#34D399';
-                                  textColor = '#065F46';
-                                } else if (runningOrder.status === 'preparing') {
-                                  // Yellow (Running KOT Table)
-                                  bg = '#FEF08A';
-                                  border = '#FACC15';
-                                  textColor = '#854D0E';
-                                } else {
-                                  // Cyan / Blue (Running Table)
-                                  bg = '#BAE6FD';
-                                  border = '#7DD3FC';
-                                  textColor = '#0369A1';
-                                }
-                              }
-
-                              return (
-                                <div
-                                  key={tbl.name || tIdx}
-                                  onClick={() => {
-                                    if (isOccupied) {
-                                      // If occupied, open settlement or add items directly
-                                      handleOpenBillSettlement(runningOrder);
-                                    } else {
-                                      // If blank, 1-click open Create Order on this table!
-                                      handleOpenManualOrder(tbl.name, 'Dine-In');
-                                    }
-                                  }}
-                                  style={{
-                                    height: '92px',
-                                    borderRadius: '12px',
-                                    background: bg,
-                                    border: `1.5px solid ${border}`,
-                                    padding: '8px 6px',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    cursor: 'pointer',
-                                    position: 'relative',
-                                    transition: 'transform 0.1s ease, box-shadow 0.1s ease',
-                                    userSelect: 'none',
-                                    boxShadow: isOccupied ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
-                                  }}
-                                  title={
-                                    isOccupied
-                                      ? `Table ${tbl.name} Running Order: ₹${runningOrder.total} (${runningOrder.customer || 'Walk-in'}). Click to Settle Bill / View Details.`
-                                      : `Table ${tbl.name} is BLANK / FREE. Click to Create Order or Add Items!`
+                                // Elapsed time string (e.g. "35h 30m" or "27m")
+                                let timeDisplay = '0m';
+                                if (runningOrder) {
+                                  const createdTimestamp = runningOrder.timestamp || (runningOrder.createdAt ? new Date(runningOrder.createdAt).getTime() : Date.now());
+                                  const diffMins = Math.max(1, Math.round((Date.now() - createdTimestamp) / (1000 * 60)));
+                                  if (diffMins >= 60) {
+                                    const hours = Math.floor(diffMins / 60);
+                                    const mins = diffMins % 60;
+                                    timeDisplay = `${hours}h ${mins}m`;
+                                  } else {
+                                    timeDisplay = `${diffMins}m`;
                                   }
-                                >
-                                  {isOccupied ? (
-                                    <>
-                                      {/* Elapsed Time Badge */}
-                                      <div style={{ fontSize: '10.5px', fontWeight: 800, color: textColor, marginBottom: '2px' }}>
-                                        {elapsedMinutes} Min
-                                      </div>
+                                }
 
-                                      {/* Table Name */}
-                                      <div style={{ fontSize: '15px', fontWeight: 900, color: '#0F172A', lineHeight: '1' }}>
-                                        {tbl.name}
-                                      </div>
+                                // Determine Table Status
+                                let statusKey = 'available';
+                                let statusLabel = 'Available';
+                                if (isOccupied) {
+                                  if (runningOrder.status === 'paid' || (runningOrder.isPaid && !runningOrder.tableCleared)) {
+                                    statusKey = 'paid';
+                                    statusLabel = 'Paid';
+                                  } else if (runningOrder.billPrinted || runningOrder.status === 'printed') {
+                                    statusKey = 'bill-ready';
+                                    statusLabel = 'Bill ready';
+                                  } else if (runningOrder.status === 'preparing' || runningOrder.hasPendingKot || runningOrder.status === 'new') {
+                                    statusKey = 'waiting';
+                                    statusLabel = 'Waiting for food';
+                                  } else {
+                                    statusKey = 'eating';
+                                    statusLabel = 'Eating';
+                                  }
+                                }
 
-                                      {/* Amount */}
-                                      <div style={{ fontSize: '12px', fontWeight: 900, color: textColor, marginTop: '3px' }}>
-                                        ₹{(runningOrder.total || 0).toLocaleString('en-IN')}
-                                      </div>
+                                return (
+                                  <div
+                                    key={tbl.name || tIdx}
+                                    className={`pos-dining-card ${!isOccupied ? 'is-available' : `status-${statusKey}`}`}
+                                    style={{
+                                      animationDelay: `${Math.min(tIdx * 0.04, 0.4)}s`,
+                                    }}
+                                    onClick={() => {
+                                      if (isOccupied) {
+                                        if (statusKey === 'paid') {
+                                          handleVacateTable(runningOrder);
+                                        } else {
+                                          handleOpenBillSettlement(runningOrder);
+                                        }
+                                      } else {
+                                        // Available table -> 1-click open Create Order modal prefilled with table
+                                        handleOpenManualOrder(tbl.name, 'Dine-In');
+                                      }
+                                    }}
+                                  >
+                                    {/* Top Row: Table Name + Status Badge */}
+                                    <div className="pos-card-header">
+                                      <span className="pos-table-number">{tbl.name}</span>
+                                      {isOccupied && (
+                                        <span className={`pos-status-badge ${statusKey}`}>
+                                          {statusLabel}
+                                        </span>
+                                      )}
+                                    </div>
 
-                                      {/* Quick Action Icons row matching reference image bottom */}
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px' }}>
-                                        {/* Bill Print icon */}
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleOpenBillSettlement(runningOrder);
-                                          }}
-                                          style={{
-                                            background: '#FFFFFF',
-                                            border: '1px solid rgba(0,0,0,0.15)',
-                                            borderRadius: '4px',
-                                            padding: '2px 4px',
-                                            cursor: 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                          }}
-                                          title="Settle Bill / Collect Payment"
-                                        >
-                                          <Printer size={11} color="#0F172A" />
-                                        </button>
+                                    {/* Center: Dining Table Illustration matching Screenshot with animations */}
+                                    <div className="pos-table-illustration">
+                                      {isOccupied ? (
+                                        <svg width="118" height="68" viewBox="0 0 118 68" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                          {/* Customer Avatars / Chairs */}
+                                          {/* Top 2 chairs */}
+                                          <circle className="svg-chair-avatar" cx="44" cy="5" r="4.5" fill={statusKey === 'eating' ? '#38BDF8' : statusKey === 'waiting' ? '#FB923C' : statusKey === 'paid' ? '#F87171' : '#34D399'} />
+                                          <circle className="svg-chair-avatar" cx="74" cy="5" r="4.5" fill={statusKey === 'eating' ? '#38BDF8' : statusKey === 'waiting' ? '#FB923C' : statusKey === 'paid' ? '#F87171' : '#34D399'} />
+                                          {/* Bottom 2 chairs */}
+                                          <circle className="svg-chair-avatar" cx="44" cy="63" r="4.5" fill={statusKey === 'eating' ? '#38BDF8' : statusKey === 'waiting' ? '#FB923C' : statusKey === 'paid' ? '#F87171' : '#34D399'} />
+                                          <circle className="svg-chair-avatar" cx="74" cy="63" r="4.5" fill={statusKey === 'eating' ? '#38BDF8' : statusKey === 'waiting' ? '#FB923C' : statusKey === 'paid' ? '#F87171' : '#34D399'} />
+                                          {/* Left chair */}
+                                          <circle className="svg-chair-avatar" cx="10" cy="34" r="4.5" fill={statusKey === 'eating' ? '#38BDF8' : statusKey === 'waiting' ? '#FB923C' : statusKey === 'paid' ? '#F87171' : '#34D399'} />
+                                          {/* Right chair */}
+                                          <circle className="svg-chair-avatar" cx="108" cy="34" r="4.5" fill={statusKey === 'eating' ? '#38BDF8' : statusKey === 'waiting' ? '#FB923C' : statusKey === 'paid' ? '#F87171' : '#34D399'} />
 
-                                        {/* View / Add items icon */}
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleEditOrder(runningOrder);
-                                          }}
-                                          style={{
-                                            background: '#FFFFFF',
-                                            border: '1px solid rgba(0,0,0,0.15)',
-                                            borderRadius: '4px',
-                                            padding: '2px 4px',
-                                            cursor: 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                          }}
-                                          title="Add more food products / items to this table"
-                                        >
-                                          <Eye size={11} color="#0F172A" />
-                                        </button>
+                                          {/* Main Rounded Dining Table */}
+                                          <rect
+                                            x="20"
+                                            y="14"
+                                            width="78"
+                                            height="40"
+                                            rx="16"
+                                            fill="#FFFFFF"
+                                            stroke={statusKey === 'eating' ? '#38BDF8' : statusKey === 'waiting' ? '#FB923C' : statusKey === 'paid' ? '#F87171' : '#34D399'}
+                                            strokeWidth="2.5"
+                                          />
+
+                                          {/* Status Specific Elements Inside Table */}
+                                          {statusKey === 'eating' && (
+                                            <g className="svg-steam-plate">
+                                              {/* 4 Little Dinner Plates */}
+                                              <circle cx="38" cy="27" r="4.5" fill="#E0F2FE" stroke="#0284C7" strokeWidth="1.2" />
+                                              <circle cx="80" cy="27" r="4.5" fill="#E0F2FE" stroke="#0284C7" strokeWidth="1.2" />
+                                              <circle cx="38" cy="41" r="4.5" fill="#E0F2FE" stroke="#0284C7" strokeWidth="1.2" />
+                                              <circle cx="80" cy="41" r="4.5" fill="#E0F2FE" stroke="#0284C7" strokeWidth="1.2" />
+                                              {/* Center dish */}
+                                              <circle cx="59" cy="34" r="5.5" fill="#BAE6FD" stroke="#0284C7" strokeWidth="1.5" />
+                                            </g>
+                                          )}
+
+                                          {statusKey === 'waiting' && (
+                                            <g transform="translate(50, 25)">
+                                              {/* Clock / Hourglass Icon with animated hand */}
+                                              <circle cx="9" cy="9" r="8" fill="#FFF7ED" stroke="#EA580C" strokeWidth="1.8" />
+                                              <g className="svg-rotating-hand">
+                                                <line x1="9" y1="9" x2="9" y2="4" stroke="#EA580C" strokeWidth="1.8" strokeLinecap="round" />
+                                              </g>
+                                              <line x1="9" y1="9" x2="12" y2="9" stroke="#EA580C" strokeWidth="1.8" strokeLinecap="round" />
+                                            </g>
+                                          )}
+
+                                          {statusKey === 'paid' && (
+                                            <g transform="translate(49, 24)">
+                                              {/* Checkmark in circle */}
+                                              <circle cx="10" cy="10" r="9" fill="#DC2626" />
+                                              <polyline points="6,10 9,13 14,7" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                                            </g>
+                                          )}
+
+                                          {statusKey === 'bill-ready' && (
+                                            <g transform="translate(50, 25)" className="svg-steam-plate">
+                                              {/* Bill receipt icon */}
+                                              <rect x="2" y="1" width="14" height="16" rx="2" fill="#ECFDF5" stroke="#16A34A" strokeWidth="1.5" />
+                                              <line x1="5" y1="5" x2="13" y2="5" stroke="#16A34A" strokeWidth="1.5" strokeLinecap="round" />
+                                              <line x1="5" y1="9" x2="13" y2="9" stroke="#16A34A" strokeWidth="1.5" strokeLinecap="round" />
+                                              <line x1="5" y1="13" x2="10" y2="13" stroke="#16A34A" strokeWidth="1.5" strokeLinecap="round" />
+                                            </g>
+                                          )}
+                                        </svg>
+                                      ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '68px', width: '100%' }}>
+                                          <div className="pos-add-table-icon">
+                                            <Plus size={18} strokeWidth={2.5} />
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Occupied: Amount & Time Metrics */}
+                                    {isOccupied && (
+                                      <div className="pos-card-metrics">
+                                        <span className="pos-card-amount">
+                                          ₹{(runningOrder.total || 0).toLocaleString('en-IN')}
+                                        </span>
+                                        <span className="pos-card-time">
+                                          {timeDisplay}
+                                        </span>
                                       </div>
-                                    </>
-                                  ) : (
-                                    <>
-                                      {/* Blank Table Display */}
-                                      <div style={{ fontSize: '18px', fontWeight: 900, color: '#64748B' }}>
-                                        {tbl.name}
+                                    )}
+
+                                    {/* Action Buttons matching reference image */}
+                                    {isOccupied ? (
+                                      statusKey === 'paid' ? (
+                                        <div className="pos-card-actions">
+                                          <button
+                                            type="button"
+                                            className="btn-card-vacate"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleVacateTable(runningOrder);
+                                            }}
+                                          >
+                                            Vacate table
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <div className="pos-card-actions">
+                                          <button
+                                            type="button"
+                                            className="btn-card-add-item"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleEditOrder(runningOrder);
+                                            }}
+                                            title="Add item to this table"
+                                          >
+                                            Add item
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="btn-card-bill"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handlePrintTableBill(runningOrder);
+                                              handleOpenBillSettlement(runningOrder);
+                                            }}
+                                            title="Print Bill / Settle"
+                                          >
+                                            Bill
+                                          </button>
+                                        </div>
+                                      )
+                                    ) : (
+                                      <div style={{ textAlign: 'center', color: '#94A3B8', fontSize: '11.5px', fontWeight: 700, padding: '4px 0' }}>
+                                        Tap to place order
                                       </div>
-                                      <div style={{ fontSize: '10px', color: '#94A3B8', fontWeight: 700, marginTop: '4px' }}>
-                                        + Order
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                              );
-                            })}
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </>
                   );
                 })()}
@@ -10296,18 +10723,38 @@ export default function DashboardPage({ onShowToast }) {
       </main>
 
       {/* ==========================================================================
-          MODAL 1: CREATE / EDIT MANUAL ORDER (Wide 2-Column POS Modal with Keyboard Navigation)
+          FULL-SCREEN DEDICATED POS CONSOLE SCREEN (Full Page View, No Popup)
           ========================================================================== */}
       {isManualOrderOpen && (
-        <div className="crm-modal-backdrop" onClick={() => setIsManualOrderOpen(false)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
-          <div className="crm-modal-card crm-modal-card-wide" style={{ maxWidth: '1180px', width: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
-            <div className="crm-modal-header" style={{ padding: '12px 20px', flexShrink: 0 }}>
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: '100vw',
+            height: '100vh',
+            maxWidth: '100vw',
+            maxHeight: '100vh',
+            zIndex: 99999,
+            backgroundColor: '#FFFFFF',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            margin: 0,
+            padding: 0,
+            borderRadius: 0,
+            boxSizing: 'border-box'
+          }}
+        >
+            <div className="crm-modal-header" style={{ padding: '14px 24px', flexShrink: 0, backgroundColor: '#FFFFFF', borderBottom: '1.5px solid #E2E8F0' }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900 }}>
-                  {editingOrderId ? `Edit Order: ${editingOrderId}` : 'Counter POS — Create Manual Order'}
+                <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>Counter POS — Create Manual Order</span>
                 </h3>
                 <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
-                  Use keyboard <kbd className="crm-kbd">←</kbd> <kbd className="crm-kbd">→</kbd> or <kbd className="crm-kbd">Enter</kbd> to move focus between fields.
+                  Tap any item card or photo to instantly add to order • Use keyboard <kbd className="crm-kbd">←</kbd> <kbd className="crm-kbd">→</kbd> or <kbd className="crm-kbd">Enter</kbd> to move focus
                 </div>
               </div>
               <button
@@ -10323,40 +10770,130 @@ export default function DashboardPage({ onShowToast }) {
             </div>
 
             <form onSubmit={handleCreateManualOrderSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-              <div className="crm-manual-order-container" style={{ flex: 1, minHeight: 0, display: 'flex', gap: '16px', overflow: 'hidden', padding: '12px 18px' }}>
-                {/* LEFT COLUMN: CART & CUSTOMER DETAILS */}
-                <div className="crm-pos-left-col" style={{ width: '420px', flexShrink: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', paddingRight: '6px' }}>
-                  {/* Order Type Selector */}
-                  <div className="crm-order-type-tabs" style={{ marginBottom: '8px' }}>
-                    {[
-                      { key: 'Dine-In', icon: <Store size={15} />, label: 'Dine-In' },
-                      { key: 'Takeaway', icon: <ShoppingBag size={15} />, label: 'Takeaway' },
-                      { key: 'Delivery', icon: <Truck size={15} />, label: 'Delivery' },
-                    ].map((t) => (
-                      <button
-                        key={t.key}
-                        type="button"
-                        className={`crm-order-type-tab ${manualOrderType === t.key ? 'active' : ''}`}
-                        onClick={() => setManualOrderType(t.key)}
-                        style={{ padding: '8px' }}
-                      >
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
-                          {t.icon}
-                          <span>{t.label}</span>
-                        </span>
-                      </button>
-                    ))}
+              <div className="crm-manual-order-container" style={{ flex: 1, minHeight: 0, display: 'flex', gap: '16px', overflow: 'hidden', padding: '16px 20px', backgroundColor: '#F8FAFC' }}>
+                
+                {/* 1. STANDALONE LEFT COLUMN: ALL CATEGORIES (NOT INSIDE ANY OTHER PARENT DIV) */}
+                <div
+                  className="crm-pos-categories-col"
+                  style={{
+                    width: '210px',
+                    flexShrink: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: '16px',
+                    border: '1px solid #E2E8F0',
+                    overflow: 'hidden',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+                  }}
+                >
+                  {/* Category Header */}
+                  <div
+                    style={{
+                      padding: '14px 16px',
+                      borderBottom: '1px solid #F1F5F9',
+                      fontSize: '12px',
+                      fontWeight: 900,
+                      color: '#0F172A',
+                      letterSpacing: '0.05em',
+                      textTransform: 'uppercase',
+                      flexShrink: 0
+                    }}
+                  >
+                    ALL CATEGORIES
                   </div>
 
-                  {/* Customer & Table Inputs in 2-Column Grid */}
-                  <div className="crm-form-grid" style={{ gap: '8px', marginBottom: '8px' }}>
+                  {/* Vertical Categories List */}
+                  <div
+                    style={{
+                      flex: 1,
+                      minHeight: 0,
+                      overflowY: 'auto',
+                      display: 'flex',
+                      flexDirection: 'column'
+                    }}
+                  >
+                    {/* "All Items" row */}
+                    {(() => {
+                      const isAll = manualCategory === 'All';
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setManualCategory('All')}
+                          style={{
+                            width: '100%',
+                            textAlign: 'left',
+                            padding: '12px 16px',
+                            fontSize: '13px',
+                            fontWeight: isAll ? 800 : 600,
+                            border: 'none',
+                            borderBottom: '1px solid #F1F5F9',
+                            backgroundColor: isAll ? '#0F172A' : '#FFFFFF',
+                            color: isAll ? '#FFFFFF' : '#334155',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <span>All Items ({dishes.length})</span>
+                          {isAll && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#FACC15', flexShrink: 0 }} />}
+                        </button>
+                      );
+                    })()}
+
+                    {/* Each Category Row with 3-dot icon */}
+                    {allCategories.map((cat) => {
+                      const isActive = manualCategory === cat;
+                      const catCount = (dishes || []).filter((d) => d && d.category === cat).length;
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => setManualCategory(cat)}
+                          style={{
+                            width: '100%',
+                            textAlign: 'left',
+                            padding: '12px 16px',
+                            fontSize: '13px',
+                            fontWeight: isActive ? 800 : 600,
+                            border: 'none',
+                            borderBottom: '1px solid #F1F5F9',
+                            backgroundColor: isActive ? '#0F172A' : '#FFFFFF',
+                            color: isActive ? '#FFFFFF' : '#334155',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '8px',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                            {cat} {catCount > 0 && <span style={{ opacity: 0.65, fontSize: '11px', fontWeight: 600 }}>({catCount})</span>}
+                          </span>
+                          <span style={{ color: isActive ? '#94A3B8' : '#94A3B8', fontSize: '14px', letterSpacing: '1px', flexShrink: 0, fontWeight: 900 }}>
+                            ⋮
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2. MIDDLE COLUMN: CART & CUSTOMER DETAILS (LIGHT STROKE CARD) */}
+                <div className="crm-pos-left-col" style={{ width: '380px', flexShrink: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', backgroundColor: '#FFFFFF', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+
+                  {/* Customer Inputs in 2-Column Grid */}
+                  <div className="crm-form-grid" style={{ gap: '10px', marginBottom: '12px' }}>
                     <div className="crm-form-group">
-                      <label style={{ fontSize: '12px' }}>Customer Name <span className="req">*</span></label>
+                      <label style={{ fontSize: '11.5px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>Customer Name <span className="req">*</span></label>
                       <input
                         ref={manualCustRef}
                         type="text"
                         className="crm-input"
-                        style={{ padding: '7px 10px', fontSize: '13px' }}
+                        style={{ padding: '8px 12px', fontSize: '13px', borderRadius: '9px', border: '1px solid #E2E8F0', background: '#F8FAFC' }}
                         placeholder="Customer Name (e.g. Rahul)"
                         value={manualCustomer}
                         onChange={(e) => setManualCustomer(e.target.value)}
@@ -10367,12 +10904,12 @@ export default function DashboardPage({ onShowToast }) {
                     </div>
 
                     <div className="crm-form-group">
-                      <label style={{ fontSize: '12px' }}>Mobile Number</label>
+                      <label style={{ fontSize: '11.5px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>Mobile Number</label>
                       <input
                         ref={manualPhoneRef}
                         type="text"
                         className="crm-input"
-                        style={{ padding: '7px 10px', fontSize: '13px' }}
+                        style={{ padding: '8px 12px', fontSize: '13px', borderRadius: '9px', border: '1px solid #E2E8F0', background: '#F8FAFC' }}
                         placeholder="Mobile Number"
                         value={manualPhone}
                         onChange={(e) => setManualPhone(e.target.value)}
@@ -10381,89 +10918,123 @@ export default function DashboardPage({ onShowToast }) {
                     </div>
                   </div>
 
-                  {manualOrderType === 'Dine-In' && (
-                    <div className="crm-form-group" style={{ marginBottom: '8px' }}>
-                      <label style={{ fontSize: '12px' }}>Select Dining Table</label>
-                      <select
-                        ref={manualTableRef}
-                        className="crm-input"
-                        style={{ padding: '7px 10px', fontSize: '13px' }}
-                        value={manualTable}
-                        onChange={(e) => setManualTable(e.target.value)}
-                        onKeyDown={(e) => handleInputKeyDown(e, 2)}
-                      >
-                        {(tables || []).map((t, idx) => (
-                          <option key={t.id || t._id || t.name || `tbl_${idx}`} value={t.name}>
-                            {t.name} ({t.capacity} Pax) — {t.section}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
                   {/* Live Cart Items Summary */}
-                  <div className="crm-cart-summary-box" style={{ padding: '8px 10px', marginBottom: '8px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                      <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#0F172A', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <div className="crm-cart-summary-box" style={{ padding: '10px 12px', marginBottom: '12px', background: '#F8FAFC', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 800, color: '#0F172A', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                         SELECTED ITEMS ({Object.values(manualItems).reduce((sum, i) => sum + i.qty, 0)})
                       </label>
-                      {Object.keys(manualItems).length > 0 && (
+                      {Object.values(manualItems).some((i) => !i.isServed) && (
                         <button
                           type="button"
-                          style={{ background: 'none', border: 'none', color: '#DC2626', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer' }}
-                          onClick={() => setManualItems({})}
+                          style={{ background: 'none', border: 'none', color: '#EF4444', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer' }}
+                          onClick={() => {
+                            // Only clear newly added items that have not yet been served
+                            setManualItems((prev) => {
+                              const kept = {};
+                              Object.entries(prev).forEach(([k, v]) => {
+                                if (v.isServed) kept[k] = v;
+                              });
+                              return kept;
+                            });
+                          }}
+                          title="Clear all newly added unserved items"
                         >
-                          Clear All
+                          Clear New
                         </button>
                       )}
                     </div>
 
                     {Object.keys(manualItems).length === 0 ? (
-                      <div className="crm-empty-cart-state" style={{ padding: '14px 8px' }}>
-                        <Utensils size={24} color="#94A3B8" />
-                        <div style={{ fontWeight: 700, marginTop: '4px', color: '#64748B', fontSize: '13px' }}>Cart is empty</div>
-                        <div style={{ fontSize: '11.5px', color: '#94A3B8' }}>Select items from the food list on the right</div>
+                      <div className="crm-empty-cart-state" style={{ padding: '24px 8px', textAlign: 'center' }}>
+                        <Utensils size={26} color="#94A3B8" />
+                        <div style={{ fontWeight: 800, marginTop: '6px', color: '#475569', fontSize: '13.5px' }}>Cart is empty</div>
+                        <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>Click any dish on the right to add to order</div>
                       </div>
                     ) : (
-                      <div className="crm-cart-items-scroll" style={{ maxHeight: '140px' }}>
+                      <div className="crm-cart-items-scroll" style={{ maxHeight: '240px', overflowY: 'auto' }}>
                         {Object.entries(manualItems).map(([itemKey, item]) => (
-                          <div key={itemKey} className="crm-cart-item-row" style={{ padding: '6px 10px' }}>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <div key={itemKey} className="crm-cart-item-row" style={{ padding: '8px 10px', background: '#FFFFFF', borderRadius: '9px', border: item.isServed ? '1.5px solid #BBF7D0' : '1px solid #E2E8F0', marginBottom: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative' }}>
+                            <div style={{ flex: 1, minWidth: 0, paddingRight: '8px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                                 <span className={item.isVeg ? 'crm-veg-dot' : 'crm-nonveg-dot'} />
-                                <span style={{ fontWeight: 800, fontSize: '13px', color: '#0F172A' }}>{item.name}</span>
+                                <span style={{ fontWeight: 800, fontSize: '13px', color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
+                                {item.isServed && (
+                                  <span
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '3px',
+                                      background: '#DCFCE7',
+                                      color: '#15803D',
+                                      border: '1px solid #86EFAC',
+                                      borderRadius: '4px',
+                                      padding: '1px 6px',
+                                      fontSize: '10px',
+                                      fontWeight: 900,
+                                      letterSpacing: '0.04em',
+                                      textTransform: 'uppercase',
+                                      boxShadow: '0 1px 2px rgba(21,128,61,0.1)'
+                                    }}
+                                    title="Food already prepared and served to customer table"
+                                  >
+                                    ✓ SERVED
+                                  </span>
+                                )}
                               </div>
                               {(item.sizeName || item.bunName || (item.toppings && item.toppings.length > 0)) && (
-                                <div style={{ fontSize: '11px', color: '#1D4ED8', fontWeight: 700, marginTop: '1px' }}>
+                                <div style={{ fontSize: '11px', color: '#2563EB', fontWeight: 700, marginTop: '2px' }}>
                                   {[item.sizeName, item.bunName, ...(item.toppings || [])].filter(Boolean).join(' • ')}
                                 </div>
                               )}
-                              <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>
-                                ₹{item.price} × {item.qty} = <b>₹{item.price * item.qty}</b>
+                              <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 600, marginTop: '2px' }}>
+                                ₹{item.price} × {item.qty} = <b style={{ color: '#0F172A' }}>₹{item.price * item.qty}</b>
                               </div>
                             </div>
 
-                            <div className="crm-qty-counter">
-                              <button
-                                type="button"
-                                className="crm-qty-btn"
-                                style={{ width: '26px', height: '26px' }}
-                                onClick={() => handleUpdateItemQty(itemKey, -1)}
+                            {item.isServed ? (
+                              <div
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                  background: '#F1F5F9',
+                                  padding: '4px 10px',
+                                  borderRadius: '8px',
+                                  border: '1px solid #CBD5E1',
+                                  color: '#475569',
+                                  fontSize: '12px',
+                                  fontWeight: 800,
+                                  userSelect: 'none'
+                                }}
+                                title="This item has already been served and cannot be modified or reduced"
                               >
-                                -
-                              </button>
-                              <span style={{ fontWeight: 900, minWidth: '18px', textAlign: 'center', fontSize: '13px' }}>
-                                {item.qty}
-                              </span>
-                              <button
-                                type="button"
-                                className="crm-qty-btn"
-                                style={{ width: '26px', height: '26px' }}
-                                onClick={() => handleUpdateItemQty(itemKey, 1)}
-                              >
-                                +
-                              </button>
-                            </div>
+                                <span style={{ fontSize: '13px' }}>🔒</span>
+                                <span>{item.qty} (Locked)</span>
+                              </div>
+                            ) : (
+                              <div className="crm-qty-counter" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#F1F5F9', padding: '2px', borderRadius: '7px', border: '1px solid #E2E8F0' }}>
+                                <button
+                                  type="button"
+                                  className="crm-qty-btn"
+                                  style={{ width: '24px', height: '24px', border: 'none', background: '#FFFFFF', borderRadius: '5px', cursor: 'pointer', fontWeight: 900 }}
+                                  onClick={() => handleUpdateItemQty(itemKey, -1)}
+                                >
+                                  -
+                                </button>
+                                <span style={{ fontWeight: 900, minWidth: '20px', textAlign: 'center', fontSize: '13px', color: '#0F172A' }}>
+                                  {item.qty}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="crm-qty-btn"
+                                  style={{ width: '24px', height: '24px', border: 'none', background: '#FFFFFF', borderRadius: '5px', cursor: 'pointer', fontWeight: 900 }}
+                                  onClick={() => handleUpdateItemQty(itemKey, 1)}
+                                >
+                                  +
+                                </button>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -10471,18 +11042,18 @@ export default function DashboardPage({ onShowToast }) {
                   </div>
 
                   {/* Charges, Tax & Discounts in 2 Columns */}
-                  <div className="crm-form-grid" style={{ gap: '8px', marginBottom: '8px' }}>
+                  <div className="crm-form-grid" style={{ gap: '10px', marginBottom: '12px' }}>
                     <div className="crm-form-group">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-                        <label style={{ fontSize: '11.5px', margin: 0 }}>Discount</label>
-                        <div style={{ display: 'inline-flex', background: '#CBD5E1', borderRadius: '5px', padding: '1px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <label style={{ fontSize: '11.5px', fontWeight: 700, color: '#475569', margin: 0 }}>Discount</label>
+                        <div style={{ display: 'inline-flex', background: '#F1F5F9', borderRadius: '5px', padding: '1px', border: '1px solid #E2E8F0' }}>
                           <button
                             type="button"
                             onClick={() => setManualDiscountType('₹')}
                             style={{
                               border: 'none',
                               background: manualDiscountType === '₹' ? '#FF5E14' : 'transparent',
-                              color: manualDiscountType === '₹' ? '#FFF' : '#334155',
+                              color: manualDiscountType === '₹' ? '#FFF' : '#475569',
                               borderRadius: '4px',
                               padding: '1px 6px',
                               fontSize: '10px',
@@ -10498,7 +11069,7 @@ export default function DashboardPage({ onShowToast }) {
                             style={{
                               border: 'none',
                               background: manualDiscountType === '%' ? '#FF5E14' : 'transparent',
-                              color: manualDiscountType === '%' ? '#FFF' : '#334155',
+                              color: manualDiscountType === '%' ? '#FFF' : '#475569',
                               borderRadius: '4px',
                               padding: '1px 6px',
                               fontSize: '10px',
@@ -10515,83 +11086,67 @@ export default function DashboardPage({ onShowToast }) {
                           ref={manualDiscountRef}
                           type="number"
                           className="crm-input"
-                          style={{ padding: '6px 24px 6px 10px', fontSize: '13px', width: '100%' }}
+                          style={{ padding: '7px 24px 7px 10px', fontSize: '13px', width: '100%', borderRadius: '9px', border: '1px solid #E2E8F0', background: '#F8FAFC' }}
                           placeholder={manualDiscountType === '%' ? "e.g. 10%" : "0"}
                           value={manualDiscount}
                           onChange={(e) => setManualDiscount(e.target.value)}
                           onKeyDown={(e) => handleInputKeyDown(e, 4)}
                         />
-                        <span style={{ position: 'absolute', right: '8px', fontSize: '11px', fontWeight: 900, color: '#64748B', pointerEvents: 'none' }}>
+                        <span style={{ position: 'absolute', right: '10px', fontSize: '11.5px', fontWeight: 900, color: '#64748B', pointerEvents: 'none' }}>
                           {manualDiscountType}
                         </span>
                       </div>
                     </div>
 
                     <div className="crm-form-group" style={{ justifyContent: 'center' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 800, color: '#334155', marginTop: '12px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 700, color: '#334155', marginTop: '14px' }}>
                         <input
                           type="checkbox"
                           checked={manualGstEnabled}
                           onChange={(e) => setManualGstEnabled(e.target.checked)}
-                          style={{ accentColor: '#1D4ED8', width: '15px', height: '15px' }}
+                          style={{ accentColor: '#FF5E14', width: '15px', height: '15px' }}
                         />
-                        <span>Apply 5% GST Tax</span>
+                        <span>Apply 5% GST</span>
                       </label>
                     </div>
                   </div>
 
-                  {/* Bill Summary Box */}
-                  <div className="crm-bill-breakdown-card" style={{ padding: '10px 12px', marginTop: '2px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px', fontSize: '12px' }}>
+                  {/* Bill Summary Box (Light Stroke Card) */}
+                  <div className="crm-bill-breakdown-card" style={{ padding: '12px 14px', background: '#F8FAFC', borderRadius: '12px', border: '1px solid #E2E8F0', marginTop: 'auto' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '12.5px', color: '#475569' }}>
                       <span>Subtotal:</span>
-                      <b>₹{manualSubtotal}</b>
+                      <b style={{ color: '#0F172A' }}>₹{manualSubtotal}</b>
                     </div>
                     {mDiscountAmt > 0 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px', fontSize: '12px', color: '#059669' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '12.5px', color: '#059669' }}>
                         <span>Discount:</span>
                         <b>- ₹{mDiscountAmt}</b>
                       </div>
                     )}
                     {manualGstEnabled && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px', fontSize: '12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '12.5px', color: '#475569' }}>
                         <span>GST Tax (5%):</span>
                         <b>+ ₹{manualTax}</b>
                       </div>
                     )}
-                    <div className="crm-bill-total-row" style={{ paddingTop: '6px', marginTop: '4px', fontSize: '15px' }}>
-                      <span>Total Amount:</span>
-                      <span className="crm-bill-total-val" style={{ fontSize: '18px' }}>₹{manualTotal}</span>
+                    <div className="crm-bill-total-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0F172A', color: '#FFFFFF', padding: '9px 12px', borderRadius: '9px', marginTop: '8px' }}>
+                      <span style={{ fontSize: '13.5px', fontWeight: 800 }}>Total Amount:</span>
+                      <span style={{ fontSize: '18px', fontWeight: 900, color: '#FACC15' }}>₹{manualTotal}</span>
                     </div>
                   </div>
 
-                  {/* Payment Method Selector */}
-                  <div className="crm-form-group" style={{ marginTop: '6px', marginBottom: '6px' }}>
-                    <label style={{ fontSize: '11.5px' }}>Payment Method</label>
-                    <select
-                      className="crm-input"
-                      style={{ padding: '6px 10px', fontSize: '12.5px' }}
-                      value={manualPaymentMode}
-                      onChange={(e) => setManualPaymentMode(e.target.value)}
-                    >
-                      <option value="Cash on Counter">Cash on Counter</option>
-                      <option value="Paid via UPI (Counter QR)">Paid via UPI (Counter QR)</option>
-                      <option value="POS Card Machine">Credit / Debit Card (POS Machine)</option>
-                      <option value="Due / Khata (Customer Udhaar)">️ Due / Khata (Customer Udhaar)</option>
-                      <option value="Unpaid / Pay Later">Pay Later on Table Departure</option>
-                    </select>
-                  </div>
                 </div>
 
-                {/* RIGHT COLUMN: FOOD SEARCH, CATEGORIES & DISH CARDS */}
-                <div className="crm-pos-right-col" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderLeft: '1.5px solid #E2E8F0', paddingLeft: '16px' }}>
+                {/* 3. RIGHT COLUMN: FOOD SEARCH & DISHES GRID (LIGHT STROKE CARD) */}
+                <div className="crm-pos-right-col" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', backgroundColor: '#FFFFFF', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
                   {/* Search Bar */}
-                  <div style={{ position: 'relative', marginBottom: '8px', flexShrink: 0 }}>
+                  <div style={{ position: 'relative', marginBottom: '12px', flexShrink: 0 }}>
                     <Search size={16} color="#64748B" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
                     <input
                       ref={manualSearchRef}
                       type="text"
                       className="crm-input"
-                      style={{ paddingLeft: '36px', padding: '7px 12px 7px 36px', fontSize: '13px' }}
+                      style={{ padding: '8px 12px 8px 36px', fontSize: '13px', borderRadius: '10px', border: '1px solid #E2E8F0', background: '#F8FAFC', width: '100%', boxSizing: 'border-box' }}
                       placeholder="Search food by name (e.g. Pizza, Burger, Mojito)..."
                       value={manualSearch}
                       onChange={(e) => setManualSearch(e.target.value)}
@@ -10599,81 +11154,158 @@ export default function DashboardPage({ onShowToast }) {
                     />
                   </div>
 
-                  {/* Category Pills Filter */}
-                  <div className="crm-pos-cat-pills" style={{ marginBottom: '8px', flexShrink: 0 }}>
-                    {['All', ...allCategories].map((cat) => (
-                      <button
-                        key={cat}
-                        type="button"
-                        className={`crm-pos-cat-pill ${manualCategory === cat ? 'active' : ''}`}
-                        onClick={() => setManualCategory(cat)}
-                        style={{ padding: '4px 12px', fontSize: '12px' }}
-                      >
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
+                  {/* DISHES CARDS GRID */}
+                  <div
+                    className="crm-pos-dishes-grid"
+                    style={{
+                      flex: 1,
+                      minHeight: 0,
+                      overflowY: 'auto',
+                      paddingRight: '6px',
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(185px, 1fr))',
+                      gap: '12px',
+                      alignContent: 'start'
+                    }}
+                  >
+                      {(dishes || [])
+                        .filter((d) => {
+                          if (!d) return false;
+                          const matchCat = manualCategory === 'All' || d.category === manualCategory;
+                          const matchSearch = (d.name || '').toLowerCase().includes((manualSearch || '').toLowerCase());
+                          return matchCat && matchSearch;
+                        })
+                        .map((d) => {
+                          const dKey = d._id || d.id;
+                          const dishImg = typeof d.image === 'string' ? d.image : (d.image?.url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80');
+                          const qtyInCart = manualItems[dKey] ? manualItems[dKey].qty : 0;
 
-                  {/* Dishes Cards Grid */}
-                  <div className="crm-pos-dishes-grid" style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: '4px' }}>
-                    {(dishes || [])
-                      .filter((d) => {
-                        if (!d) return false;
-                        const matchCat = manualCategory === 'All' || d.category === manualCategory;
-                        const matchSearch = (d.name || '').toLowerCase().includes((manualSearch || '').toLowerCase());
-                        return matchCat && matchSearch;
-                      })
-                      .map((d) => {
-                        const dKey = d._id || d.id;
-                        const dishImg = typeof d.image === 'string' ? d.image : (d.image?.url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80');
-                        const qtyInCart = manualItems[dKey] ? manualItems[dKey].qty : 0;
-
-                        return (
-                          <div key={dKey} className="crm-pos-food-card">
-                            <div className="crm-pos-food-img-box">
-                              <img src={dishImg} alt={d.name} loading="lazy" />
-                              <div className="pos-badge-container">
-                                <span className={d.isVeg ? 'crm-veg-dot' : 'crm-nonveg-dot'} />
-                              </div>
-                              {d.isSpecial && <span className="pos-special-badge">Special</span>}
-                            </div>
-
-                            <div className="crm-pos-food-details">
-                              <div className="crm-pos-food-name">{d.name}</div>
-                              {d.desc && <div className="crm-pos-food-desc">{d.desc}</div>}
-
-                              <div className="crm-pos-food-footer">
-                                <div className="crm-pos-food-price">₹{d.price}</div>
-
-                                {qtyInCart > 0 ? (
-                                  <div className="crm-pos-qty-pill">
-                                    <button type="button" onClick={() => handleUpdateItemQty(dKey, -1, d)}>
-                                      -
-                                    </button>
-                                    <span>{qtyInCart}</span>
-                                    <button type="button" onClick={() => handleUpdateItemQty(dKey, 1, d)}>
-                                      +
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    className="crm-pos-add-btn"
-                                    onClick={() => handleUpdateItemQty(dKey, 1, d)}
-                                  >
-                                    <Plus size={13} /> ADD
-                                  </button>
+                          return (
+                            <div
+                              key={dKey}
+                              className="crm-pos-food-card"
+                              onClick={() => handleUpdateItemQty(dKey, 1, d)}
+                              style={{
+                                cursor: 'pointer',
+                                userSelect: 'none',
+                                border: qtyInCart > 0 ? '1.5px solid #2563EB' : '1px solid #E2E8F0',
+                                borderRadius: '14px',
+                                background: '#FFFFFF',
+                                transition: 'all 0.18s ease',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                overflow: 'hidden',
+                                boxShadow: qtyInCart > 0 ? '0 4px 12px rgba(37,99,235,0.12)' : '0 1px 3px rgba(0,0,0,0.03)'
+                              }}
+                              title={`Click to add "${d.name}" to cart`}
+                            >
+                              <div className="crm-pos-food-img-box" style={{ height: '115px', position: 'relative', overflow: 'hidden', background: '#F8FAFC' }}>
+                                <img
+                                  src={dishImg}
+                                  alt={d.name}
+                                  loading="lazy"
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                />
+                                <div className="pos-badge-container" style={{ position: 'absolute', top: '7px', left: '7px', background: 'rgba(255,255,255,0.95)', padding: '3px 5px', borderRadius: '5px', backdropFilter: 'blur(4px)' }}>
+                                  <span className={d.isVeg ? 'crm-veg-dot' : 'crm-nonveg-dot'} />
+                                </div>
+                                {d.isSpecial && (
+                                  <span className="pos-special-badge" style={{ position: 'absolute', top: '7px', right: '7px', background: '#FF5E14', color: '#FFF', fontSize: '9.5px', fontWeight: 800, padding: '2px 7px', borderRadius: '8px' }}>
+                                    Special
+                                  </span>
                                 )}
                               </div>
+
+                              <div className="crm-pos-food-details" style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'space-between' }}>
+                                <div>
+                                  <div className="crm-pos-food-name" style={{ fontSize: '13px', fontWeight: 800, color: '#0F172A', lineHeight: 1.25 }}>
+                                    {d.name}
+                                  </div>
+                                  {d.desc && (
+                                    <div className="crm-pos-food-desc" style={{ fontSize: '11px', color: '#64748B', marginTop: '2px', lineHeight: 1.3 }}>
+                                      {d.desc}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="crm-pos-food-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px', paddingTop: '6px', borderTop: '1px dashed #F1F5F9' }}>
+                                  <div className="crm-pos-food-price" style={{ fontSize: '14.5px', fontWeight: 900, color: '#0F172A' }}>
+                                    ₹{d.price}
+                                  </div>
+
+                                  {qtyInCart > 0 ? (
+                                    <div className="crm-pos-qty-pill" style={{ display: 'inline-flex', alignItems: 'center', background: '#2563EB', color: '#FFF', borderRadius: '8px', padding: '1px 3px' }}>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleUpdateItemQty(dKey, -1, d);
+                                        }}
+                                        style={{ border: 'none', background: 'transparent', color: '#FFF', fontWeight: 900, fontSize: '13px', width: '22px', height: '22px', cursor: 'pointer' }}
+                                      >
+                                        -
+                                      </button>
+                                      <span style={{ minWidth: '18px', textAlign: 'center', fontWeight: 900, fontSize: '12px' }}>{qtyInCart}</span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleUpdateItemQty(dKey, 1, d);
+                                        }}
+                                        style={{ border: 'none', background: 'transparent', color: '#FFF', fontWeight: 900, fontSize: '13px', width: '22px', height: '22px', cursor: 'pointer' }}
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="crm-pos-add-btn"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleUpdateItemQty(dKey, 1, d);
+                                      }}
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '3px',
+                                        padding: '4px 10px',
+                                        borderRadius: '7px',
+                                        border: '1px solid #BFDBFE',
+                                        background: '#EFF6FF',
+                                        color: '#2563EB',
+                                        fontSize: '11.5px',
+                                        fontWeight: 800,
+                                        cursor: 'pointer',
+                                        transition: 'all 0.15s ease'
+                                      }}
+                                    >
+                                      <Plus size={12} /> ADD
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                  </div>
+                          );
+                        })}
+                    </div>
                 </div>
               </div>
 
-              <div className="crm-modal-footer" style={{ padding: '12px 20px', borderTop: '1.5px solid #E2E8F0', background: '#F8FAFC', display: 'flex', justifyContent: 'flex-end', gap: '12px', flexShrink: 0 }}>
+              <div
+                className="crm-modal-footer"
+                style={{
+                  padding: '14px 28px',
+                  borderTop: '1px solid #E2E8F0',
+                  background: '#FFFFFF',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexShrink: 0,
+                  boxSizing: 'border-box'
+                }}
+              >
+                {/* Left: Clean Cancel Button */}
                 <button
                   type="button"
                   className="crm-btn-secondary"
@@ -10681,34 +11313,93 @@ export default function DashboardPage({ onShowToast }) {
                     setIsManualOrderOpen(false);
                     setEditingOrderId(null);
                   }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn-create-order-primary"
-                  disabled={isSubmittingManualOrder}
                   style={{
-                    opacity: isSubmittingManualOrder ? 0.75 : 1,
-                    cursor: isSubmittingManualOrder ? 'not-allowed' : 'pointer',
+                    padding: '10px 22px',
+                    fontSize: '13.5px',
+                    fontWeight: 700,
+                    borderRadius: '10px',
+                    backgroundColor: '#FFFFFF',
+                    border: '1.5px solid #E2E8F0',
+                    color: '#64748B',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
                   }}
                 >
-                  {isSubmittingManualOrder ? (
-                    <RefreshCw size={16} style={{ animation: 'foodypay-spin 0.8s linear infinite' }} />
-                  ) : (
-                    <Check size={16} />
-                  )}
-                  <span>
-                    {isSubmittingManualOrder
-                      ? 'Creating Order...'
-                      : editingOrderId
-                      ? 'Update Order Details'
-                      : 'Place Order & Print KOT'}
-                  </span>
+                  ✕ Cancel
                 </button>
+
+                {/* Right: Primary Action Buttons */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+
+                  {/* 1. Save / Order Placed Button (Running Table - Blue) */}
+                  <button
+                    type="button"
+                    disabled={isSubmittingManualOrder || manualSubtotal <= 0}
+                    onClick={(e) => handleCreateManualOrderSubmit(e, false, false)}
+                    style={{
+                      padding: '10px 22px',
+                      fontSize: '13.5px',
+                      fontWeight: 800,
+                      borderRadius: '10px',
+                      backgroundColor: (isSubmittingManualOrder || manualSubtotal <= 0) ? '#E2E8F0' : '#1E293B',
+                      border: 'none',
+                      color: (isSubmittingManualOrder || manualSubtotal <= 0) ? '#94A3B8' : '#FFFFFF',
+                      cursor: (isSubmittingManualOrder || manualSubtotal <= 0) ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '7px'
+                    }}
+                    title="Save order to table without firing new KOT (Table becomes Running Blue)"
+                  >
+                    <Check size={16} />
+                    <span>{editingOrderId ? '✓ Save Changes' : '✓ Order Placed'}</span>
+                  </button>
+
+                  {/* 2. Send to Kitchen (KOT) Button (Running KOT - Yellow) */}
+                  {(() => {
+                    const unsentCount = Object.values(manualItems).reduce((sum, it) => sum + Math.max(0, it.qty - (it.kotSentQty || 0)), 0);
+                    return (
+                      <button
+                        type="button"
+                        disabled={isSubmittingManualOrder || manualSubtotal <= 0}
+                        onClick={(e) => handleCreateManualOrderSubmit(e, false, true)}
+                        style={{
+                          padding: '10px 24px',
+                          fontSize: '14px',
+                          fontWeight: 900,
+                          borderRadius: '10px',
+                          backgroundColor: (isSubmittingManualOrder || manualSubtotal <= 0) ? '#94A3B8' : '#FF5E14',
+                          border: 'none',
+                          color: '#FFFFFF',
+                          boxShadow: '0 4px 14px rgba(255, 94, 20, 0.35)',
+                          cursor: (isSubmittingManualOrder || manualSubtotal <= 0) ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px'
+                        }}
+                        title="Send items to Kitchen Display (Table becomes Yellow Running KOT)"
+                      >
+                        {isSubmittingManualOrder ? (
+                          <>
+                            <RefreshCw size={16} style={{ animation: 'foodypay-spin 0.8s linear infinite' }} />
+                            <span>Sending KOT...</span>
+                          </>
+                        ) : (
+                          <>
+                            <ChefHat size={17} />
+                            <span>
+                              {editingOrderId
+                                ? (unsentCount > 0 ? `🍳 Send New KOT (${unsentCount})` : '🍳 Resend KOT to Kitchen')
+                                : '🍳 Send to Kitchen (KOT)'}
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    );
+                  })()}
+                </div>
               </div>
             </form>
-          </div>
         </div>
       )}
 
@@ -10869,7 +11560,7 @@ export default function DashboardPage({ onShowToast }) {
                               <button
                                 type="button"
                                 className="crm-btn-secondary"
-                                style={{ padding: '6px 10px', fontSize: '12px', background: '#2563EB', color: '#FFF', borderColor: '#2563EB' }}
+                                style={{ padding: '6px 10px', fontSize: '12px', background: '#2563EB', color: '#FFF', borderColor: '#2563EB', cursor: 'pointer' }}
                                 onClick={handleApplySettleCoupon}
                               >
                                 Apply
@@ -10877,6 +11568,42 @@ export default function DashboardPage({ onShowToast }) {
                             </div>
                           </div>
                         </div>
+
+                        {/* Available Coupon Cards / Suggestions */}
+                        {Array.isArray(coupons) && coupons.length > 0 && !settleCouponApplied && (
+                          <div style={{ marginTop: '2px' }}>
+                            <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748B', marginBottom: '4px' }}>Available Coupons (Click to apply):</div>
+                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                              {coupons.slice(0, 4).map((c, cIdx) => (
+                                <button
+                                  key={cIdx}
+                                  type="button"
+                                  onClick={() => {
+                                    setSettleCouponApplied(c);
+                                    addToast(`Coupon "${c.code}" applied!`, <Check size={16} />);
+                                  }}
+                                  style={{
+                                    border: '1px dashed #2563EB',
+                                    background: '#EFF6FF',
+                                    color: '#1D4ED8',
+                                    borderRadius: '6px',
+                                    padding: '2px 8px',
+                                    fontSize: '11px',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}
+                                >
+                                  <Tag size={10} />
+                                  <span>{c.code}</span>
+                                  {c.discount && <span style={{ opacity: 0.8, fontSize: '10px' }}>({c.discount})</span>}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
 
                         {settleCouponApplied && (
                           <div style={{ background: '#DCFCE7', border: '1px solid #86EFAC', padding: '6px 10px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#15803D', fontWeight: 800 }}>
@@ -10933,6 +11660,33 @@ export default function DashboardPage({ onShowToast }) {
                         <div style={{ textAlign: 'left' }}>
                           <div style={{ fontWeight: 800, fontSize: '15px' }}> Online UPI QR Scanner</div>
                           <div style={{ fontSize: '12px', opacity: 0.9 }}>Generate payment QR for Google Pay / PhonePe / Paytm</div>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        className="crm-btn-settle-option card"
+                        style={{
+                          background: '#F0FDF4',
+                          border: '1.5px solid #86EFAC',
+                          color: '#166534',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          padding: '12px 16px',
+                          borderRadius: '12px',
+                          cursor: 'pointer',
+                          width: '100%',
+                          textAlign: 'left'
+                        }}
+                        onClick={handleSettleBillCard}
+                      >
+                        <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#DCFCE7', color: '#15803D', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <CreditCard size={22} />
+                        </div>
+                        <div style={{ textAlign: 'left', flex: 1 }}>
+                          <div style={{ fontWeight: 800, fontSize: '15px', color: '#166534' }}>💳 Debit / Credit Card (POS Swiped)</div>
+                          <div style={{ fontSize: '12px', color: '#15803D' }}>Paid via EDC Card Machine / POS Terminal</div>
                         </div>
                       </button>
 

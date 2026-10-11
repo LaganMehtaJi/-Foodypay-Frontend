@@ -9,6 +9,23 @@ import {
   GoogleAuthProvider,
   signOut,
 } from 'firebase/auth';
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  onSnapshot,
+  serverTimestamp,
+} from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDemoConfigKeyForFoodyPay123456",
@@ -24,8 +41,43 @@ const firebaseConfig = {
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
+const firestoreDb = getFirestore(app);
 
-export { app, auth, googleProvider };
+export const FIRESTORE_COLLECTIONS = {
+  BUSINESS_USERS: 'Business_Users',
+  USERS: 'users',
+  ORDERS: 'orders',
+  DISHES: 'dishes',
+  PRODUCTS: 'products',
+  TABLES: 'tables',
+  CUSTOMERS: 'customers',
+  DUES: 'customer_dues',
+  COUPONS: 'coupons',
+  SETTINGS: 'settings',
+  QR_CODES: 'qr_codes',
+  REVIEWS: 'reviews',
+};
+
+export {
+  app,
+  auth,
+  googleProvider,
+  firestoreDb,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  onSnapshot,
+  serverTimestamp,
+};
 
 /**
  * Sign in existing user with Email & Password via Firebase Auth
@@ -98,7 +150,7 @@ export async function sendFirebaseEmailVerification(user) {
 }
 
 /**
- * Send Password Reset Email link via Firebase Auth
+ * Send Password Reset Email link via Firebase Auth directly to inbox
  */
 export async function sendFirebasePasswordReset(email) {
   if (!email || !email.trim() || !email.includes('@')) {
@@ -106,18 +158,9 @@ export async function sendFirebasePasswordReset(email) {
   }
   const cleanEmail = email.trim().toLowerCase();
 
-  // 1. Verify that email exists in database first
-  try {
-    const { checkEmailExistsApi } = await import('./api.js');
-    await checkEmailExistsApi(cleanEmail);
-  } catch (dbErr) {
-    throw new Error(dbErr.message || 'No registered account found with this email address. Please register first.');
-  }
-
-  // 2. Dispatch Firebase Password Reset Email
   try {
     await sendPasswordResetEmail(auth, cleanEmail);
-    return { success: true, message: `Password reset link sent to ${cleanEmail}. Please check your inbox / spam folder.` };
+    return { success: true, message: `Password reset email sent to ${cleanEmail}! Please check your inbox or spam folder.` };
   } catch (error) {
     let message = error.message;
     if (error.code === 'auth/user-not-found') {

@@ -3085,6 +3085,490 @@ input:checked + .crm-blue-slider:before {
   animation: foodypay-pulse-blink 1s ease-in-out infinite;
 }
 
+/* ==========================================================================
+   VISUAL POS TABLE MANAGEMENT UI - ANIMATED & INTERACTIVE (MATCHING REFERENCE)
+   ========================================================================== */
+
+/* Keyframes */
+@keyframes posCardEntrance {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes posPulseGlow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(234, 88, 12, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(234, 88, 12, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(234, 88, 12, 0);
+  }
+}
+
+@keyframes posPulsePaid {
+  0% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 9px rgba(220, 38, 38, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
+  }
+}
+
+@keyframes posRotateClock {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes posSteamFloat {
+  0% {
+    transform: translateY(0px) scale(0.9);
+    opacity: 0.7;
+  }
+  50% {
+    transform: translateY(-2.5px) scale(1.05);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0px) scale(0.9);
+    opacity: 0.7;
+  }
+}
+
+@keyframes posGentleBounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+/* Top Filter Pills Container */
+.pos-table-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 6px 2px;
+  scrollbar-width: thin;
+}
+
+.pos-table-filter-bar::-webkit-scrollbar {
+  height: 4px;
+}
+
+.pos-table-filter-bar::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 4px;
+}
+
+/* Filter Pill Button */
+.pos-filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 9999px;
+  font-size: 13.5px;
+  font-weight: 700;
+  border: 1.5px solid #E2E8F0;
+  background: #FFFFFF;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.pos-filter-pill:hover {
+  border-color: #CBD5E1;
+  background: #F8FAFC;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+}
+
+.pos-filter-pill:active {
+  transform: scale(0.96);
+}
+
+.pos-filter-pill.active {
+  background: #0F172A;
+  color: #FFFFFF;
+  border-color: #0F172A;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.25);
+  transform: translateY(-1px);
+}
+
+.pos-filter-pill .status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.pos-filter-pill:hover .status-dot {
+  transform: scale(1.25);
+}
+
+.pos-filter-pill .pill-badge {
+  background: #F1F5F9;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  transition: all 0.2s ease;
+}
+
+.pos-filter-pill.active .pill-badge {
+  background: rgba(255, 255, 255, 0.2);
+  color: #FFFFFF;
+}
+
+/* Table Cards Grid */
+.pos-tables-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
+  gap: 16px;
+  margin-top: 10px;
+}
+
+@media (max-width: 640px) {
+  .pos-tables-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+  }
+}
+
+/* Dining Table Card Base */
+.pos-dining-card {
+  background: #FFFFFF;
+  border-radius: 18px;
+  border: 1.5px solid #E2E8F0;
+  padding: 14px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 220px;
+  position: relative;
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  cursor: pointer;
+  animation: posCardEntrance 0.35s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  overflow: hidden;
+}
+
+.pos-dining-card:hover {
+  transform: translateY(-4px) scale(1.015);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.1);
+  border-color: #CBD5E1;
+}
+
+.pos-dining-card:active {
+  transform: translateY(-1px) scale(0.99);
+}
+
+/* Available / Blank Table Card */
+.pos-dining-card.is-available {
+  background: #FAFAFC;
+  border: 1.5px dashed #CBD5E1;
+}
+
+.pos-dining-card.is-available:hover {
+  border-color: #3B82F6;
+  background: #F0F7FF;
+  box-shadow: 0 10px 24px rgba(59, 130, 246, 0.12);
+}
+
+.pos-dining-card.is-available:hover .pos-add-table-icon {
+  transform: scale(1.15) rotate(90deg);
+  border-color: #3B82F6;
+  color: #3B82F6;
+  background: #FFFFFF;
+}
+
+.pos-add-table-icon {
+  width: 56px;
+  height: 34px;
+  border-radius: 10px;
+  border: 2px dashed #CBD5E1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94A3B8;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Specific Card Glows by Status */
+.pos-dining-card.status-waiting {
+  border-color: #FED7AA;
+}
+.pos-dining-card.status-waiting:hover {
+  border-color: #F97316;
+  box-shadow: 0 12px 28px rgba(249, 115, 22, 0.12);
+}
+
+.pos-dining-card.status-eating {
+  border-color: #BAE6FD;
+}
+.pos-dining-card.status-eating:hover {
+  border-color: #0284C7;
+  box-shadow: 0 12px 28px rgba(2, 132, 199, 0.12);
+}
+
+.pos-dining-card.status-paid {
+  border-color: #FECACA;
+}
+.pos-dining-card.status-paid:hover {
+  border-color: #EF4444;
+  box-shadow: 0 12px 28px rgba(239, 68, 68, 0.15);
+}
+
+/* Top Row: Table Name & Status Badge */
+.pos-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.pos-table-number {
+  font-size: 19px;
+  font-weight: 900;
+  color: #0F172A;
+  letter-spacing: -0.3px;
+  transition: color 0.15s ease;
+}
+
+.pos-dining-card:hover .pos-table-number {
+  color: #0284C7;
+}
+
+.pos-dining-card.is-available:hover .pos-table-number {
+  color: #2563EB;
+}
+
+/* Status Badges */
+.pos-status-badge {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  transition: transform 0.2s ease;
+}
+
+.pos-dining-card:hover .pos-status-badge {
+  transform: scale(1.05);
+}
+
+.pos-status-badge.eating {
+  background: #E0F2FE;
+  color: #0284C7;
+  border: 1px solid #BAE6FD;
+}
+
+.pos-status-badge.waiting {
+  background: #FFEDD5;
+  color: #EA580C;
+  border: 1px solid #FED7AA;
+  animation: posPulseGlow 2s infinite;
+}
+
+.pos-status-badge.bill-ready {
+  background: #DCFCE7;
+  color: #16A34A;
+  border: 1px solid #BBF7D0;
+}
+
+.pos-status-badge.paid {
+  background: #FEE2E2;
+  color: #DC2626;
+  border: 1px solid #FECACA;
+  animation: posPulsePaid 2s infinite;
+}
+
+/* Center Table Graphic Container & SVG Animations */
+.pos-table-illustration {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 0;
+  user-select: none;
+}
+
+.pos-table-illustration svg {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.pos-dining-card:hover .pos-table-illustration svg {
+  transform: scale(1.06);
+}
+
+/* SVG Dish & Clock Animations */
+.svg-steam-plate {
+  animation: posSteamFloat 2.5s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.svg-rotating-hand {
+  animation: posRotateClock 8s linear infinite;
+  transform-origin: 9px 9px;
+}
+
+.svg-chair-avatar {
+  transition: transform 0.25s ease;
+}
+
+.pos-dining-card:hover .svg-chair-avatar {
+  transform: scale(1.15);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Bottom Stats: Price & Elapsed Time */
+.pos-card-metrics {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 8px;
+  margin-bottom: 10px;
+}
+
+.pos-card-amount {
+  font-size: 18px;
+  font-weight: 900;
+  color: #0F172A;
+  letter-spacing: -0.3px;
+  transition: transform 0.2s ease;
+}
+
+.pos-dining-card:hover .pos-card-amount {
+  transform: scale(1.03);
+}
+
+.pos-card-time {
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748B;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* Card Action Buttons */
+.pos-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.btn-card-add-item {
+  flex: 1;
+  background: #FFFFFF;
+  border: 1.5px solid #E2E8F0;
+  color: #0F172A;
+  border-radius: 9999px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.btn-card-add-item:hover {
+  background: #F8FAFC;
+  border-color: #0F172A;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+}
+
+.btn-card-add-item:active {
+  transform: scale(0.95);
+}
+
+.btn-card-bill {
+  flex: 1;
+  background: #DC2626;
+  border: none;
+  color: #FFFFFF;
+  border-radius: 9999px;
+  padding: 7.5px 12px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  box-shadow: 0 3px 8px rgba(220, 38, 38, 0.28);
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.btn-card-bill:hover {
+  background: #B91C1C;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(220, 38, 38, 0.38);
+}
+
+.btn-card-bill:active {
+  transform: scale(0.95);
+}
+
+.btn-card-vacate {
+  width: 100%;
+  background: #DC2626;
+  border: none;
+  color: #FFFFFF;
+  border-radius: 9999px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.32);
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: posGentleBounce 2.5s infinite;
+}
+
+.btn-card-vacate:hover {
+  background: #B91C1C;
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 8px 18px rgba(220, 38, 38, 0.42);
+}
+
+.btn-card-vacate:active {
+  transform: scale(0.96);
+}
+
+
 
 
 

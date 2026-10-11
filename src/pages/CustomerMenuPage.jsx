@@ -54,8 +54,7 @@ import {
 import { playOrderPlaced, sortOrdersNewestFirst } from '../utils/soundEffects';
 import { QrCodeComponent } from '../utils/qrGenerator';
 import { fetchDishesApi, fetchPublicDishesApi, fetchPublicMerchantApi, fetchPublicCouponsApi, createReviewApi, createPublicOrderApi, createRazorpayOrderApi, verifyRazorpaySignatureApi, checkDeliveryAvailabilityApi, fetchAvailableProductsApi, calculateBikeDeliveryTime, calculateHaversineDistanceKm } from '../utils/api';
-import { SNACK_RACK_FULL_MENU } from '../data/snackRackMenuData';
-
+import { saveOrderToFirestore } from '../utils/firestoreService';
 const AVAILABLE_COUPONS = [];
 
 const DEFAULT_10_PRODUCTS = [];
@@ -68,12 +67,6 @@ const HOME_IMAGE_CATEGORIES = [
   { id: 'Ice Cream', name: 'Ice Cream', image: 'https://images.unsplash.com/photo-1570197788417-0e82375c9371?w=300&auto=format&fit=crop&q=80', count: 'Chocolate & Vanilla' },
   { id: 'Snacks & Chips', name: 'Snacks & Chips', image: 'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=300&auto=format&fit=crop&q=80', count: 'Chips & Juice' }
 ];
-
-const SNACK_RACK_DEFAULT_DISHES = SNACK_RACK_FULL_MENU.map(d => ({
-  ...d,
-  foodypayId: 'FP-348330',
-  merchantId: 'FP-348330'
-}));
 
 const getFallbackFoodImage = (name = '', category = '') => {
   const n = (name || '').toLowerCase();
@@ -398,7 +391,7 @@ export default function CustomerMenuPage({ onShowToast }) {
     } catch (e) {}
     return {
       header: 'Payment Method',
-      upiEnabled: true,
+      upiEnabled: false, // Temporarily disabled: local browser only
       upiLabel: 'Online UPI',
       cashEnabled: true,
       cashLabel: 'Cash / Pay Counter',
@@ -594,12 +587,12 @@ export default function CustomerMenuPage({ onShowToast }) {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isNavMenuOpen, setIsNavMenuOpen] = useState(false);
   const [chefNote, setChefNote] = useState('');
-  const [paymentMode, setPaymentMode] = useState('upi'); // 'upi' | 'cash'
+  const [paymentMode, setPaymentMode] = useState('cash'); // Temporarily default to cash only
   useEffect(() => {
     if (paymentConfig.upiEnabled === false && paymentConfig.cashEnabled !== false) {
       setPaymentMode('cash');
     } else if (paymentConfig.upiEnabled !== false && paymentConfig.cashEnabled === false) {
-      setPaymentMode('upi');
+      setPaymentMode('cash');
     }
   }, [paymentConfig]);
   const [appliedCoupon, setAppliedCoupon] = useState(null);
@@ -628,17 +621,11 @@ export default function CustomerMenuPage({ onShowToast }) {
       if (saved) return JSON.parse(saved);
     } catch (e) {}
     return {
-      enabled: true,
-      title: 'STEAL DEAL WEEKEND',
-      badgePrice: '9',
-      subtitle: ' GET ANY ONE ITEM AT SPECIAL PRICE ',
-      items: [
-        { id: 'steal_1', name: 'Corn Cob (Bhutta)', unit: '1 pc', price: 9, originalPrice: 22, unlockAt: 499, isVeg: true, image: 'https://images.unsplash.com/photo-1551754655-cd27e38d2076?w=400&auto=format&fit=crop&q=80' },
-        { id: 'steal_2', name: 'Sleepy Owl Assorted Instant Coffee', unit: '10 pcs', price: 29, originalPrice: 49, unlockAt: 899, isVeg: true, image: 'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=400&auto=format&fit=crop&q=80' },
-        { id: 'steal_3', name: 'Farmley Dark Choco Orange Date Bites', unit: '20 g', price: 9, originalPrice: 40, unlockAt: 499, isVeg: true, image: 'https://images.unsplash.com/photo-1549007994-cb92caebd54b?w=400&auto=format&fit=crop&q=80' },
-        { id: 'steal_4', name: 'Fresh Full Cream Milk (1L)', unit: '1 L', price: 49, originalPrice: 66, unlockAt: 299, isVeg: true, image: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=500&auto=format&fit=crop&q=80' },
-        { id: 'steal_5', name: 'Crispy Potato Chips Pack (Salted)', unit: '50 g', price: 9, originalPrice: 20, unlockAt: 199, isVeg: true, image: 'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400&auto=format&fit=crop&q=80' },
-      ]
+      enabled: false,
+      title: 'SPECIAL DEALS',
+      badgePrice: '',
+      subtitle: '',
+      items: []
     };
   });
 
@@ -1023,15 +1010,6 @@ export default function CustomerMenuPage({ onShowToast }) {
         }
       } catch (e) {}
 
-      // Fallback: If no custom dishes exist in API or localStorage for this store, load default store catalog
-      if (combinedDishesList.length === 0) {
-        combinedDishesList = SNACK_RACK_FULL_MENU.map((d) => ({
-          ...d,
-          foodypayId: activeStoreId,
-          merchantId: activeStoreId,
-        }));
-      }
-
       if (combinedDishesList.length > 0) {
         // Final deduplication by lower-case dish name
         const dishMap = new Map();
@@ -1042,6 +1020,8 @@ export default function CustomerMenuPage({ onShowToast }) {
           }
         });
         setDishes(normalizeDishes(Array.from(dishMap.values())));
+      } else {
+        setDishes([]);
       }
 
       const savedMeals = localStorage.getItem('foodypay_crm_meals_v1');
@@ -1619,7 +1599,9 @@ export default function CustomerMenuPage({ onShowToast }) {
       discount: calculatedDiscount,
       tax: calculatedTax,
       total: calculatedTotal,
-      merchantId: storeInfo.merchantId,
+      merchantId: effectiveMerchantId || storeInfo.merchantId,
+      businessId: (effectiveMerchantId || storeInfo.merchantId || '').toUpperCase(),
+      merchantFilter: (effectiveMerchantId || storeInfo.merchantId || '').toUpperCase(),
       restaurantSlug,
       restaurantName: storeInfo.name,
     };
@@ -1652,9 +1634,20 @@ export default function CustomerMenuPage({ onShowToast }) {
       bc.close();
     } catch (err) {}
 
+    // Save directly to Cloud Firestore with isolated businessId
+    try {
+      await saveOrderToFirestore({
+        ...orderObj,
+        businessId: (effectiveMerchantId || storeInfo.merchantId || '').toUpperCase(),
+        merchantFilter: (effectiveMerchantId || storeInfo.merchantId || '').toUpperCase(),
+      });
+    } catch (fsErr) {
+      console.warn('Firestore order dispatch notice:', fsErr);
+    }
+
     try {
       await createPublicOrderApi({
-        merchantId: storeInfo.merchantId,
+        merchantId: effectiveMerchantId || storeInfo.merchantId,
         foodypayId: effectiveMerchantId,
         type: orderObj.type,
         table: orderObj.table,
@@ -2564,8 +2557,25 @@ export default function CustomerMenuPage({ onShowToast }) {
                               boxShadow: '0 4px 12px rgba(0,0,0,0.12)'
                             }}
                           >
-                            {/* Item Image */}
-                            <div style={{ position: 'relative', width: '100%', height: '110px', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#F8FAFC', marginBottom: '8px' }}>
+                            {/* Item Image - Click to Add */}
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateCartQty(deal.id, 1);
+                                if (onShowToast) onShowToast(`🛒 Added "${deal.name}" to Cart!`);
+                              }}
+                              title={`Click image to add "${deal.name}" to cart`}
+                              style={{
+                                position: 'relative',
+                                width: '100%',
+                                height: '110px',
+                                borderRadius: '12px',
+                                overflow: 'hidden',
+                                backgroundColor: '#F8FAFC',
+                                marginBottom: '8px',
+                                cursor: 'pointer'
+                              }}
+                            >
                               <img src={deal.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80'} alt={deal.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                               {deal.isVeg && (
                                 <div style={{ position: 'absolute', bottom: '6px', right: '6px', backgroundColor: '#FFF', borderRadius: '4px', padding: '2px', border: '1px solid #16A34A' }}>
@@ -2701,8 +2711,27 @@ export default function CustomerMenuPage({ onShowToast }) {
                               transition: 'all 0.2s ease'
                             }}
                           >
-                            {/* Dish Image */}
-                            <div style={{ position: 'relative', width: '95px', height: '95px', borderRadius: '12px', overflow: 'hidden', flexShrink: 0, backgroundColor: '#F1F5F9' }}>
+                            {/* Dish Image - Click to Add */}
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (isItemInStock) {
+                                  updateCartQty(dish.id, 1);
+                                  if (onShowToast) onShowToast(`🛒 Added "${dish.name}" to Cart!`);
+                                }
+                              }}
+                              title={isItemInStock ? `Click image to add "${dish.name}" to cart` : 'Out of stock'}
+                              style={{
+                                position: 'relative',
+                                width: '95px',
+                                height: '95px',
+                                borderRadius: '12px',
+                                overflow: 'hidden',
+                                flexShrink: 0,
+                                backgroundColor: '#F1F5F9',
+                                cursor: isItemInStock ? 'pointer' : 'not-allowed'
+                              }}
+                            >
                               <img src={imgUrl} alt={dish.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                               
                               {!isItemInStock && (
@@ -2819,13 +2848,62 @@ export default function CustomerMenuPage({ onShowToast }) {
                         filter: isItemInStock ? 'none' : 'grayscale(100%) opacity(0.6)'
                       }}
                     >
-                      {/* Product Image & Veg Badge */}
-                      <div style={{ position: 'relative', width: '100%', height: '130px', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#F8FAFC', marginBottom: '8px' }}>
+                      {/* Product Image & Veg Badge - Click to Add */}
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isItemInStock) {
+                            updateCartQty(dish.id, 1);
+                            if (onShowToast) onShowToast(`🛒 Added "${dish.name}" to Cart!`);
+                          }
+                        }}
+                        title={isItemInStock ? `Click image to add "${dish.name}" to cart` : 'Out of stock'}
+                        style={{
+                          position: 'relative',
+                          width: '100%',
+                          height: '130px',
+                          borderRadius: '12px',
+                          overflow: 'hidden',
+                          backgroundColor: '#F8FAFC',
+                          marginBottom: '8px',
+                          cursor: isItemInStock ? 'pointer' : 'not-allowed',
+                          userSelect: 'none'
+                        }}
+                      >
                         <img
                           src={imgUrl}
                           alt={dish.name}
-                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            display: 'block',
+                            transition: 'transform 0.2s ease'
+                          }}
                         />
+
+                        {/* Quick Tap-to-Add Floating Hint Badge on hover */}
+                        {isItemInStock && (
+                          <div style={{
+                            position: 'absolute',
+                            bottom: '6px',
+                            right: '6px',
+                            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+                            backdropFilter: 'blur(2px)',
+                            color: '#FFFFFF',
+                            padding: '2px 7px',
+                            borderRadius: '6px',
+                            fontSize: '9.5px',
+                            fontWeight: 800,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                            zIndex: 2,
+                            boxShadow: '0 2px 6px rgba(0,0,0,0.2)'
+                          }}>
+                            <span>+ ADD</span>
+                          </div>
+                        )}
 
                         {!isItemInStock && (
                           <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(15, 23, 42, 0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3 }}>

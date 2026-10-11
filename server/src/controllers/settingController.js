@@ -74,10 +74,7 @@ export const updateSettings = async (req, res, next) => {
     if (restName !== undefined) setting.restName = restName;
     if (phone !== undefined) setting.phone = phone;
     if (address !== undefined) setting.address = address;
-    if (upiId !== undefined) {
-      setting.upiId = upiId.trim();
-      await User.findByIdAndUpdate(req.user._id, { upiId: upiId.trim() }).catch(() => null);
-    }
+    if (upiId !== undefined) setting.upiId = upiId;
     if (paymentRoutingMode !== undefined) setting.paymentRoutingMode = paymentRoutingMode;
     if (razorpayKeyId !== undefined) setting.razorpayKeyId = razorpayKeyId;
     if (razorpayKeySecret !== undefined) setting.razorpayKeySecret = razorpayKeySecret;
