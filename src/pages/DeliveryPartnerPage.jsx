@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { playFoodPreparing, playFoodReady } from '../utils/soundEffects';
 import { fetchOrdersApi, fetchPublicOrdersApi, updateOrderStatusApi } from '../utils/api';
+import { subscribeToOrders } from '../utils/firestoreService';
 
 export default function DeliveryPartnerPage({ onShowToast }) {
   const { restaurantSlug, merchantId } = useParams();
@@ -45,66 +46,28 @@ export default function DeliveryPartnerPage({ onShowToast }) {
   const [paymentModeMap, setPaymentModeMap] = useState({}); // orderId -> 'Cash' | 'UPI'
 
   // Load orders from Live Server API / Local Storage
-  const loadOrders = async () => {
-    const token = localStorage.getItem('foodypay_token');
-    if (token) {
-      try {
-        const fetched = await fetchOrdersApi(token);
-        const fetchedList = fetched.orders || (Array.isArray(fetched) ? fetched : []);
-        if (Array.isArray(fetchedList) && fetchedList.length > 0) {
-          setOrders(fetchedList);
-          return;
-        }
-      } catch (e) {}
-    }
-
-    try {
-      const fetchedPublic = await fetchPublicOrdersApi(merchantId, effectiveMerchantId);
-      if (Array.isArray(fetchedPublic) && fetchedPublic.length > 0) {
-        setOrders(fetchedPublic);
-        return;
-      }
-    } catch (e) {}
-
-    // Fallback to local storage
-    try {
-      const saved = localStorage.getItem('foodypay_crm_orders_v3');
-      if (saved) {
-        setOrders(JSON.parse(saved));
-      } else {
-        setOrders([]);
-      }
-    } catch (e) {
-      setOrders([]);
-    }
-  };
+  const loadOrders = () => {};
 
   useEffect(() => {
-    loadOrders();
-    const pollInterval = setInterval(loadOrders, 4000);
-
-    const handleStorage = (e) => {
-      if (!e || e.key === 'foodypay_crm_orders_v3') {
-        loadOrders();
-      }
-    };
-
-    let bc = null;
+    // Purge stale local storage orders cache if any exists
     try {
-      bc = new BroadcastChannel('foodypay_live_orders_channel');
-      bc.onmessage = () => loadOrders();
+      localStorage.removeItem('foodypay_crm_orders_v3');
     } catch (e) {}
 
-    window.addEventListener('storage', handleStorage);
-    window.addEventListener('foodypay_order_created', loadOrders);
+    // Live real-time Firestore sync
+    let unsubscribeFs = () => {};
+    try {
+      const activeBiz = effectiveMerchantId || merchantId || localStorage.getItem('foodypay_active_business_id') || 'FP-348330';
+      unsubscribeFs = subscribeToOrders(activeBiz, (liveOrders) => {
+        const orderList = Array.isArray(liveOrders) ? liveOrders : [];
+        setOrders(orderList);
+      });
+    } catch (e) {}
 
     return () => {
-      clearInterval(pollInterval);
-      if (bc) bc.close();
-      window.removeEventListener('storage', handleStorage);
-      window.removeEventListener('foodypay_order_created', loadOrders);
+      if (typeof unsubscribeFs === 'function') unsubscribeFs();
     };
-  }, []);
+  }, [effectiveMerchantId, merchantId]);
 
   // Live Clock
   useEffect(() => {

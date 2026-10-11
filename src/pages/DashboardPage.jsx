@@ -225,44 +225,9 @@ export default function DashboardPage({ onShowToast }) {
     }
   };
 
-  const [orders, setOrders] = useState(() => {
-    try {
-      const saved = localStorage.getItem('foodypay_crm_orders_v3');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return sortOrdersNewestFirst(parsed);
-      }
-    } catch (e) {}
-    return [];
-  });
+  const [orders, setOrders] = useState([]);
   const [todayStats, setTodayStats] = useState(null);
-  const [dishes, setDishes] = useState(() => {
-    const activeMerchantId = (() => {
-      try {
-        const u = localStorage.getItem('foodypay_user');
-        if (u) {
-          const parsed = JSON.parse(u);
-          if (parsed.foodypayId) return parsed.foodypayId;
-        }
-      } catch (e) {}
-      return 'FP-985569';
-    })();
-
-    try {
-      const saved = localStorage.getItem('foodypay_crm_dishes_v3');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((d) => ({
-            ...d,
-            foodypayId: d.foodypayId || d.merchantId || activeMerchantId,
-            merchantId: d.merchantId || d.foodypayId || activeMerchantId,
-          }));
-        }
-      }
-    } catch (e) {}
-    return [];
-  });
+  const [dishes, setDishes] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [custSearch, setCustSearch] = useState('');
   const [coupons, setCoupons] = useState([]);
@@ -1495,67 +1460,15 @@ export default function DashboardPage({ onShowToast }) {
       }
     };
 
-    // Polling backend database every 5 seconds for new customer orders
-    const pollBackendOrders = async () => {
-      const token = localStorage.getItem('foodypay_token');
-      if (!token) return;
-      try {
-        const res = await fetchOrdersApi(token);
-        const fetchedOrders = res.orders || (Array.isArray(res) ? res : []);
-        if (res.todayStats) setTodayStats(res.todayStats);
-        if (Array.isArray(fetchedOrders)) {
-          const seenSet = getSeenIds();
-          const statusRank = { new: 1, new_seen: 1, preparing: 2, ready: 3, completed: 4, cancelled: 5 };
-
-          setOrders((prevLocalOrders) => {
-            const localMap = new Map();
-            (prevLocalOrders || []).forEach((lo) => {
-              const idKey = String(lo._id || lo.id || lo.orderId);
-              localMap.set(idKey, lo);
-            });
-
-            if (fetchedOrders.length > 0) {
-              fetchedOrders.forEach((o) => {
-                const oId = String(o._id || o.id || o.orderId);
-                const localOrd = localMap.get(oId);
-
-                let effectiveStatus = o.status;
-                if (localOrd && localOrd.status) {
-                  const localR = statusRank[localOrd.status] || 1;
-                  const remoteR = statusRank[o.status] || 1;
-                  // Preserve local stage if local has progressed further (e.g., preparing vs new)
-                  if (localR > remoteR) {
-                    effectiveStatus = localOrd.status;
-                  }
-                }
-
-                const localIsPaid = localOrd && (localOrd.paymentStatus === 'paid-upi' || localOrd.paymentStatus === 'paid-razorpay' || localOrd.paymentStatus === 'paid-cash' || localOrd.paymentStatus === 'paid');
-                const effectivePaymentStatus = localIsPaid ? localOrd.paymentStatus : (o.paymentStatus || 'unpaid');
-                const effectivePaymentLabel = localIsPaid ? localOrd.paymentLabel : (o.paymentLabel || 'Payment Pending');
-
-                localMap.set(oId, {
-                  ...o,
-                  status: effectiveStatus,
-                  paymentStatus: effectivePaymentStatus,
-                  paymentLabel: effectivePaymentLabel,
-                  seen: Boolean(o.seen || (localOrd && localOrd.seen) || seenSet.has(oId)),
-                });
-              });
-            }
-
-            const merged = sortOrdersNewestFirst(Array.from(localMap.values()));
-            merged.forEach((order) => notifyIfNewOrder(order));
-            return merged;
-          });
-        }
-      } catch (err) {
-        // silent catch during polling
-      }
+    // Real-time Cloud Firestore is the exclusive live data source (No MongoDB polling)
+    const pollBackendOrders = () => {
+      // Sub-second updates are handled directly by Firestore onSnapshot!
     };
 
-    // Real-time Cloud Firestore live listener for sub-second order dispatch & dish catalog isolation
+    // Real-time Cloud Firestore live listener for sub-second order dispatch, dish catalog & dining tables
     let unsubscribeFirestore = () => {};
     let unsubscribeFirestoreDishes = () => {};
+    let unsubscribeFirestoreTables = () => {};
     try {
       const activeBusinessId =
         localStorage.getItem('foodypay_active_business_id') ||
@@ -1565,42 +1478,34 @@ export default function DashboardPage({ onShowToast }) {
         storeControls.foodypayId ||
         'FP-348330';
 
+      // Purge stale local storage orders cache on mount
+      try {
+        localStorage.removeItem('foodypay_crm_orders_v3');
+      } catch (e) {}
+
       unsubscribeFirestore = subscribeToOrders(activeBusinessId, (liveOrders) => {
-        if (Array.isArray(liveOrders) && liveOrders.length > 0) {
-          setOrders((prevLocalOrders) => {
-            const localMap = new Map();
-            (prevLocalOrders || []).forEach((lo) => {
-              const idKey = String(lo._id || lo.id || lo.orderId);
-              localMap.set(idKey, lo);
-            });
-
-            liveOrders.forEach((o) => {
-              const oId = String(o._id || o.id || o.orderId);
-              const localOrd = localMap.get(oId);
-              localMap.set(oId, {
-                ...o,
-                seen: Boolean(o.seen || (localOrd && localOrd.seen)),
-              });
-            });
-
-            const merged = sortOrdersNewestFirst(Array.from(localMap.values()));
-            liveOrders.forEach((order) => notifyIfNewOrder(order));
-            return merged;
-          });
-        }
+        const orderList = Array.isArray(liveOrders) ? liveOrders : [];
+        const seenSet = getSeenIds();
+        const formatted = orderList.map((o) => ({
+          ...o,
+          seen: Boolean(o.seen || seenSet.has(String(o._id || o.id || o.orderId))),
+        }));
+        setOrders(formatted);
+        formatted.forEach((order) => notifyIfNewOrder(order));
       });
 
       // Strict real-time dish catalog subscription per businessId
       unsubscribeFirestoreDishes = subscribeToProducts(activeBusinessId, (liveDishes) => {
-        if (Array.isArray(liveDishes) && liveDishes.length > 0) {
-          setDishes(liveDishes);
-        }
+        setDishes(Array.isArray(liveDishes) ? liveDishes : []);
+      });
+
+      // Strict real-time dining tables subscription per businessId
+      unsubscribeFirestoreTables = subscribeToTables(activeBusinessId, (liveTables) => {
+        setTables(Array.isArray(liveTables) ? liveTables : []);
       });
     } catch (fsErr) {
-      console.warn('Firestore live order listener notice:', fsErr);
+      console.warn('Firestore live listener notice:', fsErr);
     }
-
-    const pollInterval = setInterval(pollBackendOrders, 5000);
 
     const handleAdminSyncRefresh = () => {
       addToast('⚡ Superadmin Updated Store Settings & Controls! Auto-refreshing in 2s...', <Sparkles color="#FF5E14" size={18} />);
@@ -1619,7 +1524,6 @@ export default function DashboardPage({ onShowToast }) {
             return;
           }
           handleNewOrderEvent();
-          pollBackendOrders();
         }
       };
     } catch (e) {}
@@ -1636,7 +1540,7 @@ export default function DashboardPage({ onShowToast }) {
     return () => {
       if (typeof unsubscribeFirestore === 'function') unsubscribeFirestore();
       if (typeof unsubscribeFirestoreDishes === 'function') unsubscribeFirestoreDishes();
-      clearInterval(pollInterval);
+      if (typeof unsubscribeFirestoreTables === 'function') unsubscribeFirestoreTables();
       if (bc) bc.close();
       window.removeEventListener('foodypay_order_created', handleNewOrderEvent);
       window.removeEventListener('foodypay_admin_settings_updated', handleAdminSyncRefresh);
@@ -1885,58 +1789,12 @@ export default function DashboardPage({ onShowToast }) {
 
       setLoadingData(true);
       try {
-        const [ordersRes, dishesRes, customersRes, couponsRes, tablesRes, settingsRes, reviewsRes] = await Promise.allSettled([
-          fetchOrdersApi(token),
-          fetchDishesApi(token),
+        const [customersRes, couponsRes, settingsRes, reviewsRes] = await Promise.allSettled([
           fetchCustomersApi(token),
           fetchCouponsApi(token),
-          fetchTablesApi(token),
           fetchSettingsApi(token),
           fetchReviewsApi(token),
         ]);
-
-        if (ordersRes.status === 'fulfilled') {
-          const val = ordersRes.value;
-          const fetchedOrders = (val && Array.isArray(val.orders)) ? val.orders : (Array.isArray(val) ? val : []);
-          if (val && val.todayStats) setTodayStats(val.todayStats);
-
-          if (fetchedOrders.length > 0) {
-            setOrders((prev) => {
-              const map = new Map((prev || []).map((o) => [String(o._id || o.id || o.orderId), o]));
-              fetchedOrders.forEach((o) => {
-                const oId = String(o._id || o.id || o.orderId);
-                map.set(oId, { ...map.get(oId), ...o });
-              });
-              return Array.from(map.values());
-            });
-          }
-        }
-
-        const storeFpId = storeControls.foodypayId || currentUser.foodypayId || 'FP-985569';
-        if (dishesRes.status === 'fulfilled' && Array.isArray(dishesRes.value) && dishesRes.value.length > 0) {
-          const taggedApiDishes = dishesRes.value.map((d) => ({
-            ...d,
-            foodypayId: d.foodypayId || d.merchantId || storeFpId,
-            merchantId: d.merchantId || d.foodypayId || storeFpId,
-          }));
-          setDishes(taggedApiDishes);
-        } else {
-          try {
-            const saved = localStorage.getItem('foodypay_crm_dishes_v3');
-            if (saved) {
-              const parsed = JSON.parse(saved);
-              if (Array.isArray(parsed) && parsed.length > 0) {
-                setDishes(parsed.map((d) => ({ ...d, foodypayId: storeFpId, merchantId: storeFpId })));
-              } else {
-                setDishes([]);
-              }
-            } else {
-              setDishes([]);
-            }
-          } catch (e) {
-            setDishes([]);
-          }
-        }
 
         if (reviewsRes.status === 'fulfilled' && Array.isArray(reviewsRes.value)) setReviews(reviewsRes.value);
 
@@ -1945,9 +1803,6 @@ export default function DashboardPage({ onShowToast }) {
 
         if (couponsRes.status === 'fulfilled' && Array.isArray(couponsRes.value)) setCoupons(couponsRes.value);
         else setCoupons(INITIAL_COUPONS);
-
-        if (tablesRes.status === 'fulfilled' && Array.isArray(tablesRes.value)) setTables(tablesRes.value);
-        else setTables(INITIAL_TABLES);
         if (settingsRes.status === 'fulfilled' && settingsRes.value) {
           const s = settingsRes.value;
           let uBusName = '';

@@ -266,11 +266,18 @@ export async function settleCustomerDueInFirestore(dueId, settleDetails = {}) {
 /**
  * Subscribe to Dining Tables in Cloud Firestore
  */
-export function subscribeToTables(userId, onUpdate, onError) {
+export function subscribeToTables(businessId, onUpdate, onError) {
   try {
     const tablesRef = collection(firestoreDb, FIRESTORE_COLLECTIONS.TABLES);
+    let q;
+    if (businessId && businessId !== 'all' && businessId !== 'master') {
+      const bId = String(businessId).trim().toUpperCase();
+      q = query(tablesRef, where('businessId', '==', bId), limit(200));
+    } else {
+      q = query(tablesRef, limit(200));
+    }
     return onSnapshot(
-      tablesRef,
+      q,
       (snapshot) => {
         const tables = [];
         snapshot.forEach((snap) => {
@@ -295,8 +302,9 @@ export function subscribeToTables(userId, onUpdate, onError) {
 export async function saveTableToFirestore(tableData) {
   try {
     const tableId = String(tableData._id || tableData.id || `table_${Date.now()}`);
+    const bId = String(tableData.businessId || tableData.foodypayId || tableData.merchantId || '').trim().toUpperCase();
     const docRef = doc(firestoreDb, FIRESTORE_COLLECTIONS.TABLES, tableId);
-    await setDoc(docRef, sanitizeDoc({ ...tableData, id: tableId, _id: tableId }), { merge: true });
+    await setDoc(docRef, sanitizeDoc({ ...tableData, id: tableId, _id: tableId, businessId: bId }), { merge: true });
     return { success: true, id: tableId };
   } catch (err) {
     console.warn('saveTableToFirestore warning:', err.message);

@@ -168,52 +168,24 @@ export default function KitchenDisplayPage({ onShowToast }) {
     note: 'Serve HOT',
   });
 
-  // Load orders from Live Server API for THIS specific merchant (NO SAMPLE FALLBACKS)
-  const loadOrders = async () => {
-    const token = localStorage.getItem('foodypay_token');
-    if (token) {
-      try {
-        const fetched = await fetchOrdersApi(token);
-        const fetchedList = fetched.orders || (Array.isArray(fetched) ? fetched : []);
-        if (Array.isArray(fetchedList) && fetchedList.length > 0) {
-          setOrders(sortOrdersNewestFirst(fetchedList));
-          return;
-        }
-      } catch (e) {}
-    }
-
-    try {
-      const fetchedPublic = await fetchPublicOrdersApi(merchantId, effectiveMerchantId);
-      if (Array.isArray(fetchedPublic) && fetchedPublic.length > 0) {
-        setOrders(sortOrdersNewestFirst(fetchedPublic));
-        return;
-      }
-    } catch (e) {}
-
-    // Fallback to local storage (only real customer created orders)
-    try {
-      const saved = localStorage.getItem('foodypay_crm_orders_v3');
-      if (saved) {
-        setOrders(sortOrdersNewestFirst(JSON.parse(saved)));
-      } else {
-        setOrders([]);
-      }
-    } catch (e) {
-      setOrders([]);
-    }
+  // Real-time Cloud Firestore is the exclusive live data source (No dummy MongoDB seed fallback)
+  const loadOrders = () => {
+    // Orders are kept 100% in sync in real time via Firestore subscribeToOrders!
   };
 
   useEffect(() => {
-    loadOrders();
-    const pollInterval = setInterval(loadOrders, 4000);
+    // Purge stale local storage orders cache if any exists
+    try {
+      localStorage.removeItem('foodypay_crm_orders_v3');
+    } catch (e) {}
 
     // Live real-time Firestore sync for Kitchen KDS
     let unsubscribeFs = () => {};
     try {
-      unsubscribeFs = subscribeToOrders(effectiveMerchantId || merchantId, (liveOrders) => {
-        if (Array.isArray(liveOrders) && liveOrders.length > 0) {
-          setOrders(sortOrdersNewestFirst(liveOrders));
-        }
+      const activeBiz = effectiveMerchantId || merchantId || localStorage.getItem('foodypay_active_business_id') || 'FP-348330';
+      unsubscribeFs = subscribeToOrders(activeBiz, (liveOrders) => {
+        const orderList = Array.isArray(liveOrders) ? liveOrders : [];
+        setOrders(sortOrdersNewestFirst(orderList));
       });
     } catch (e) {}
 

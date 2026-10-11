@@ -102,44 +102,7 @@ export default function LoginPage({ onShowToast }) {
 
     setLoading(true);
     try {
-      // Step A: Check Partner / Store 6-Digit Unique ID or issued credentials
-      const localCheck = validateDashboardLogin(cleanInput, cleanPass);
-      if (localCheck && localCheck.valid) {
-        const uId = cleanInput.startsWith('FP-') ? cleanInput.toUpperCase() : `FP-${cleanInput.slice(0, 6).toUpperCase()}`;
-        const userData = {
-          token: 'foodypay_token_' + Date.now(),
-          name: localCheck.role || 'Restaurant Manager',
-          email: cleanInput.includes('@') ? cleanInput.toLowerCase() : `${cleanInput.toLowerCase()}@foodypay.com`,
-          role: localCheck.role || 'Restaurant Owner',
-          foodypayId: uId,
-          businessId: uId,
-          businessName: localCheck.businessName || 'My Restaurant POS',
-          plan: 'Pro',
-        };
-
-        // Cache or sync in Firestore Business_Users
-        saveBusinessUserToFirestore(userData).catch(() => {});
-
-        localStorage.setItem('foodypay_token', userData.token);
-        localStorage.setItem('foodypay_user', JSON.stringify(userData));
-        localStorage.setItem('foodypay_active_business_id', uId);
-
-        if (rememberMe) {
-          localStorage.setItem('foodypay_remember_email', cleanInput);
-          localStorage.setItem('foodypay_remember_password', cleanPass);
-        }
-
-        playMilestoneCelebration();
-        confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
-        if (onShowToast) onShowToast(`Welcome back, ${userData.businessName} [${uId}]!`);
-
-        setTimeout(() => {
-          navigate('/dashboard');
-        }, 500);
-        return;
-      }
-
-      // Step B: Check Business Registration in Database (Cloud Firestore or MongoDB)
+      // Step A: Check Business Registration strictly in Cloud Firestore Business_Users
       let businessProfile = null;
       if (cleanInput.toUpperCase().startsWith('FP-') || !cleanInput.includes('@')) {
         businessProfile = await getBusinessUserByUniqueId(cleanInput);
@@ -147,114 +110,68 @@ export default function LoginPage({ onShowToast }) {
         businessProfile = await getBusinessUserByEmail(cleanInput);
       }
 
-      // Also check MongoDB backend if cleanInput is an email
-      let mongoUserFound = false;
-      if (cleanInput.includes('@')) {
-        try {
-          const dbCheck = await checkEmailExistsApi(cleanInput);
-          if (dbCheck && dbCheck.exists) {
-            mongoUserFound = true;
-          }
-        } catch (dbErr) {
-          // If 404/not found, mongoUserFound stays false
-        }
-      }
-
-      // If NOT found in Firestore Business_Users AND not found in MongoDB Database, BLOCK LOGIN!
-      if (!businessProfile && !mongoUserFound) {
+      // If NOT registered in Firestore Business_Users, BLOCK LOGIN COMPLETELY!
+      if (!businessProfile) {
         setNoAccountEmail(cleanInput);
         throw new Error(`No registered Business found for "${cleanInput}". You must register your Business first on /register!`);
       }
 
-      // Step C: If user exists in Database, proceed with authentication
-      let authSuccess = false;
-      let token = 'token_' + Date.now();
-      let fbUser = null;
+      if (businessProfile.isLocked) {
+        throw new Error(`This Business account is locked. Reason: ${businessProfile.lockReason || 'Subscription Payment Required'}`);
+      }
 
-      if (cleanInput.includes('@')) {
-        // Try backend login first, then Firebase
+      // Step B: Authenticate Password against Firebase Auth using registered email
+      let token = 'token_fs_' + Date.now();
+      const authEmail = businessProfile.email || (cleanInput.includes('@') ? cleanInput.toLowerCase() : null);
+
+      if (authEmail) {
         try {
-          const apiRes = await loginApi(cleanInput.toLowerCase(), cleanPass);
-          if (apiRes && apiRes.data) {
-            token = apiRes.data.token || token;
-            authSuccess = true;
-          }
-        } catch (apiErr) {
-          try {
-            const fbRes = await loginWithFirebaseEmail(cleanInput.toLowerCase(), cleanPass);
-            token = fbRes.token;
-            fbUser = fbRes.user;
-            authSuccess = true;
-          } catch (fbErr) {
-            throw new Error('Incorrect password. Please enter your registered password.');
+          const fbRes = await loginWithFirebaseEmail(authEmail, cleanPass);
+          if (fbRes?.token) token = fbRes.token;
+        } catch (fbErr) {
+          // If stored direct password match
+          if (businessProfile.password && businessProfile.password === cleanPass) {
+            // direct match
+          } else {
+            throw new Error('Incorrect password. Please enter your registered account password.');
           }
         }
-      }
-
-      if (businessProfile) {
-        if (businessProfile.isLocked) {
-          throw new Error(`This Business account is locked. Reason: ${businessProfile.lockReason || 'Subscription Payment Required'}`);
+      } else {
+        if (businessProfile.password && businessProfile.password !== cleanPass) {
+          throw new Error('Incorrect password. Please enter your registered account password.');
         }
-
-        const bId = businessProfile.uniqueId || businessProfile.businessId || 'FP-348330';
-        const userData = {
-          ...businessProfile,
-          token,
-          foodypayId: bId,
-          businessId: bId,
-          role: 'Restaurant Owner',
-          businessName: businessProfile.businessName || 'My Restaurant POS',
-        };
-
-        localStorage.setItem('foodypay_token', userData.token);
-        localStorage.setItem('foodypay_user', JSON.stringify(userData));
-        localStorage.setItem('foodypay_active_business_id', bId);
-
-        if (rememberMe) {
-          localStorage.setItem('foodypay_remember_email', cleanInput);
-          localStorage.setItem('foodypay_remember_password', cleanPass);
-        }
-
-        playMilestoneCelebration();
-        confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
-        if (onShowToast) onShowToast(`Logged into ${userData.businessName}!`);
-
-        setTimeout(() => {
-          navigate('/dashboard');
-        }, 500);
-        return;
       }
 
-      if (authSuccess && mongoUserFound) {
-        const uId = `FP-${Math.floor(100000 + Math.random() * 900000)}`;
-        const userData = {
-          token,
-          uid: fbUser?.uid,
-          name: fbUser?.displayName || cleanInput.split('@')[0],
-          email: cleanInput.toLowerCase(),
-          role: 'Restaurant Owner',
-          foodypayId: uId,
-          businessId: uId,
-          businessName: 'My Restaurant POS',
-          plan: 'Free',
-        };
+      const bId = (businessProfile.uniqueId || businessProfile.businessId || 'FP-348330').toUpperCase();
+      const userData = {
+        ...businessProfile,
+        token,
+        foodypayId: bId,
+        businessId: bId,
+        role: 'Restaurant Owner',
+        businessName: businessProfile.businessName || 'My Restaurant POS',
+      };
 
-        saveBusinessUserToFirestore(userData).catch(() => {});
-        localStorage.setItem('foodypay_token', userData.token);
-        localStorage.setItem('foodypay_user', JSON.stringify(userData));
-        localStorage.setItem('foodypay_active_business_id', uId);
+      localStorage.setItem('foodypay_token', userData.token);
+      localStorage.setItem('foodypay_user', JSON.stringify(userData));
+      localStorage.setItem('foodypay_active_business_id', bId);
 
-        playMilestoneCelebration();
-        confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
-        if (onShowToast) onShowToast(`Welcome back, ${userData.name}!`);
+      // Clear any legacy mock order cache from other sessions
+      localStorage.removeItem('foodypay_crm_orders_v3');
 
-        setTimeout(() => {
-          navigate('/dashboard');
-        }, 500);
-        return;
+      if (rememberMe) {
+        localStorage.setItem('foodypay_remember_email', cleanInput);
+        localStorage.setItem('foodypay_remember_password', cleanPass);
       }
 
-      throw new Error('Invalid Restaurant Unique ID/Email or Password. Please check credentials.');
+      playMilestoneCelebration();
+      confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
+      if (onShowToast) onShowToast(`Logged into ${userData.businessName}!`);
+
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 500);
+      return;
     } catch (err) {
       setError(err.message || 'Authentication failed. Please check credentials.');
     } finally {
@@ -329,44 +246,37 @@ export default function LoginPage({ onShowToast }) {
       }
 
       // Check if Business User profile exists in Firestore Business_Users
-      let bProfile = await getBusinessUserByEmail(gEmail);
+      const bProfile = await getBusinessUserByEmail(gEmail);
 
-      // Check if user exists in MongoDB backend
-      let mongoUserFound = false;
-      try {
-        const dbCheck = await checkEmailExistsApi(gEmail);
-        if (dbCheck && dbCheck.exists) {
-          mongoUserFound = true;
-        }
-      } catch (e) {}
-
-      // If user is NOT registered in database, DO NOT allow login even if Google email is verified!
-      if (!bProfile && !mongoUserFound) {
+      // If user is NOT registered in Cloud Firestore Business_Users, DO NOT allow login even if Google email is verified!
+      if (!bProfile) {
         setNoAccountEmail(gEmail);
-        throw new Error(`Email "${gEmail}" is verified, but NO Business account is registered in our Database! Please complete registration at /register first.`);
+        throw new Error(`Email "${gEmail}" is verified, but NO Business account is registered in Cloud Firestore! Please register your business on /register first.`);
       }
 
-      if (bProfile && bProfile.isLocked) {
+      if (bProfile.isLocked) {
         throw new Error(`This Business account is locked. Reason: ${bProfile.lockReason || 'Subscription Payment Required'}`);
       }
 
-      const activeBizId = bProfile?.uniqueId || bProfile?.businessId || `FP-${Math.floor(100000 + Math.random() * 900000)}`;
+      const activeBizId = (bProfile.uniqueId || bProfile.businessId || 'FP-348330').toUpperCase();
 
       const userData = {
+        ...bProfile,
         token: fbRes?.token || 'token_' + Date.now(),
         uid: gUid,
-        name: bProfile?.ownerName || gName,
+        name: bProfile.ownerName || gName,
         email: gEmail,
         role: 'Restaurant Owner',
         foodypayId: activeBizId,
         businessId: activeBizId,
-        businessName: bProfile?.businessName || `${gName}'s Restaurant`,
-        plan: bProfile?.plan || 'Free',
+        businessName: bProfile.businessName || `${gName}'s Restaurant`,
+        plan: bProfile.plan || 'Free',
       };
 
       localStorage.setItem('foodypay_token', userData.token);
       localStorage.setItem('foodypay_user', JSON.stringify(userData));
       localStorage.setItem('foodypay_active_business_id', activeBizId);
+      localStorage.removeItem('foodypay_crm_orders_v3');
 
       playMilestoneCelebration();
       confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });

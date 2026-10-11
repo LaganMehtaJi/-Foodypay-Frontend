@@ -59,57 +59,50 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
     try {
       let response = null;
 
-      // Strict Database Verification: Must exist in Database (Firestore or MongoDB)
-      const [fsBiz, dbCheck] = await Promise.all([
-        getBusinessUserByEmail(cleanEmail).catch(() => null),
-        checkEmailExistsApi(cleanEmail).catch(() => null),
-      ]);
+      // Strict Database Verification: Must exist in Cloud Firestore Business_Users
+      const fsBiz = await getBusinessUserByEmail(cleanEmail).catch(() => null);
 
-      if (!fsBiz && (!dbCheck || !dbCheck.exists)) {
+      if (!fsBiz) {
         throw new Error(`No registered Business account found for "${cleanEmail}". Please register first on /register!`);
       }
 
-      // 1. Primary Authentication: Attempt MongoDB Backend login directly
+      if (fsBiz.isLocked) {
+        throw new Error(`This Business account is locked. Reason: ${fsBiz.lockReason || 'Subscription Payment Required'}`);
+      }
+
+      // Authenticate via Firebase Auth
+      let token = 'token_fs_' + Date.now();
       try {
-        response = await loginApi(cleanEmail, cleanPassword);
-      } catch (dbErr) {
-        // 2. Fallback Attempt via Firebase Auth Sync
-        try {
-          const fbRes = await loginWithFirebaseEmail(cleanEmail, cleanPassword);
-          if (fbRes && fbRes.user) {
-            response = await firebaseAuthApi({
-              firebaseToken: fbRes.token,
-              uid: fbRes.user.uid,
-              email: fbRes.user.email,
-              name: fbRes.user.displayName || cleanEmail.split('@')[0],
-              emailVerified: fbRes.user.emailVerified,
-              providerId: 'password',
-            });
-          }
-        } catch (fbErr) {
-          throw dbErr;
+        const fbRes = await loginWithFirebaseEmail(cleanEmail, cleanPassword);
+        if (fbRes?.token) token = fbRes.token;
+      } catch (fbErr) {
+        if (fsBiz.password && fsBiz.password === cleanPassword) {
+          // Direct password match
+        } else {
+          throw new Error('Incorrect password. Please enter your registered password.');
         }
       }
 
-      // If response is still null but found in Firestore, craft session
-      if (!response && fsBiz) {
-        response = {
-          success: true,
-          data: {
-            ...fsBiz,
-            token: 'token_fs_' + Date.now(),
-            role: 'Restaurant Owner',
-            foodypayId: fsBiz.uniqueId,
-            businessId: fsBiz.uniqueId,
-          }
-        };
-      }
+      const bId = (fsBiz.uniqueId || fsBiz.businessId || 'FP-348330').toUpperCase();
+      response = {
+        success: true,
+        data: {
+          ...fsBiz,
+          token,
+          role: 'Restaurant Owner',
+          foodypayId: bId,
+          businessId: bId,
+          businessName: fsBiz.businessName || 'My Restaurant POS',
+        }
+      };
 
       if (response && response.success && response.data) {
         const userData = response.data;
         if (userData.token) {
           localStorage.setItem('foodypay_token', userData.token);
           localStorage.setItem('foodypay_user', JSON.stringify(userData));
+          localStorage.setItem('foodypay_active_business_id', userData.foodypayId || userData.businessId || 'FP-348330');
+          localStorage.removeItem('foodypay_crm_orders_v3');
         }
 
         if (rememberMe) {
@@ -125,7 +118,7 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
         confetti({ particleCount: 100, spread: 70, origin: { y: 0.5 } });
 
         if (onShowToast) {
-          onShowToast(`Welcome back, ${userData.name}!`);
+          onShowToast(`Welcome back, ${userData.name || userData.businessName}!`);
         }
         setTimeout(() => {
           window.location.href = '/dashboard';
@@ -153,37 +146,27 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
 
       const gEmail = firebaseRes?.user?.email ? firebaseRes.user.email.toLowerCase().trim() : email.trim().toLowerCase();
       const gName = firebaseRes?.user?.displayName || 'Restaurant Owner';
-      const gUid = firebaseRes?.user?.uid || 'google_uid_' + Date.now();
-      const gPhoto = firebaseRes?.user?.photoURL || '';
 
-      // Check if Business exists in Database (Firestore Business_Users or MongoDB)
-      const [fsBiz, dbCheck] = await Promise.all([
-        getBusinessUserByEmail(gEmail).catch(() => null),
-        checkEmailExistsApi(gEmail).catch(() => null),
-      ]);
+      // Check if Business exists in Firestore Business_Users
+      const fsBiz = await getBusinessUserByEmail(gEmail).catch(() => null);
 
-      if (!fsBiz && (!dbCheck || !dbCheck.exists)) {
-        throw new Error(`Google Email "${gEmail}" is verified, but NO Business account is registered in Database! Please register on /register first.`);
+      if (!fsBiz) {
+        throw new Error(`Google Email "${gEmail}" is verified, but NO Business account is registered in Cloud Firestore! Please register on /register first.`);
       }
 
-      const googlePayload = {
-        firebaseToken: firebaseRes?.token || 'google_token_' + Date.now(),
-        credential: firebaseRes?.token || 'google_token_' + Date.now(),
-        uid: gUid,
-        email: gEmail,
-        name: fsBiz?.ownerName || gName,
-        picture: gPhoto,
-        providerId: 'google.com',
-      };
+      if (fsBiz.isLocked) {
+        throw new Error(`This Business account is locked. Reason: ${fsBiz.lockReason || 'Subscription Payment Required'}`);
+      }
 
-      const res = await firebaseAuthApi(googlePayload).catch(() => googleAuthApi(googlePayload));
-      const finalData = (res && res.success && res.data) ? res.data : (fsBiz ? {
+      const bId = (fsBiz.uniqueId || fsBiz.businessId || 'FP-348330').toUpperCase();
+      const finalData = {
         ...fsBiz,
-        token: 'token_google_' + Date.now(),
+        token: firebaseRes?.token || 'token_google_' + Date.now(),
         role: 'Restaurant Owner',
-        foodypayId: fsBiz.uniqueId,
-        businessId: fsBiz.uniqueId,
-      } : null);
+        foodypayId: bId,
+        businessId: bId,
+        businessName: fsBiz.businessName || `${gName}'s Restaurant`,
+      };
 
       if (finalData) {
         if (finalData.token) {
