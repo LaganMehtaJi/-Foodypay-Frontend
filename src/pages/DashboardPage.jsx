@@ -57,6 +57,12 @@ import {
   Compass,
   Save,
   RefreshCw,
+  Wallet,
+  FileText,
+  History,
+  LayoutGrid,
+  ArrowRightLeft,
+  Bike,
 } from 'lucide-react';
 import {
   playOrderPlaced,
@@ -677,7 +683,7 @@ export default function DashboardPage({ onShowToast }) {
   const isReviewsLocked = true; // Hidden for now
   const isDeliveryPartnerLocked = true; // Hidden for now
   const isThemesLocked = true; // Hidden for now
-  const isGrowLocked = false;
+  const isGrowLocked = true; // Hidden from store dashboard - accessible in partner console
   const isCollectionsLocked = true; // Hidden for now
   const isWishlistLocked = true; // Hidden for now
   const isDeliveryStoresLocked = true; // Hidden for now
@@ -1995,6 +2001,25 @@ export default function DashboardPage({ onShowToast }) {
   // Order Details Modal state (view light / completed / cancelled card details)
   const [viewingOrderDetails, setViewingOrderDetails] = useState(null);
 
+  // Customer Account Profile & Due (Khata) Management State
+  const [activeCustomerProfile, setActiveCustomerProfile] = useState(null);
+  const [showAddManualDue, setShowAddManualDue] = useState(false);
+  const [manualDueForm, setManualDueForm] = useState({ amount: '', reason: '' });
+  const [customerDuesMap, setCustomerDuesMap] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_customer_dues_v1');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('foodypay_customer_dues_v1', JSON.stringify(customerDuesMap));
+    } catch (e) {}
+  }, [customerDuesMap]);
+
   // Keyboard navigation refs
   const manualCustRef = React.useRef(null);
   const manualPhoneRef = React.useRef(null);
@@ -2020,10 +2045,61 @@ export default function DashboardPage({ onShowToast }) {
     }
   };
 
-  const handleOpenManualOrder = () => {
+  // POS Interactive Visual Table View State ('cards' | 'tables')
+  const [posTableViewMode, setPosTableViewMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_pos_table_view_mode');
+      if (saved) return saved;
+    } catch (e) {}
+    return 'tables'; // Default to visual interactive Table View as requested
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('foodypay_pos_table_view_mode', posTableViewMode);
+    } catch (e) {}
+  }, [posTableViewMode]);
+
+  // Move KOT / Items to another Table Modal State
+  const [isMoveKotModalOpen, setIsMoveKotModalOpen] = useState(false);
+  const [moveKotSourceOrder, setMoveKotSourceOrder] = useState(null);
+  const [moveKotTargetTable, setMoveKotTargetTable] = useState('');
+
+  // Handle Move KOT to another Table
+  const handleMoveKotSubmit = (e) => {
+    if (e) e.preventDefault();
+    if (!moveKotSourceOrder || !moveKotTargetTable) return;
+    const orderId = moveKotSourceOrder._id || moveKotSourceOrder.id;
+
+    const updated = orders.map((o) => {
+      if (o._id === orderId || o.id === orderId) {
+        return {
+          ...o,
+          table: moveKotTargetTable,
+          note: o.note ? `${o.note} (Shifted from ${o.table || 'Table'} to ${moveKotTargetTable})` : `Shifted from ${o.table || 'Table'} to ${moveKotTargetTable}`,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return o;
+    });
+
+    setOrders(updated);
+    try {
+      localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updated));
+      window.dispatchEvent(new Event('foodypay_order_created'));
+      window.dispatchEvent(new Event('storage'));
+    } catch (err) {}
+
+    addToast(`Order shifted to ${moveKotTargetTable} successfully!`, <Check size={18} />);
+    setIsMoveKotModalOpen(false);
+    setMoveKotSourceOrder(null);
+    setMoveKotTargetTable('');
+  };
+
+  const handleOpenManualOrder = (defaultTable = null, defaultType = 'Dine-In') => {
     setEditingOrderId(null);
-    setManualOrderType('Dine-In');
-    setManualTable('Table 1');
+    setManualOrderType(defaultType);
+    setManualTable(defaultTable || 'Table 1');
     setManualCustomer('');
     setManualPhone('');
     setManualItems({});
@@ -2243,7 +2319,8 @@ export default function DashboardPage({ onShowToast }) {
         table: manualOrderType === 'Dine-In' ? manualTable : manualOrderType === 'Takeaway' ? 'Counter 1' : 'Home Delivery',
         customer: manualCustomer.trim() || 'Walk-in Guest',
         phone: manualPhone.trim() || '',
-        paymentStatus: manualPaymentMode.includes('UPI') ? 'paid-upi' : 'cash',
+        paymentStatus: manualPaymentMode.includes('UPI') ? 'paid-upi' : (manualPaymentMode.includes('Due') ? 'due' : 'cash'),
+        isPaid: !manualPaymentMode.includes('Due'),
         paymentLabel: manualPaymentMode,
         items: formattedItems,
         note: manualCoupon ? `Applied Coupon: ${manualCoupon}` : editingOrderId ? 'Order items updated from counter' : 'Manual Order Created from Counter',
@@ -2435,6 +2512,295 @@ export default function DashboardPage({ onShowToast }) {
     addToast(`Payment of ₹${finalTotal} received via UPI QR!`, <Check size={18} />);
     setShowUpiQrModal(false);
     setActiveBillSettlementOrder(null);
+  };
+
+  // 3. Mark Bill as Due / Khata (Customer Udhaar)
+  const handleSettleBillDue = async (dueNote = '') => {
+    if (!activeBillSettlementOrder) return;
+    const orderId = activeBillSettlementOrder._id || activeBillSettlementOrder.id;
+    const { finalTotal } = getSettleCalculations();
+    const custPhone = activeBillSettlementOrder.phone || activeBillSettlementOrder.customerPhone || '';
+    const custName = activeBillSettlementOrder.customer || activeBillSettlementOrder.customerName || 'Customer';
+
+    const updatedList = orders.map((ord) =>
+      ord.id === orderId || ord._id === orderId
+        ? {
+            ...ord,
+            total: finalTotal,
+            status: 'completed',
+            isPaid: false,
+            seen: true,
+            paymentStatus: 'due',
+            paymentLabel: 'Due (Khata)',
+            dueNote: dueNote || 'Pending payment',
+            dueMarkedAt: new Date().toISOString(),
+          }
+        : ord
+    );
+    setOrders(updatedList);
+
+    const cleanPhone = String(custPhone).replace(/\D/g, '').slice(-10);
+    const phoneKey = cleanPhone || String(custName).trim().toLowerCase() || 'unknown';
+    const currentCustObj = customerDuesMap[phoneKey] || { entries: [] };
+    const newEntry = {
+      id: 'due_ord_' + Date.now(),
+      orderId: activeBillSettlementOrder.orderId || orderId,
+      amount: finalTotal,
+      reason: dueNote || `Order #${activeBillSettlementOrder.orderId || orderId} checkout`,
+      date: new Date().toISOString(),
+      status: 'pending',
+      items: activeBillSettlementOrder.items || [],
+      table: activeBillSettlementOrder.table || 'Counter',
+    };
+
+    const updatedDuesMap = {
+      ...customerDuesMap,
+      [phoneKey]: {
+        customerName: custName,
+        customerPhone: custPhone,
+        entries: [newEntry, ...(currentCustObj.entries || [])],
+      },
+    };
+    setCustomerDuesMap(updatedDuesMap);
+
+    try {
+      localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updatedList));
+      localStorage.setItem('foodypay_customer_dues_v1', JSON.stringify(updatedDuesMap));
+      window.dispatchEvent(new Event('foodypay_order_created'));
+      window.dispatchEvent(new Event('storage'));
+      const bc = new BroadcastChannel('foodypay_live_orders_channel');
+      bc.postMessage({ type: 'ORDER_SETTLED', orderId, status: 'completed', paymentStatus: 'due' });
+      bc.close();
+    } catch (e) {}
+
+    if (token) {
+      try {
+        await updateOrderApi(token, orderId, {
+          ...activeBillSettlementOrder,
+          total: finalTotal,
+          status: 'completed',
+          isPaid: false,
+          seen: true,
+          paymentStatus: 'due',
+          paymentLabel: 'Due (Khata)',
+        });
+      } catch (err) {}
+    }
+
+    addToast(`Order ${activeBillSettlementOrder.orderId || orderId} marked as DUE (₹${finalTotal}) on ${custName} (${custPhone || 'No Phone'})!`, <AlertCircle color="#EA580C" size={18} />);
+    setActiveBillSettlementOrder(null);
+  };
+
+  // Helper: Calculate Due Balance & Unified History for any Customer
+  const getCustomerDues = (cust) => {
+    if (!cust) return { totalDue: 0, totalCleared: 0, dueOrders: [], allHistory: [] };
+    const cleanCustPhone = String(cust.phone || '').replace(/\D/g, '').slice(-10);
+    const cleanCustName = String(cust.name || '').trim().toLowerCase();
+
+    // 1. Orders matching this customer
+    const matchedOrders = (orders || []).filter((o) => {
+      const oPhone = String(o.phone || o.customerPhone || o.contactNo || o.mobile || '').replace(/\D/g, '').slice(-10);
+      const oName = String(o.customer || o.customerName || o.name || '').trim().toLowerCase();
+      if (cleanCustPhone && oPhone && cleanCustPhone === oPhone) return true;
+      if (!cleanCustPhone && cleanCustName && oName === cleanCustName) return true;
+      return false;
+    });
+
+    // 2. Extra dues stored in customerDuesMap
+    const phoneKey = cleanCustPhone || cleanCustName || cust._id || cust.id;
+    const customEntries = (customerDuesMap[phoneKey] || {}).entries || [];
+
+    // Due orders: orders where paymentStatus is 'due'
+    const dueOrders = matchedOrders.filter((o) => o && o.paymentStatus === 'due');
+
+    // Order History of dues (both pending and cleared)
+    const orderHistory = matchedOrders
+      .filter((o) => o && (o.paymentStatus === 'due' || o.dueClearedAt || o.dueMarkedAt))
+      .map((o) => ({
+        id: o._id || o.id,
+        orderId: o.orderId || o.id,
+        date: o.createdAt || o.timestamp || o.date || new Date().toISOString(),
+        amount: Number(o.total) || 0,
+        status: o.paymentStatus === 'due' ? 'pending' : 'cleared',
+        clearedAt: o.dueClearedAt || null,
+        clearedMode: o.dueClearedMode || (String(o.paymentStatus).includes('cash') ? 'Cash' : 'UPI'),
+        items: o.items || [],
+        table: o.table || 'Counter',
+        type: 'order',
+        note: o.dueNote || 'Bill marked as Due',
+      }));
+
+    const manualHistory = customEntries.map((m) => ({
+      ...m,
+      type: 'manual',
+    }));
+
+    const allHistory = [...orderHistory, ...manualHistory].sort(
+      (a, b) => new Date(b.date || 0) - new Date(a.date || 0)
+    );
+
+    const pendingOrderDue = dueOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+    const pendingManualDue = customEntries
+      .filter((m) => m.status === 'pending')
+      .reduce((sum, m) => sum + (Number(m.amount) || 0), 0);
+    const totalDue = pendingOrderDue + pendingManualDue;
+
+    const clearedOrderDue = orderHistory
+      .filter((o) => o.status === 'cleared')
+      .reduce((sum, o) => sum + (Number(o.amount) || 0), 0);
+    const clearedManualDue = customEntries
+      .filter((m) => m.status === 'cleared')
+      .reduce((sum, m) => sum + (Number(m.amount) || 0), 0);
+    const totalCleared = clearedOrderDue + clearedManualDue;
+
+    return {
+      totalDue,
+      totalCleared,
+      dueOrders,
+      allHistory,
+      matchedOrders,
+    };
+  };
+
+  // Clear Individual Due Order
+  const handleClearCustomerDueOrder = async (orderId, payMode = 'Cash') => {
+    const updatedList = orders.map((ord) => {
+      if (ord.id === orderId || ord._id === orderId) {
+        return {
+          ...ord,
+          isPaid: true,
+          paymentStatus: payMode.toLowerCase() === 'upi' ? 'paid-upi' : 'paid-cash',
+          paymentLabel: `Paid via ${payMode} (Due Cleared)`,
+          dueClearedAt: new Date().toISOString(),
+          dueClearedMode: payMode,
+        };
+      }
+      return ord;
+    });
+
+    setOrders(updatedList);
+    try {
+      localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updatedList));
+      window.dispatchEvent(new Event('foodypay_order_created'));
+      window.dispatchEvent(new Event('storage'));
+      const bc = new BroadcastChannel('foodypay_live_orders_channel');
+      bc.postMessage({ type: 'ORDER_SETTLED', orderId, status: 'completed', paymentStatus: payMode.toLowerCase() === 'upi' ? 'paid-upi' : 'paid-cash' });
+      bc.close();
+    } catch (e) {}
+
+    if (token) {
+      try {
+        const ord = orders.find((o) => o.id === orderId || o._id === orderId);
+        if (ord) {
+          await updateOrderApi(token, orderId, {
+            ...ord,
+            isPaid: true,
+            paymentStatus: payMode.toLowerCase() === 'upi' ? 'paid-upi' : 'paid-cash',
+            paymentLabel: `Paid via ${payMode} (Due Cleared)`,
+          });
+        }
+      } catch (err) {}
+    }
+
+    triggerSound(playBillPaid);
+    confetti({ particleCount: 50, spread: 50 });
+    addToast(`Due settled & paid via ${payMode}!`, <Check size={18} />);
+  };
+
+  // Clear All Dues for Customer
+  const handleClearAllCustomerDues = async (cust, payMode = 'Cash') => {
+    if (!cust) return;
+    const { dueOrders } = getCustomerDues(cust);
+    const cleanCustPhone = String(cust.phone || '').replace(/\D/g, '').slice(-10);
+    const cleanCustName = String(cust.name || '').trim().toLowerCase();
+    const phoneKey = cleanCustPhone || cleanCustName || cust._id || cust.id;
+
+    const dueOrderIds = new Set(dueOrders.map((o) => o._id || o.id));
+
+    const updatedList = orders.map((ord) => {
+      const oId = ord._id || ord.id;
+      if (dueOrderIds.has(oId)) {
+        return {
+          ...ord,
+          isPaid: true,
+          paymentStatus: payMode.toLowerCase() === 'upi' ? 'paid-upi' : 'paid-cash',
+          paymentLabel: `Paid via ${payMode} (Due Cleared)`,
+          dueClearedAt: new Date().toISOString(),
+          dueClearedMode: payMode,
+        };
+      }
+      return ord;
+    });
+
+    const existingMap = { ...customerDuesMap };
+    if (existingMap[phoneKey] && Array.isArray(existingMap[phoneKey].entries)) {
+      existingMap[phoneKey].entries = existingMap[phoneKey].entries.map((e) => ({
+        ...e,
+        status: 'cleared',
+        clearedAt: new Date().toISOString(),
+        clearedMode: payMode,
+      }));
+    }
+    setCustomerDuesMap(existingMap);
+    setOrders(updatedList);
+
+    try {
+      localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updatedList));
+      localStorage.setItem('foodypay_customer_dues_v1', JSON.stringify(existingMap));
+      window.dispatchEvent(new Event('foodypay_order_created'));
+      window.dispatchEvent(new Event('storage'));
+    } catch (e) {}
+
+    triggerSound(playBillPaid);
+    confetti({ particleCount: 80, spread: 70 });
+    addToast(`All dues for ${cust.name} cleared successfully via ${payMode}!`, <Check size={18} />);
+  };
+
+  // Add Manual Khata / Due Entry to Customer
+  const handleAddManualDue = (cust, amount, reason) => {
+    if (!cust || !amount || Number(amount) <= 0) return;
+    const cleanCustPhone = String(cust.phone || '').replace(/\D/g, '').slice(-10);
+    const cleanCustName = String(cust.name || '').trim().toLowerCase();
+    const phoneKey = cleanCustPhone || cleanCustName || cust._id || cust.id;
+
+    const newEntry = {
+      id: 'mdue_' + Date.now(),
+      amount: Number(amount),
+      reason: reason || 'Manual Khata Due Entry',
+      date: new Date().toISOString(),
+      status: 'pending',
+    };
+
+    const existingMap = { ...customerDuesMap };
+    const currentList = (existingMap[phoneKey] && existingMap[phoneKey].entries) || [];
+    existingMap[phoneKey] = {
+      ...existingMap[phoneKey],
+      customerName: cust.name,
+      customerPhone: cust.phone,
+      entries: [newEntry, ...currentList],
+    };
+
+    setCustomerDuesMap(existingMap);
+    try {
+      localStorage.setItem('foodypay_customer_dues_v1', JSON.stringify(existingMap));
+    } catch (e) {}
+
+    addToast(`Added ₹${amount} due to ${cust.name}'s account!`, <AlertCircle size={18} color="#EA580C" />);
+    setShowAddManualDue(false);
+    setManualDueForm({ amount: '', reason: '' });
+  };
+
+  // Send WhatsApp Due Payment Reminder
+  const handleSendWhatsAppDueReminder = (cust, totalDue) => {
+    if (!cust || !cust.phone) {
+      addToast('Customer phone number not available for WhatsApp reminder.');
+      return;
+    }
+    const cleanPhone = String(cust.phone).replace(/\D/g, '').slice(-10);
+    const msg = `Namaste ${cust.name || 'Customer'}! FoodyPay (${storeControls.restName || 'Restaurant'}) se reminder: Aapka pending bill due amount ₹${totalDue} baaki hai. Kripya counter par ya UPI ke dwara bhugtan karein: ${storeControls.upiId || 'merchant@icici'}. Dhanyawaad!`;
+    const url = `https://wa.me/91${cleanPhone}?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
+    addToast(`Opened WhatsApp reminder for ${cust.name}!`);
   };
 
   // Status Progression with Debouncing & Action Loading Lock
@@ -3446,7 +3812,7 @@ export default function DashboardPage({ onShowToast }) {
   };
 
   // Day-Wise Calendar & Date Range Filter State
-  const [dateRangeFilter, setDateRangeFilter] = useState('today'); // 'today' | 'yesterday' | 'last_7' | 'last_30' | 'this_month' | 'custom' | 'all'
+  const [dateRangeFilter, setDateRangeFilter] = useState('all'); // 'today' | 'yesterday' | 'last_7' | 'last_30' | 'this_month' | 'custom' | 'all'
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
 
@@ -4092,46 +4458,18 @@ export default function DashboardPage({ onShowToast }) {
           </button>
         </nav>
 
-        {/* BOTTOM SIDEBAR CARD: FoodyPay Account (Razorpay Payments Only) */}
+        {/* BOTTOM SIDEBAR CARD: FoodyPay Terminal Status */}
         <div 
           className="crm-sidebar-credits-card"
-          title={`FoodyPay Account: ₹${razorpaySalesTotal.toLocaleString()} (Collected via Razorpay)`}
-          onClick={() => {
-            setActiveTab('home_orders');
-            setOrderSearchQuery('Razorpay');
-            addToast(`Showing orders paid via Razorpay (Total: ₹${razorpaySalesTotal.toLocaleString()})`);
-          }}
+          title="FoodyPay Terminal Active"
         >
           <div className="crm-credits-icon-box">
             <CreditCard size={22} color="#1D4ED8" />
           </div>
           <div className="crm-credits-info">
-            <span className="crm-credits-title">FoodyPay Account</span>
-            <div className="crm-credits-amount">₹{razorpaySalesTotal.toLocaleString()}</div>
+            <span className="crm-credits-title">FoodyPay POS</span>
+            <div className="crm-credits-amount" style={{ fontSize: '13px', color: '#16A34A', fontWeight: 800 }}>Connected Online</div>
           </div>
-          <button
-            type="button"
-            className="crm-credits-add-btn"
-            style={{
-              background: '#EFF8FF',
-              border: '1.5px solid #B2DDFF',
-              color: '#1D4ED8',
-              borderRadius: '8px',
-              padding: '6px 10px',
-              fontSize: '11px',
-              fontWeight: 800,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap'
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              setActiveTab('home_orders');
-              setOrderSearchQuery('Razorpay');
-              addToast(`Filtered orders: Total ₹${razorpaySalesTotal.toLocaleString()} received via Razorpay`);
-            }}
-          >
-            Razorpay
-          </button>
         </div>
       </aside>
 
@@ -4307,212 +4645,167 @@ export default function DashboardPage({ onShowToast }) {
             ========================================================================== */}
         {activeTab === 'home_orders' && (
           <div className="crm-orders-page-wrap animate-fade-in" key={activeTab}>
-            {/* DATE RANGE & DAY-WISE CALENDAR SELECTION HEADER BAR (Ref: User Screenshot) */}
-            {(() => {
-              const periodOrdersList = (orders || []).filter((o) => isOrderInDateRange(o, dateRangeFilter, customStartDate, customEndDate));
-              const periodTotalSalesAmt = periodOrdersList.reduce((sum, o) => sum + (o ? (Number(o.total) || 0) : 0), 0);
-              const getFilterLabel = () => {
-                if (dateRangeFilter === 'today') return "Today's";
-                if (dateRangeFilter === 'yesterday') return "Yesterday's";
-                if (dateRangeFilter === 'last_7') return "Last 7 Days";
-                if (dateRangeFilter === 'last_30') return "Last 30 Days";
-                if (dateRangeFilter === 'this_month') return "This Month's";
-                if (dateRangeFilter === 'custom') return "Custom Range";
-                return "All Time";
-              };
 
-              return (
-                <>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: '12px',
-                      marginBottom: '16px',
-                      backgroundColor: '#FFFFFF',
-                      padding: '12px 18px',
-                      borderRadius: '16px',
-                      border: '1.5px solid #E2E8F0',
-                      boxShadow: '0 2px 10px rgba(0,0,0,0.03)',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#0F172A' }}>
-                        Orders &amp; Sales Summary
-                      </h3>
-                      {dateRangeFilter !== 'all' && (
-                        <span style={{ fontSize: '12px', fontWeight: 700, color: '#2563EB', backgroundColor: '#EFF6FF', padding: '3px 10px', borderRadius: '12px' }}>
-                          Filter: {getFilterLabel()} ({periodOrdersList.length} Orders)
-                        </span>
-                      )}
-                    </div>
-
-                    {/* DAY-WISE CALENDAR & DATE RANGE SELECTOR (MATCHING USER SCREENSHOT) */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', width: '100%', maxWidth: '100%' }}>
-                      <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', width: '100%', maxWidth: '100%' }}>
-                        <select
-                          value={dateRangeFilter}
-                          onChange={(e) => setDateRangeFilter(e.target.value)}
-                          style={{
-                            appearance: 'none',
-                            WebkitAppearance: 'none',
-                            backgroundColor: '#FFFFFF',
-                            border: '1.5px solid #CBD5E1',
-                            borderRadius: '10px',
-                            padding: '8px 32px 8px 32px',
-                            fontSize: '13px',
-                            fontWeight: 700,
-                            color: '#1E293B',
-                            cursor: 'pointer',
-                            boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
-                            outline: 'none',
-                            width: '100%',
-                            maxWidth: '100%',
-                            boxSizing: 'border-box',
-                            textOverflow: 'ellipsis',
-                            overflow: 'hidden',
-                            whiteSpace: 'nowrap'
-                          }}
-                        >
-                          <option value="today"> Today</option>
-                          <option value="yesterday"> Yesterday</option>
-                          <option value="last_7"> Last 7 days</option>
-                          <option value="last_30"> Last 30 days</option>
-                          <option value="this_month"> This Month</option>
-                          <option value="custom">️ Custom Date Range (Day-Wise Calendar)</option>
-                          <option value="all"> All Time (All Sales)</option>
-                        </select>
-                        <Calendar size={16} color="#475569" style={{ position: 'absolute', left: '10px', pointerEvents: 'none' }} />
-                        <ChevronDown size={15} color="#475569" style={{ position: 'absolute', right: '10px', pointerEvents: 'none' }} />
-                      </div>
-
-                      {/* CUSTOM DAY-WISE CALENDAR PICKERS */}
-                      {dateRangeFilter === 'custom' && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#F8FAFC', padding: '4px 10px', borderRadius: '10px', border: '1px solid #CBD5E1' }}>
-                          <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#64748B' }}>From:</div>
-                          <input
-                            type="date"
-                            value={customStartDate}
-                            onChange={(e) => setCustomStartDate(e.target.value)}
-                            style={{ border: '1px solid #CBD5E1', borderRadius: '6px', padding: '4px 8px', fontSize: '12px', fontWeight: 600, color: '#0F172A' }}
-                          />
-                          <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#64748B' }}>To:</div>
-                          <input
-                            type="date"
-                            value={customEndDate}
-                            onChange={(e) => setCustomEndDate(e.target.value)}
-                            style={{ border: '1px solid #CBD5E1', borderRadius: '6px', padding: '4px 8px', fontSize: '12px', fontWeight: 600, color: '#0F172A' }}
-                          />
-                          {(customStartDate || customEndDate) && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCustomStartDate('');
-                                setCustomEndDate('');
-                              }}
-                              style={{ border: 'none', background: '#E2E8F0', borderRadius: '4px', padding: '2px 6px', fontSize: '11px', fontWeight: 700, cursor: 'pointer', color: '#475569' }}
-                            >
-                              Reset
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* 4 SPATIOUS KPI CARDS WITH DYNAMIC DATE RANGE STATS */}
-                  <div className="crm-kpi-banner-grid">
-                    <div className="crm-kpi-card">
-                      <div>
-                        <div className="crm-kpi-label" style={{ fontWeight: 600, color: '#475569' }}>
-                          {getFilterLabel()} Orders
-                        </div>
-                        <div className="crm-kpi-value">{periodOrdersList.length}</div>
-                      </div>
-                      <div className="crm-kpi-icon-box" style={{ background: '#EFF6FF', color: '#1D4ED8', width: '56px', height: '56px' }}>
-                        <ShoppingBag size={26} />
-                      </div>
-                    </div>
-
-                    <div className="crm-kpi-card">
-                      <div>
-                        <div className="crm-kpi-label" style={{ fontWeight: 600, color: '#475569' }}>
-                          {getFilterLabel()} Sales
-                        </div>
-                        <div className="crm-kpi-value" style={{ color: '#059669' }}>
-                          ₹{periodTotalSalesAmt.toLocaleString()}
-                        </div>
-                      </div>
-                      <div className="crm-kpi-icon-box" style={{ background: '#ECFDF5', color: '#059669' }}>
-                        <CreditCard size={26} />
-                      </div>
-                    </div>
-
-                    <div className="crm-kpi-card">
-                      <div>
-                        <div className="crm-kpi-label">Active Kitchen Tickets</div>
-                        <div className="crm-kpi-value" style={{ color: '#FF5E14' }}>
-                          {(orders || []).filter((o) => o && (o.status === 'new' || o.status === 'preparing')).length}
-                        </div>
-                      </div>
-                      <div className="crm-kpi-icon-box" style={{ background: '#FFF0EB', color: '#FF5E14' }}>
-                        <ChefHat size={26} />
-                      </div>
-                    </div>
-
-                    <div className="crm-kpi-card">
-                      <div>
-                        <div className="crm-kpi-label">Tables Occupied</div>
-                        <div className="crm-kpi-value">
-                          {tables.filter((t) => t.status === 'occupied').length} / {tables.length}
-                        </div>
-                      </div>
-                      <div className="crm-kpi-icon-box" style={{ background: '#FFFBEB', color: '#D97706' }}>
-                        <Store size={26} />
-                      </div>
-                    </div>
-                  </div>
-                </>
-              );
-            })()}
 
             {/* FILTER BAR WITH CARDS PER ROW SELECTOR & ORDER SEARCH */}
             <div className="crm-filter-bar" style={{ display: 'flex', flexDirection: 'column', gap: '14px', width: '100%', alignItems: 'stretch' }}>
               <div className="crm-filter-tabs-container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', flexWrap: 'wrap', gap: '12px' }}>
-                <div className="crm-filter-tabs">
-                  {[
-                    { key: 'all', label: 'All Orders' },
-                    { key: 'new', label: 'New Orders' },
-                    { key: 'preparing', label: 'In Kitchen' },
-                    { key: 'ready', label: 'Ready to Serve' },
-                    { key: 'completed', label: 'Completed' },
-                  ].map((f) => (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  {/* View Switcher: Table View vs Orders Card View */}
+                  <div style={{ display: 'inline-flex', background: '#F1F5F9', padding: '3px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
                     <button
-                      key={f.key}
                       type="button"
-                      className={`crm-filter-tab ${orderTabFilter === f.key && !orderSearchQuery ? 'active' : ''}`}
-                      onClick={() => {
-                        setOrderTabFilter(f.key);
-                        setOrderSearchQuery('');
+                      onClick={() => setPosTableViewMode('tables')}
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        fontSize: '13px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        background: posTableViewMode === 'tables' ? '#DC2626' : 'transparent',
+                        color: posTableViewMode === 'tables' ? '#FFFFFF' : '#475569',
+                        boxShadow: posTableViewMode === 'tables' ? '0 2px 6px rgba(220,38,38,0.25)' : 'none',
+                        transition: 'all 0.15s ease',
                       }}
                     >
-                      {f.label}
+                      <LayoutGrid size={15} />
+                      <span>Table View</span>
                     </button>
-                  ))}
+                    <button
+                      type="button"
+                      onClick={() => setPosTableViewMode('cards')}
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        fontSize: '13px',
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        background: posTableViewMode === 'cards' ? '#0F172A' : 'transparent',
+                        color: posTableViewMode === 'cards' ? '#FFFFFF' : '#475569',
+                        boxShadow: posTableViewMode === 'cards' ? '0 2px 6px rgba(15,23,42,0.2)' : 'none',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <ShoppingBag size={15} />
+                      <span>Order Cards ({(orders || []).length})</span>
+                    </button>
+                  </div>
+
+                  {posTableViewMode === 'cards' && (
+                    <div className="crm-filter-tabs">
+                      {[
+                        { key: 'all', label: 'All Orders' },
+                        { key: 'new', label: 'New Orders' },
+                        { key: 'preparing', label: 'In Kitchen' },
+                        { key: 'ready', label: 'Ready to Serve' },
+                        { key: 'completed', label: 'Completed' },
+                      ].map((f) => (
+                        <button
+                          key={f.key}
+                          type="button"
+                          className={`crm-filter-tab ${orderTabFilter === f.key && !orderSearchQuery ? 'active' : ''}`}
+                          onClick={() => {
+                            setOrderTabFilter(f.key);
+                            setOrderSearchQuery('');
+                          }}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                <button
-                  type="button"
-                  className="btn-create-order-primary desktop-create-btn"
-                  onClick={handleOpenManualOrder}
-                  style={{ marginLeft: 'auto' }}
-                  title="Create counter or dine-in order"
-                >
-                  <Plus size={18} />
-                  <span>Create Manual Order</span>
-                </button>
+                {/* Quick Action Buttons matching reference image */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAddTableModal(null)}
+                    style={{
+                      background: '#DC2626',
+                      color: '#FFFFFF',
+                      border: 'none',
+                      padding: '7px 14px',
+                      borderRadius: '8px',
+                      fontSize: '12.5px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      boxShadow: '0 2px 6px rgba(220,38,38,0.25)',
+                    }}
+                    title="Add a new dining table"
+                  >
+                    <Plus size={15} />
+                    <span>Add Table</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenManualOrder(null, 'Home Delivery')}
+                    style={{
+                      background: '#DC2626',
+                      color: '#FFFFFF',
+                      border: 'none',
+                      padding: '7px 14px',
+                      borderRadius: '8px',
+                      fontSize: '12.5px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      boxShadow: '0 2px 6px rgba(220,38,38,0.25)',
+                    }}
+                    title="Create Home Delivery Order"
+                  >
+                    <Bike size={15} />
+                    <span>Delivery</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenManualOrder(null, 'Takeaway')}
+                    style={{
+                      background: '#DC2626',
+                      color: '#FFFFFF',
+                      border: 'none',
+                      padding: '7px 14px',
+                      borderRadius: '8px',
+                      fontSize: '12.5px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      boxShadow: '0 2px 6px rgba(220,38,38,0.25)',
+                    }}
+                    title="Create Counter Takeaway / Pickup Order"
+                  >
+                    <ShoppingBag size={15} />
+                    <span>Pick Up</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn-create-order-primary desktop-create-btn"
+                    onClick={() => handleOpenManualOrder()}
+                    style={{ background: '#0F172A' }}
+                    title="Create counter or dine-in order"
+                  >
+                    <Plus size={16} />
+                    <span>+ New POS Order</span>
+                  </button>
+                </div>
               </div>
 
               <div className="crm-search-and-actions-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', flexWrap: 'wrap', gap: '12px' }}>
@@ -4639,7 +4932,364 @@ export default function DashboardPage({ onShowToast }) {
               </div>
             )}
 
+            {/* =====================================================================
+                POS INTERACTIVE TABLE VIEW (MATCHING USER REFERENCE SCREENSHOT)
+                ===================================================================== */}
+            {posTableViewMode === 'tables' ? (
+              <div className="crm-pos-table-view-container" style={{ display: 'flex', flexDirection: 'column', gap: '22px', marginTop: '4px' }}>
+                {(() => {
+                  // Pre-configured sections & default tables matching real POS systems & user uploaded reference
+                  const defaultSections = [
+                    {
+                      name: 'Restaurant',
+                      tables: [
+                        { name: '1', capacity: 4 },
+                        { name: '2', capacity: 4 },
+                        { name: '3', capacity: 2 },
+                        { name: '4', capacity: 4 },
+                        { name: '5', capacity: 6 },
+                        { name: '6', capacity: 4 },
+                        { name: '7', capacity: 4 },
+                        { name: 'F1', capacity: 4 },
+                        { name: 'F2', capacity: 4 },
+                        { name: 'F3', capacity: 6 },
+                        { name: 'CAR 1', capacity: 4 },
+                        { name: 'CAR 2', capacity: 4 },
+                      ],
+                    },
+                    {
+                      name: 'Cafe',
+                      tables: [
+                        { name: 'T1', capacity: 2 },
+                        { name: 'T2', capacity: 2 },
+                        { name: 'T3', capacity: 4 },
+                        { name: 'T4', capacity: 4 },
+                      ],
+                    },
+                    {
+                      name: 'Family Hall',
+                      tables: [
+                        { name: 'PARTY', capacity: 12 },
+                      ],
+                    },
+                  ];
+
+                  // Merge with any custom tables user added in Utilities
+                  const userTables = Array.isArray(tables) && tables.length > 0 ? tables : [];
+                  const userAddedSectionsMap = {};
+                  userTables.forEach((t) => {
+                    const sec = t.section || 'Restaurant';
+                    if (!userAddedSectionsMap[sec]) userAddedSectionsMap[sec] = [];
+                    userAddedSectionsMap[sec].push(t);
+                  });
+
+                  // Build combined sections list
+                  const displaySections = defaultSections.map((sec) => {
+                    const addedForThisSec = userAddedSectionsMap[sec.name] || [];
+                    const existingNames = new Set(sec.tables.map((t) => String(t.name).toLowerCase()));
+                    const extraTables = addedForThisSec.filter((t) => !existingNames.has(String(t.name).toLowerCase()));
+                    return {
+                      ...sec,
+                      tables: [...sec.tables, ...extraTables],
+                    };
+                  });
+
+                  // Any custom user sections not in default
+                  Object.keys(userAddedSectionsMap).forEach((secName) => {
+                    if (!defaultSections.some((s) => s.name.toLowerCase() === secName.toLowerCase())) {
+                      displaySections.push({
+                        name: secName,
+                        tables: userAddedSectionsMap[secName],
+                      });
+                    }
+                  });
+
+                  // Helper: find running/active order for a table
+                  const getRunningOrderForTable = (tableName) => {
+                    const cleanTName = String(tableName).trim().toLowerCase();
+                    return (orders || []).find((o) => {
+                      if (!o || o.status === 'completed' || o.status === 'cancelled') return false;
+                      const oTable = String(o.table || o.tableName || o.tableNo || '').trim().toLowerCase();
+                      if (oTable === cleanTName) return true;
+                      if (oTable === `table ${cleanTName}` || `table ${oTable}` === cleanTName) return true;
+                      return false;
+                    });
+                  };
+
+                  return (
+                    <>
+                      {/* Top Bar matching screenshot: Legend Pills & Move KOT Action */}
+                      <div
+                        style={{
+                          background: '#FFFFFF',
+                          borderRadius: '14px',
+                          border: '1.5px solid #E2E8F0',
+                          padding: '12px 18px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          flexWrap: 'wrap',
+                          gap: '12px',
+                        }}
+                      >
+                        {/* Move KOT button */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const running = (orders || []).find((o) => o && o.status !== 'completed' && o.status !== 'cancelled');
+                              setMoveKotSourceOrder(running || null);
+                              setIsMoveKotModalOpen(true);
+                            }}
+                            style={{
+                              background: '#EFF6FF',
+                              border: '1.5px solid #BFDBFE',
+                              color: '#1D4ED8',
+                              padding: '7px 14px',
+                              borderRadius: '8px',
+                              fontSize: '12.5px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                            }}
+                          >
+                            <ArrowRightLeft size={14} color="#1D4ED8" />
+                            <span>Move KOT / Shift Table</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const slug = (storeControls.restName || 'thefoodypay').toLowerCase().replace(/\s+/g, '-');
+                              const mid = storeControls.foodypayId || 'FP-790044';
+                              window.open(`/${slug}/${mid}`, '_blank');
+                            }}
+                            style={{
+                              background: '#DC2626',
+                              border: 'none',
+                              color: '#FFFFFF',
+                              padding: '7px 12px',
+                              borderRadius: '8px',
+                              fontSize: '12px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            <Plus size={13} />
+                            <span>Contactless QR Order</span>
+                          </button>
+                        </div>
+
+                        {/* Status Legend Matching Image */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap', fontSize: '12px', fontWeight: 700 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#E2E8F0', border: '1px solid #CBD5E1' }} />
+                            <span style={{ color: '#64748B' }}>Blank Table</span>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#38BDF8', border: '1px solid #0284C7' }} />
+                            <span style={{ color: '#0369A1' }}>Running Table</span>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#6EE7B7', border: '1px solid #059669' }} />
+                            <span style={{ color: '#065F46' }}>Printed Table (Bill Ready)</span>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#FCA5A5', border: '1px solid #DC2626' }} />
+                            <span style={{ color: '#991B1B' }}>Paid Table</span>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#FDE047', border: '1px solid #CA8A04' }} />
+                            <span style={{ color: '#854D0E' }}>Running KOT Table</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Sections List */}
+                      {displaySections.map((section) => (
+                        <div key={section.name} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          <div style={{ fontSize: '15px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Store size={17} color="#475569" />
+                            <span>{section.name}</span>
+                            <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>({section.tables.length} Tables)</span>
+                          </div>
+
+                          {/* Grid of Tables in this Section */}
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(auto-fill, minmax(105px, 1fr))',
+                              gap: '12px',
+                            }}
+                          >
+                            {section.tables.map((tbl, tIdx) => {
+                              const runningOrder = getRunningOrderForTable(tbl.name);
+                              const isOccupied = Boolean(runningOrder);
+
+                              // Elapsed minutes calculation
+                              let elapsedMinutes = 0;
+                              if (runningOrder) {
+                                const createdTimestamp = runningOrder.timestamp || (runningOrder.createdAt ? new Date(runningOrder.createdAt).getTime() : Date.now());
+                                elapsedMinutes = Math.max(1, Math.round((Date.now() - createdTimestamp) / (1000 * 60)));
+                              }
+
+                              // Card appearance based on screenshot status
+                              let bg = '#F1F5F9';
+                              let border = '#CBD5E1';
+                              let textColor = '#475569';
+
+                              if (isOccupied) {
+                                if (runningOrder.status === 'ready' || runningOrder.billPrinted) {
+                                  // Green (Printed Table)
+                                  bg = '#A7F3D0';
+                                  border = '#34D399';
+                                  textColor = '#065F46';
+                                } else if (runningOrder.status === 'preparing') {
+                                  // Yellow (Running KOT Table)
+                                  bg = '#FEF08A';
+                                  border = '#FACC15';
+                                  textColor = '#854D0E';
+                                } else {
+                                  // Cyan / Blue (Running Table)
+                                  bg = '#BAE6FD';
+                                  border = '#7DD3FC';
+                                  textColor = '#0369A1';
+                                }
+                              }
+
+                              return (
+                                <div
+                                  key={tbl.name || tIdx}
+                                  onClick={() => {
+                                    if (isOccupied) {
+                                      // If occupied, open settlement or add items directly
+                                      handleOpenBillSettlement(runningOrder);
+                                    } else {
+                                      // If blank, 1-click open Create Order on this table!
+                                      handleOpenManualOrder(tbl.name, 'Dine-In');
+                                    }
+                                  }}
+                                  style={{
+                                    height: '92px',
+                                    borderRadius: '12px',
+                                    background: bg,
+                                    border: `1.5px solid ${border}`,
+                                    padding: '8px 6px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    position: 'relative',
+                                    transition: 'transform 0.1s ease, box-shadow 0.1s ease',
+                                    userSelect: 'none',
+                                    boxShadow: isOccupied ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+                                  }}
+                                  title={
+                                    isOccupied
+                                      ? `Table ${tbl.name} Running Order: ₹${runningOrder.total} (${runningOrder.customer || 'Walk-in'}). Click to Settle Bill / View Details.`
+                                      : `Table ${tbl.name} is BLANK / FREE. Click to Create Order or Add Items!`
+                                  }
+                                >
+                                  {isOccupied ? (
+                                    <>
+                                      {/* Elapsed Time Badge */}
+                                      <div style={{ fontSize: '10.5px', fontWeight: 800, color: textColor, marginBottom: '2px' }}>
+                                        {elapsedMinutes} Min
+                                      </div>
+
+                                      {/* Table Name */}
+                                      <div style={{ fontSize: '15px', fontWeight: 900, color: '#0F172A', lineHeight: '1' }}>
+                                        {tbl.name}
+                                      </div>
+
+                                      {/* Amount */}
+                                      <div style={{ fontSize: '12px', fontWeight: 900, color: textColor, marginTop: '3px' }}>
+                                        ₹{(runningOrder.total || 0).toLocaleString('en-IN')}
+                                      </div>
+
+                                      {/* Quick Action Icons row matching reference image bottom */}
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '4px' }}>
+                                        {/* Bill Print icon */}
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenBillSettlement(runningOrder);
+                                          }}
+                                          style={{
+                                            background: '#FFFFFF',
+                                            border: '1px solid rgba(0,0,0,0.15)',
+                                            borderRadius: '4px',
+                                            padding: '2px 4px',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                          }}
+                                          title="Settle Bill / Collect Payment"
+                                        >
+                                          <Printer size={11} color="#0F172A" />
+                                        </button>
+
+                                        {/* View / Add items icon */}
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleEditOrder(runningOrder);
+                                          }}
+                                          style={{
+                                            background: '#FFFFFF',
+                                            border: '1px solid rgba(0,0,0,0.15)',
+                                            borderRadius: '4px',
+                                            padding: '2px 4px',
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                          }}
+                                          title="Add more food products / items to this table"
+                                        >
+                                          <Eye size={11} color="#0F172A" />
+                                        </button>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      {/* Blank Table Display */}
+                                      <div style={{ fontSize: '18px', fontWeight: 900, color: '#64748B' }}>
+                                        {tbl.name}
+                                      </div>
+                                      <div style={{ fontSize: '10px', color: '#94A3B8', fontWeight: 700, marginTop: '4px' }}>
+                                        + Order
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </>
+                  );
+                })()}
+              </div>
+            ) : null}
+
             {/* ORDERS GRID - DYNAMIC COLUMNS (1 TO 6 LIMITS ON DESKTOP, 1 COLUMN ON MOBILE) */}
+            {posTableViewMode === 'cards' && (
+            <>
             <div
               className="crm-orders-grid"
               style={{
@@ -4674,14 +5324,15 @@ export default function DashboardPage({ onShowToast }) {
                     ? 1
                     : 0;
 
-                const isOrderPaid =
+                const isOrderDue = order.paymentStatus === 'due';
+                const isOrderPaid = !isOrderDue && (
                   order.paymentStatus === 'paid-razorpay' ||
                   order.paymentStatus === 'paid-upi' ||
                   order.paymentStatus === 'paid-cash' ||
                   order.paymentStatus === 'paid' ||
                   (order.paymentLabel && order.paymentLabel.toLowerCase().includes('paid')) ||
-                  order.status === 'completed' ||
-                  order.status === 'delivered';
+                  ((order.status === 'completed' || order.status === 'delivered') && order.paymentStatus !== 'due')
+                );
 
                 return (
                   <div
@@ -4694,8 +5345,8 @@ export default function DashboardPage({ onShowToast }) {
                         : `active-card ${order.status || 'new'}`
                     }`}
                     style={{
-                      border: isOrderPaid ? '2px solid #86EFAC' : '1px solid #E2E8F0',
-                      boxShadow: isOrderPaid ? '0 4px 14px rgba(34, 197, 94, 0.12)' : undefined,
+                      border: isOrderPaid ? '2px solid #86EFAC' : isOrderDue ? '2px solid #FCA5A5' : '1px solid #E2E8F0',
+                      boxShadow: isOrderPaid ? '0 4px 14px rgba(34, 197, 94, 0.12)' : isOrderDue ? '0 4px 14px rgba(220, 38, 38, 0.12)' : undefined,
                     }}
                     onClick={() => {
                       if (order.status === 'completed' || order.status === 'cancelled') {
@@ -4703,13 +5354,17 @@ export default function DashboardPage({ onShowToast }) {
                       }
                     }}
                   >
-                    <div className="crm-order-card-header" style={{ backgroundColor: isOrderPaid ? '#F0FDF4' : '#FFFFFF' }}>
+                    <div className="crm-order-card-header" style={{ backgroundColor: isOrderPaid ? '#F0FDF4' : isOrderDue ? '#FEF2F2' : '#FFFFFF' }}>
                       <div className="crm-order-id-group">
                         <span className="crm-order-id">{orderDisplayId}</span>
                         <span className="crm-table-tag highlight">{String(order.table || 'Table 1').replace(/tabel/gi, 'Table')}</span>
                         {isOrderPaid ? (
                           <span style={{ fontSize: '11px', fontWeight: 900, color: '#15803D', backgroundColor: '#DCFCE7', border: '1px solid #86EFAC', padding: '2px 8px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                            <CheckCircle2 size={12} color="#16A34A" /> PAID (COLLECTED)
+                            <CheckCircle2 size={12} color="#16A34A" /> PAID
+                          </span>
+                        ) : isOrderDue ? (
+                          <span style={{ fontSize: '11px', fontWeight: 900, color: '#991B1B', backgroundColor: '#FEE2E2', border: '1.5px solid #FCA5A5', padding: '2px 8px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <AlertCircle size={12} color="#DC2626" /> DUE (KHATA)
                           </span>
                         ) : (
                           <span style={{ fontSize: '11px', fontWeight: 800, color: '#C2410C', backgroundColor: '#FFF7ED', border: '1px solid #FFEDD5', padding: '2px 8px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
@@ -4822,23 +5477,23 @@ export default function DashboardPage({ onShowToast }) {
                       <div className="crm-order-total-row">
                         <div>
                           <div className="crm-total-amount">₹{order.total}</div>
-                          <div style={{ fontSize: '11px', fontWeight: 800, color: isOrderPaid ? '#15803D' : '#C2410C', marginTop: '1px' }}>
-                            {isOrderPaid ? ' Payment Received' : '⏳ Bill Pending'}
+                          <div style={{ fontSize: '11px', fontWeight: 800, color: isOrderPaid ? '#15803D' : isOrderDue ? '#DC2626' : '#C2410C', marginTop: '1px' }}>
+                            {isOrderPaid ? ' Payment Received' : isOrderDue ? '️ Outstanding Due (Khata)' : '⏳ Bill Pending'}
                           </div>
                         </div>
                         <span
                           className={`crm-payment-pill ${order.paymentStatus}`}
                           style={{
                             fontWeight: 900,
-                            backgroundColor: isOrderPaid ? '#DCFCE7' : '#FFF7ED',
-                            color: isOrderPaid ? '#15803D' : '#C2410C',
-                            border: isOrderPaid ? '1.5px solid #86EFAC' : '1.5px solid #FDBA74',
+                            backgroundColor: isOrderPaid ? '#DCFCE7' : isOrderDue ? '#FEE2E2' : '#FFF7ED',
+                            color: isOrderPaid ? '#15803D' : isOrderDue ? '#DC2626' : '#C2410C',
+                            border: isOrderPaid ? '1.5px solid #86EFAC' : isOrderDue ? '1.5px solid #FCA5A5' : '1.5px solid #FDBA74',
                             padding: '4px 10px',
                             borderRadius: '8px',
                             fontSize: '12px',
                           }}
                         >
-                          {isOrderPaid ? ' ' : '⏳ '}{order.paymentLabel || (isOrderPaid ? 'Paid' : 'Unpaid')}
+                          {isOrderPaid ? ' ' : isOrderDue ? '️ ' : '⏳ '}{isOrderDue ? 'Due (Khata)' : order.paymentLabel || (isOrderPaid ? 'Paid' : 'Unpaid')}
                         </span>
                       </div>
 
@@ -5007,25 +5662,38 @@ export default function DashboardPage({ onShowToast }) {
                         )}
 
                         {order.status === 'completed' && (
-                          <div style={{ width: '100%', display: 'flex', gap: '6px' }}>
-                            <button
-                              type="button"
-                              className="crm-btn-secondary"
-                              style={{ flex: 1 }}
-                              onClick={() => setViewingOrderDetails(order)}
-                            >
-                              <Eye size={16} />
-                              <span>View Receipt</span>
-                            </button>
-                            <button
-                              type="button"
-                              className="crm-btn-secondary"
-                              style={{ flex: 1 }}
-                              onClick={() => window.print()}
-                            >
-                              <Printer size={15} />
-                              <span>Print KOT</span>
-                            </button>
+                          <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {order.paymentStatus === 'due' && (
+                              <button
+                                type="button"
+                                className="crm-btn-action settle full-w"
+                                style={{ background: '#DC2626', color: '#FFF', fontWeight: 900 }}
+                                onClick={() => handleOpenBillSettlement(order)}
+                              >
+                                <CreditCard size={15} />
+                                <span>Collect Due (₹{order.total})</span>
+                              </button>
+                            )}
+                            <div style={{ width: '100%', display: 'flex', gap: '6px' }}>
+                              <button
+                                type="button"
+                                className="crm-btn-secondary"
+                                style={{ flex: 1 }}
+                                onClick={() => setViewingOrderDetails(order)}
+                              >
+                                <Eye size={16} />
+                                <span>View Receipt</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="crm-btn-secondary"
+                                style={{ flex: 1 }}
+                                onClick={() => window.print()}
+                              >
+                                <Printer size={15} />
+                                <span>Print KOT</span>
+                              </button>
+                            </div>
                           </div>
                         )}
 
@@ -5149,6 +5817,8 @@ export default function DashboardPage({ onShowToast }) {
                 </div>
               ) : null;
             })()}
+            </>
+            )}
           </div>
         )}
 
@@ -7370,49 +8040,52 @@ export default function DashboardPage({ onShowToast }) {
             ========================================================================== */}
         {activeTab === 'customers' && (
           <div className="crm-customers-container animate-fade-in" key={activeTab}>
-            <div className="crm-customers-stats-banner">
-              <div className="crm-cust-stat-item">
-                <span className="crm-cust-stat-label">Total Customers</span>
-                <span className="crm-cust-stat-value">{(customers || []).length}</span>
-              </div>
-              <div className="crm-cust-stat-item">
-                <span className="crm-cust-stat-label">Total Orders</span>
-                <span className="crm-cust-stat-value">{(customers || []).reduce((s, c) => s + (c.ordersCount || 0), 0)}</span>
-              </div>
-              <div className="crm-cust-stat-item">
-                <span className="crm-cust-stat-label">Total Sales</span>
-                <span className="crm-cust-stat-value">₹{(customers || []).reduce((s, c) => s + (c.totalSales || 0), 0).toLocaleString()}</span>
-              </div>
-            </div>
-
-            <div className="crm-cust-toolbar">
-              <div className="crm-search-box">
-                <Search size={17} color="#94A3B8" />
-                <input
-                  type="text"
-                  placeholder="Search by Name/Mobile..."
-                  value={custSearch}
-                  onChange={(e) => setCustSearch(e.target.value)}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                <button
-                  type="button"
-                  className="btn-create-order-primary"
-                  onClick={() => {
-                    setNotifyAudienceMode('all_users');
-                    setIsCustomNotifyModalOpen(true);
-                  }}
-                >
-                  <Bell size={16} />
-                  <span>Send Notification Broadcast</span>
-                </button>
-              </div>
-            </div>
-
             {(() => {
-              const filteredCustomersList = (customers || []).filter((c) => {
+              // Merge customers from directory + any diners found in orders
+              const dinerMap = new Map();
+              (customers || []).forEach((c) => {
+                if (!c) return;
+                const cleanPhone = String(c.phone || '').replace(/\D/g, '').slice(-10);
+                const key = cleanPhone || String(c.name || '').trim().toLowerCase() || c.id || c._id;
+                dinerMap.set(key, { ...c, key });
+              });
+              (orders || []).forEach((o) => {
+                if (!o) return;
+                const oPhone = String(o.phone || o.customerPhone || o.contactNo || o.mobile || '').replace(/\D/g, '').slice(-10);
+                const oName = String(o.customer || o.customerName || o.name || '').trim();
+                const key = oPhone || oName.toLowerCase();
+                if (key) {
+                  if (dinerMap.has(key)) {
+                    const existing = dinerMap.get(key);
+                    if (!existing.phone && oPhone) existing.phone = oPhone;
+                    if ((!existing.name || existing.name === 'Customer') && oName) existing.name = oName;
+                  } else {
+                    dinerMap.set(key, {
+                      id: 'cust_' + (oPhone || Math.random().toString(36).substr(2, 6)),
+                      name: oName || (oPhone ? `Diner ${oPhone.slice(-4)}` : 'Diner'),
+                      phone: oPhone || 'Walk-in',
+                      birthday: 'Not Set',
+                      lastOrdered: o.time || 'Recently',
+                      key,
+                    });
+                  }
+                }
+              });
+
+              const allMergedCustomers = Array.from(dinerMap.values());
+
+              // Calculate overall dues across all customers
+              let totalOutstandingDuesAcrossStore = 0;
+              let totalCustomersWithDue = 0;
+              allMergedCustomers.forEach((c) => {
+                const duesInfo = getCustomerDues(c);
+                if (duesInfo.totalDue > 0) {
+                  totalOutstandingDuesAcrossStore += duesInfo.totalDue;
+                  totalCustomersWithDue += 1;
+                }
+              });
+
+              const filteredCustomersList = allMergedCustomers.filter((c) => {
                 if (!c) return false;
                 const q = (custSearch || '').toLowerCase();
                 return (c.name || '').toLowerCase().includes(q) || (c.phone || '').toLowerCase().includes(q);
@@ -7427,45 +8100,132 @@ export default function DashboardPage({ onShowToast }) {
 
               return (
                 <>
+                  <div className="crm-customers-stats-banner" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '18px' }}>
+                    <div className="crm-cust-stat-item" style={{ background: '#FFFFFF', padding: '16px 20px', borderRadius: '12px', border: '1.5px solid #E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                      <span className="crm-cust-stat-label" style={{ fontSize: '12px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase' }}>Total Diners Directory</span>
+                      <span className="crm-cust-stat-value" style={{ fontSize: '22px', fontWeight: 800, color: '#0F172A', marginTop: '4px', display: 'block' }}>{allMergedCustomers.length} Diners</span>
+                    </div>
+
+                    <div className="crm-cust-stat-item" style={{ background: totalOutstandingDuesAcrossStore > 0 ? '#FEF2F2' : '#F0FDF4', padding: '16px 20px', borderRadius: '12px', border: `1.5px solid ${totalOutstandingDuesAcrossStore > 0 ? '#FECACA' : '#BBF7D0'}`, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span className="crm-cust-stat-label" style={{ fontSize: '12px', fontWeight: 700, color: totalOutstandingDuesAcrossStore > 0 ? '#991B1B' : '#166534', textTransform: 'uppercase' }}>
+                          Total Due / Khata Balance
+                        </span>
+                        <Wallet size={16} color={totalOutstandingDuesAcrossStore > 0 ? '#DC2626' : '#16A34A'} />
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '4px' }}>
+                        <span style={{ fontSize: '22px', fontWeight: 800, color: totalOutstandingDuesAcrossStore > 0 ? '#DC2626' : '#16A34A' }}>
+                          ₹{totalOutstandingDuesAcrossStore.toLocaleString('en-IN')}
+                        </span>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: totalOutstandingDuesAcrossStore > 0 ? '#B91C1C' : '#15803D' }}>
+                          ({totalCustomersWithDue} accounts pending)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="crm-cust-toolbar">
+                    <div className="crm-search-box">
+                      <Search size={17} color="#94A3B8" />
+                      <input
+                        type="text"
+                        placeholder="Search by Name or Mobile No..."
+                        value={custSearch}
+                        onChange={(e) => setCustSearch(e.target.value)}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        className="btn-create-order-primary"
+                        onClick={() => {
+                          setNotifyAudienceMode('all_users');
+                          setIsCustomNotifyModalOpen(true);
+                        }}
+                      >
+                        <Bell size={16} />
+                        <span>Send Notification Broadcast</span>
+                      </button>
+                    </div>
+                  </div>
+
                   <table className="crm-cust-table">
                     <thead>
                       <tr>
                         <th>Contact | Customer Name</th>
-                        <th>Orders</th>
-                        <th>Sale</th>
                         <th>Birthday</th>
-                        <th>Last Ordered / Actions</th>
+                        <th>Due (Khata) Balance</th>
+                        <th>Actions &amp; Profile</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {displayedCustomers.map((c, idx) => (
-                        <tr key={c._id || c.id || idx}>
-                          <td>
-                            <div style={{ fontWeight: 800, color: '#0F172A' }}>{c.name}</div>
-                            <div style={{ fontSize: '13px', color: '#64748B', marginTop: '2px' }}>{c.phone}</div>
-                          </td>
-                          <td>
-                            <b>{c.ordersCount || 1}</b>
-                          </td>
-                          <td>
-                            <b style={{ color: '#1D4ED8' }}>₹{(c.totalSales || 0).toLocaleString()}</b>
-                          </td>
-                          <td>
-                            {c.isBirthdayToday ? (
-                              <span className="crm-bday-tag">
-                                <Gift size={13} />
-                                <span>Birthday Today!</span>
-                              </span>
-                            ) : (
-                              <span style={{ color: '#64748B' }}>{c.birthday || 'Not Set'}</span>
-                            )}
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', justifyContent: 'space-between' }}>
-                              <span style={{ fontSize: '13px', color: '#475569', fontWeight: 600 }}>
-                                {c.lastOrdered || 'Recently'}
-                              </span>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {displayedCustomers.map((c, idx) => {
+                        const dues = getCustomerDues(c);
+                        const hasDue = dues.totalDue > 0;
+                        return (
+                          <tr key={c._id || c.id || idx}>
+                            <td>
+                              <div style={{ fontWeight: 800, color: '#0F172A' }}>{c.name}</div>
+                              <div style={{ fontSize: '13px', color: '#64748B', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span>{c.phone || 'No phone'}</span>
+                              </div>
+                            </td>
+                            <td>
+                              {c.isBirthdayToday ? (
+                                <span className="crm-bday-tag">
+                                  <Gift size={13} />
+                                  <span>Birthday Today!</span>
+                                </span>
+                              ) : (
+                                <span style={{ color: '#64748B' }}>{c.birthday || 'Not Set'}</span>
+                              )}
+                            </td>
+                            <td>
+                              {hasDue ? (
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#FEF2F2', border: '1.5px solid #FCA5A5', padding: '4px 10px', borderRadius: '8px' }}>
+                                  <AlertCircle size={13} color="#DC2626" />
+                                  <span style={{ fontWeight: 800, color: '#DC2626', fontSize: '13px' }}>
+                                    ₹{dues.totalDue.toLocaleString('en-IN')} Due
+                                  </span>
+                                </div>
+                              ) : (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#F0FDF4', border: '1px solid #BBF7D0', padding: '4px 8px', borderRadius: '8px', fontSize: '12px', fontWeight: 700, color: '#166534' }}>
+                                  <Check size={12} />
+                                  <span>Clear (₹0)</span>
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveCustomerProfile(c)}
+                                  style={{
+                                    background: hasDue ? '#DC2626' : '#0F172A',
+                                    border: 'none',
+                                    color: '#FFFFFF',
+                                    padding: '5px 11px',
+                                    borderRadius: '7px',
+                                    fontSize: '12px',
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                                  }}
+                                  title={`Open Account Profile and Due History for ${c.name}`}
+                                >
+                                  <Wallet size={13} color="#FFFFFF" />
+                                  <span>Account &amp; Dues</span>
+                                  {hasDue && (
+                                    <span style={{ background: '#FFFFFF', color: '#DC2626', borderRadius: '10px', padding: '1px 5px', fontSize: '10px', fontWeight: 900 }}>
+                                      ₹{dues.totalDue}
+                                    </span>
+                                  )}
+                                </button>
+
                                 <button
                                   type="button"
                                   onClick={() => handleOpenCreateCoupon(c)}
@@ -7516,10 +8276,10 @@ export default function DashboardPage({ onShowToast }) {
                                   <span>Notify</span>
                                 </button>
                               </div>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
 
@@ -9816,6 +10576,7 @@ export default function DashboardPage({ onShowToast }) {
                       <option value="Cash on Counter">Cash on Counter</option>
                       <option value="Paid via UPI (Counter QR)">Paid via UPI (Counter QR)</option>
                       <option value="POS Card Machine">Credit / Debit Card (POS Machine)</option>
+                      <option value="Due / Khata (Customer Udhaar)">️ Due / Khata (Customer Udhaar)</option>
                       <option value="Unpaid / Pay Later">Pay Later on Table Departure</option>
                     </select>
                   </div>
@@ -10174,6 +10935,40 @@ export default function DashboardPage({ onShowToast }) {
                           <div style={{ fontSize: '12px', opacity: 0.9 }}>Generate payment QR for Google Pay / PhonePe / Paytm</div>
                         </div>
                       </button>
+
+                      <button
+                        type="button"
+                        className="crm-btn-settle-option due"
+                        style={{
+                          background: '#FFF7ED',
+                          border: '1.5px solid #FDBA74',
+                          color: '#9A3412',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          padding: '12px 16px',
+                          borderRadius: '12px',
+                          cursor: 'pointer',
+                          width: '100%',
+                          textAlign: 'left',
+                        }}
+                        onClick={() => {
+                          const custPhone = activeBillSettlementOrder.phone || activeBillSettlementOrder.customerPhone || '';
+                          const custName = activeBillSettlementOrder.customer || activeBillSettlementOrder.customerName || 'Customer';
+                          const note = prompt(`Mark ₹${finalTotal} as DUE for ${custName} (${custPhone || 'No Phone'}). Enter note or reason:`, 'Customer pay later / Khata');
+                          if (note !== null) {
+                            handleSettleBillDue(note);
+                          }
+                        }}
+                      >
+                        <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#FFEDD5', color: '#EA580C', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <AlertCircle size={22} />
+                        </div>
+                        <div style={{ textAlign: 'left', flex: 1 }}>
+                          <div style={{ fontWeight: 800, fontSize: '15px', color: '#9A3412' }}>️ Mark as Due / Khata (Pay Later)</div>
+                          <div style={{ fontSize: '12px', color: '#C2410C' }}>Customer did not pay now — record ₹{finalTotal} Due in {activeBillSettlementOrder.customer || 'Customer'}'s profile</div>
+                        </div>
+                      </button>
                     </div>
                   </div>
                 ) : (
@@ -10307,6 +11102,509 @@ export default function DashboardPage({ onShowToast }) {
           </div>
         );
       })()}
+
+      {/* ==========================================================================
+          MODAL: CUSTOMER PROFILE & DUE / KHATA MANAGEMENT (Person Profile Account Option)
+          ========================================================================== */}
+      {activeCustomerProfile && (() => {
+        const dues = getCustomerDues(activeCustomerProfile);
+        const hasDue = dues.totalDue > 0;
+        const cleanPhone = String(activeCustomerProfile.phone || '').replace(/\D/g, '').slice(-10);
+
+        return (
+          <div className="crm-modal-backdrop" onClick={() => setActiveCustomerProfile(null)}>
+            <div
+              className="crm-modal-card"
+              style={{ maxWidth: '640px', width: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="crm-modal-header" style={{ borderBottom: '1.5px solid #F1F5F9', padding: '16px 22px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div
+                    style={{
+                      width: '44px',
+                      height: '44px',
+                      borderRadius: '12px',
+                      background: hasDue ? '#FEE2E2' : '#F1F5F9',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: hasDue ? '#DC2626' : '#0F172A',
+                      fontWeight: 900,
+                      fontSize: '18px',
+                    }}
+                  >
+                    {(activeCustomerProfile.name || 'C').charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: '#0F172A' }}>
+                      {activeCustomerProfile.name || 'Customer Account'}
+                    </h3>
+                    <div style={{ fontSize: '13px', color: '#64748B', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                      <span> {activeCustomerProfile.phone || 'No Phone Registered'}</span>
+                      {activeCustomerProfile.birthday && activeCustomerProfile.birthday !== 'Not Set' && (
+                        <span>•  {activeCustomerProfile.birthday}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="crm-modal-close-btn"
+                  onClick={() => setActiveCustomerProfile(null)}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="crm-modal-body" style={{ padding: '20px 22px', overflowY: 'auto' }}>
+                {/* 1. Account Due Balance Card */}
+                <div
+                  style={{
+                    background: hasDue
+                      ? 'linear-gradient(135deg, #FEF2F2 0%, #FFF5F5 100%)'
+                      : 'linear-gradient(135deg, #F0FDF4 0%, #F8FAFC 100%)',
+                    border: `1.5px solid ${hasDue ? '#FECACA' : '#BBF7D0'}`,
+                    borderRadius: '14px',
+                    padding: '16px 20px',
+                    marginBottom: '18px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+                    <div>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: hasDue ? '#991B1B' : '#166534', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Khata / Udhaar Balance (Current Due)
+                      </div>
+                      <div style={{ fontSize: '32px', fontWeight: 900, color: hasDue ? '#DC2626' : '#16A34A', marginTop: '4px', letterSpacing: '-0.5px' }}>
+                        ₹{dues.totalDue.toLocaleString('en-IN')}
+                      </div>
+                      <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '2px', fontWeight: 600 }}>
+                        {hasDue
+                          ? `Total ${dues.dueOrders.length} pending bill(s) attached to this account`
+                          : ' All previous bills are fully settled! No pending dues.'}
+                      </div>
+                    </div>
+
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ fontSize: '11.5px', color: '#64748B', fontWeight: 600, display: 'block' }}>Total Settled Dues</span>
+                      <span style={{ fontSize: '16px', fontWeight: 800, color: '#059669', display: 'block', marginTop: '2px' }}>
+                        ₹{dues.totalCleared.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Quick Settlement Actions */}
+                  {hasDue && (
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleClearAllCustomerDues(activeCustomerProfile, 'Cash')}
+                        style={{
+                          background: '#059669',
+                          color: '#FFFFFF',
+                          border: 'none',
+                          padding: '9px 14px',
+                          borderRadius: '8px',
+                          fontSize: '12.5px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <Check size={15} />
+                        <span>Clear All Dues (Cash)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleClearAllCustomerDues(activeCustomerProfile, 'UPI')}
+                        style={{
+                          background: '#4F46E5',
+                          color: '#FFFFFF',
+                          border: 'none',
+                          padding: '9px 14px',
+                          borderRadius: '8px',
+                          fontSize: '12.5px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <Check size={15} />
+                        <span>Clear All Dues (UPI)</span>
+                      </button>
+
+                      {cleanPhone && (
+                        <button
+                          type="button"
+                          onClick={() => handleSendWhatsAppDueReminder(activeCustomerProfile, dues.totalDue)}
+                          style={{
+                            background: '#25D366',
+                            color: '#FFFFFF',
+                            border: 'none',
+                            padding: '9px 14px',
+                            borderRadius: '8px',
+                            fontSize: '12.5px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                          }}
+                        >
+                          <span>💬 WhatsApp Reminder</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. Add Manual Khata / Due Entry Accordion */}
+                <div style={{ marginBottom: '18px', background: '#F8FAFC', border: '1.5px solid #E2E8F0', borderRadius: '12px', padding: '12px 16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#0F172A' }}>Manual Khata / Udhaar Entry</span>
+                      <span style={{ fontSize: '12px', color: '#64748B', display: 'block' }}>Add extra offline due directly to customer phone</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddManualDue(!showAddManualDue)}
+                      style={{
+                        background: showAddManualDue ? '#E2E8F0' : '#0F172A',
+                        color: showAddManualDue ? '#0F172A' : '#FFFFFF',
+                        border: 'none',
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {showAddManualDue ? 'Cancel' : '+ Add Due Entry'}
+                    </button>
+                  </div>
+
+                  {showAddManualDue && (
+                    <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #E2E8F0', display: 'grid', gridTemplateColumns: '120px 1fr auto', gap: '10px', alignItems: 'end' }}>
+                      <div>
+                        <label style={{ fontSize: '11.5px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>Amount (₹)</label>
+                        <input
+                          type="number"
+                          placeholder="e.g. 250"
+                          value={manualDueForm.amount}
+                          onChange={(e) => setManualDueForm((prev) => ({ ...prev, amount: e.target.value }))}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1.5px solid #CBD5E1', fontSize: '13px', fontWeight: 700 }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '11.5px', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>Reason / Note</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Chai, cold drinks, table bill adjustment"
+                          value={manualDueForm.reason}
+                          onChange={(e) => setManualDueForm((prev) => ({ ...prev, reason: e.target.value }))}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1.5px solid #CBD5E1', fontSize: '13px' }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleAddManualDue(activeCustomerProfile, manualDueForm.amount, manualDueForm.reason)}
+                        style={{
+                          background: '#DC2626',
+                          color: '#FFFFFF',
+                          border: 'none',
+                          padding: '9px 16px',
+                          borderRadius: '6px',
+                          fontSize: '13px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Record Due
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. Complete Due History Table ("History Due ke Sare in person profile") */}
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <History size={16} color="#0F172A" />
+                      <h4 style={{ margin: 0, fontSize: '14.5px', fontWeight: 800, color: '#0F172A' }}>
+                        Due &amp; Khata Transaction History ({dues.allHistory.length})
+                      </h4>
+                    </div>
+                    <span style={{ fontSize: '11.5px', color: '#64748B', fontWeight: 600 }}>All timeline records</span>
+                  </div>
+
+                  {dues.allHistory.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '30px 10px', background: '#F8FAFC', borderRadius: '10px', border: '1px dashed #CBD5E1' }}>
+                      <Wallet size={24} color="#94A3B8" style={{ margin: '0 auto 6px' }} />
+                      <div style={{ fontSize: '13.5px', fontWeight: 700, color: '#64748B' }}>No Due History Found</div>
+                      <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>This customer has never had an unpaid bill or due entry.</div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {dues.allHistory.map((item, idx) => {
+                        const isPending = item.status === 'pending';
+                        return (
+                          <div
+                            key={item.id || idx}
+                            style={{
+                              padding: '12px 14px',
+                              borderRadius: '10px',
+                              border: `1.5px solid ${isPending ? '#FECACA' : '#E2E8F0'}`,
+                              background: isPending ? '#FFF5F5' : '#FFFFFF',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: '12px',
+                            }}
+                          >
+                            <div style={{ flex: 1 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontWeight: 800, fontSize: '13.5px', color: '#0F172A' }}>
+                                  {item.type === 'order' ? `Order #${item.orderId}` : 'Manual Khata Entry'}
+                                </span>
+                                {isPending ? (
+                                  <span style={{ background: '#FEE2E2', color: '#DC2626', fontSize: '11px', fontWeight: 800, padding: '2px 8px', borderRadius: '6px' }}>
+                                    Pending Due
+                                  </span>
+                                ) : (
+                                  <span style={{ background: '#DCFCE7', color: '#166534', fontSize: '11px', fontWeight: 800, padding: '2px 8px', borderRadius: '6px' }}>
+                                    Cleared ({item.clearedMode || 'Paid'})
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
+                                {new Date(item.date).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                {item.note && ` • ${item.note}`}
+                                {item.reason && item.reason !== item.note && ` • ${item.reason}`}
+                              </div>
+                              {Array.isArray(item.items) && item.items.length > 0 && (
+                                <div style={{ fontSize: '11.5px', color: '#475569', marginTop: '3px' }}>
+                                  {item.items.map((it) => `${it.quantity || it.qty || 1}x ${it.name}`).join(', ')}
+                                </div>
+                              )}
+                            </div>
+
+                            <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+                              <span style={{ fontSize: '16px', fontWeight: 900, color: isPending ? '#DC2626' : '#059669' }}>
+                                ₹{item.amount}
+                              </span>
+
+                              {isPending && (
+                                <div style={{ display: 'flex', gap: '6px' }}>
+                                  {item.type === 'order' ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleClearCustomerDueOrder(item.id, 'Cash')}
+                                        style={{
+                                          background: '#059669',
+                                          color: '#FFFFFF',
+                                          border: 'none',
+                                          padding: '4px 8px',
+                                          borderRadius: '6px',
+                                          fontSize: '11px',
+                                          fontWeight: 800,
+                                          cursor: 'pointer',
+                                        }}
+                                      >
+                                        Collect Cash
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleClearCustomerDueOrder(item.id, 'UPI')}
+                                        style={{
+                                          background: '#4F46E5',
+                                          color: '#FFFFFF',
+                                          border: 'none',
+                                          padding: '4px 8px',
+                                          borderRadius: '6px',
+                                          fontSize: '11px',
+                                          fontWeight: 800,
+                                          cursor: 'pointer',
+                                        }}
+                                      >
+                                        Collect UPI
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const phoneKey = cleanPhone || String(activeCustomerProfile.name || '').trim().toLowerCase() || activeCustomerProfile.id;
+                                        const existingMap = { ...customerDuesMap };
+                                        if (existingMap[phoneKey] && Array.isArray(existingMap[phoneKey].entries)) {
+                                          existingMap[phoneKey].entries = existingMap[phoneKey].entries.map((e) =>
+                                            e.id === item.id ? { ...e, status: 'cleared', clearedAt: new Date().toISOString(), clearedMode: 'Cash' } : e
+                                          );
+                                          setCustomerDuesMap(existingMap);
+                                          localStorage.setItem('foodypay_customer_dues_v1', JSON.stringify(existingMap));
+                                          addToast('Manual due cleared!');
+                                        }
+                                      }}
+                                      style={{
+                                        background: '#059669',
+                                        color: '#FFFFFF',
+                                        border: 'none',
+                                        padding: '4px 8px',
+                                        borderRadius: '6px',
+                                        fontSize: '11px',
+                                        fontWeight: 800,
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      Clear Entry
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="crm-modal-footer" style={{ borderTop: '1.5px solid #F1F5F9', padding: '12px 22px', display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="crm-btn-secondary"
+                  onClick={() => setActiveCustomerProfile(null)}
+                  style={{ padding: '8px 18px', fontSize: '13px', fontWeight: 700 }}
+                >
+                  Close Profile
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ==========================================================================
+          MODAL: MOVE KOT / TRANSFER ORDER TO ANOTHER TABLE
+          ========================================================================== */}
+      {isMoveKotModalOpen && (
+        <div className="crm-modal-backdrop" onClick={() => setIsMoveKotModalOpen(false)}>
+          <div className="crm-modal-card" style={{ maxWidth: '480px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="crm-modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ArrowRightLeft size={20} color="#0284C7" />
+                <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800 }}>Move KOT / Shift Dining Table</h3>
+              </div>
+              <button
+                type="button"
+                className="crm-modal-close-btn"
+                onClick={() => setIsMoveKotModalOpen(false)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleMoveKotSubmit} style={{ padding: '20px' }}>
+              <div style={{ background: '#F8FAFC', padding: '12px 16px', borderRadius: '10px', border: '1px solid #E2E8F0', marginBottom: '16px' }}>
+                <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>SOURCE ORDER &amp; TABLE</div>
+                {moveKotSourceOrder ? (
+                  <div style={{ marginTop: '4px' }}>
+                    <div style={{ fontWeight: 800, fontSize: '15px', color: '#0F172A' }}>
+                      {moveKotSourceOrder.table || 'Table'} • Order {moveKotSourceOrder.orderId || moveKotSourceOrder.id}
+                    </div>
+                    <div style={{ fontSize: '12.5px', color: '#475569', marginTop: '2px' }}>
+                      Customer: <b>{moveKotSourceOrder.customer || 'Walk-in'}</b> • Amount: <b>₹{moveKotSourceOrder.total}</b>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ marginTop: '6px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '4px' }}>Select Active Running Order:</label>
+                    <select
+                      className="crm-input"
+                      value={moveKotSourceOrder ? (moveKotSourceOrder._id || moveKotSourceOrder.id) : ''}
+                      onChange={(e) => {
+                        const ord = orders.find((o) => (o._id || o.id) === e.target.value);
+                        setMoveKotSourceOrder(ord || null);
+                      }}
+                      required
+                    >
+                      <option value="">-- Choose Running Table Order --</option>
+                      {orders
+                        .filter((o) => o && o.status !== 'completed' && o.status !== 'cancelled')
+                        .map((o) => (
+                          <option key={o._id || o.id} value={o._id || o.id}>
+                            {o.table || 'Counter'} — {o.customer || 'Walk-in'} (₹{o.total}) [{o.status}]
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ fontSize: '12.5px', fontWeight: 800, color: '#0F172A', display: 'block', marginBottom: '6px' }}>
+                  Select Destination Target Table *
+                </label>
+                <select
+                  className="crm-input"
+                  value={moveKotTargetTable}
+                  onChange={(e) => setMoveKotTargetTable(e.target.value)}
+                  style={{ padding: '10px 12px', fontSize: '14px', fontWeight: 700 }}
+                  required
+                >
+                  <option value="">-- Choose New Table --</option>
+                  {(tables && tables.length > 0 ? tables : [
+                    { name: '1' }, { name: '2' }, { name: '3' }, { name: '4' },
+                    { name: '5' }, { name: '6' }, { name: '7' }, { name: 'F1' },
+                    { name: 'F2' }, { name: 'F3' }, { name: 'CAR 1' }, { name: 'CAR 2' },
+                    { name: 'T1' }, { name: 'T2' }, { name: 'T3' }, { name: 'T4' },
+                    { name: 'PARTY' }
+                  ]).map((t, idx) => {
+                    const tName = t.name || `Table ${idx + 1}`;
+                    return (
+                      <option key={t.id || t._id || idx} value={tName}>
+                        {tName} {t.capacity ? `(${t.capacity} Pax)` : ''} {t.section ? `— ${t.section}` : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '6px' }}>
+                  All items, KOT tickets, and running billing will be transferred to this table immediately.
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="crm-btn-secondary"
+                  onClick={() => setIsMoveKotModalOpen(false)}
+                  style={{ padding: '8px 16px', fontSize: '13px' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-create-order-primary"
+                  style={{ background: '#0284C7', padding: '8px 20px', fontSize: '13px' }}
+                >
+                  <ArrowRightLeft size={16} />
+                  <span>Confirm Move KOT</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ==========================================================================
           MODAL: VIEW FULL ORDER DETAILS (Triggered when clicking Completed / Cancelled cards)

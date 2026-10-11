@@ -845,4 +845,55 @@ export function calculateBikeDeliveryTime(lat1, lon1, lat2, lon2) {
   };
 }
 
+/**
+ * Customer Due (Khata / Udhaar) APIs
+ */
+export async function fetchCustomerDuesApi(token, phone = '') {
+  try {
+    const res = await safeFetch(`/customer-dues${phone ? `?phone=${encodeURIComponent(phone)}` : ''}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    return await parseJsonResponse(res);
+  } catch (err) {
+    console.warn('Backend due sync notice:', err.message);
+    return null;
+  }
+}
+
+export async function updateCustomerDueStatusApi(token, payload) {
+  try {
+    const res = await safeFetch(`/customer-dues/settle`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    return await parseJsonResponse(res);
+  } catch (err) {
+    console.warn('Backend due settle notice:', err.message);
+    return null;
+  }
+}
+
+export async function moveKotTableApi(token, orderId, targetTable) {
+  try {
+    const res = await safeFetch(`/orders/${orderId}/move-table`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ targetTable }),
+    });
+    return await parseJsonResponse(res);
+  } catch (err) {
+    console.warn('Backend move table notice:', err.message);
+    return null;
+  }
+}
+
 

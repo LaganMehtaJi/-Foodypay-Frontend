@@ -23,7 +23,14 @@ import {
   EyeOff,
   Sparkles,
   SlidersHorizontal,
-  DollarSign
+  DollarSign,
+  Calendar,
+  ChevronDown,
+  Utensils,
+  Package,
+  Users,
+  Percent,
+  BarChart3
 } from 'lucide-react';
 import {
   getPartnerCredentials,
@@ -98,20 +105,144 @@ export default function PartnerPortalPage({ onShowToast }) {
     loadTelemetry();
   }, []);
 
-  // Compute Today's Total Sales & Orders Count
-  const todayStr = new Date().toISOString().split('T')[0];
-  const todayOrders = (orders || []).filter((o) => {
-    if (!o) return false;
-    const dt = o.createdAt || o.timestamp || o.date;
-    if (!dt) return true;
-    return String(dt).split('T')[0] === todayStr;
-  });
+  // Day-Wise Calendar & Date Range Filter State
+  const [dateRangeFilter, setDateRangeFilter] = useState('today'); // 'today' | 'yesterday' | 'last_7' | 'last_30' | 'this_month' | 'custom' | 'all'
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
 
-  const totalSalesToday = (todayOrders.length > 0 ? todayOrders : orders).reduce(
+  // Helper: Check if order falls in selected Date / Calendar Range
+  const isOrderInDateRange = (o, rangeKey, startStr, endStr) => {
+    if (!o) return false;
+    if (rangeKey === 'all') return true;
+
+    let oDate = null;
+    if (o.createdAt) oDate = new Date(o.createdAt);
+    else if (o.timestamp) oDate = new Date(o.timestamp);
+    else if (o.date) oDate = new Date(o.date);
+    else oDate = new Date();
+
+    if (isNaN(oDate.getTime())) return true;
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+    if (rangeKey === 'today') {
+      return oDate >= todayStart && oDate <= todayEnd;
+    }
+
+    if (rangeKey === 'yesterday') {
+      const yestStart = new Date(todayStart);
+      yestStart.setDate(yestStart.getDate() - 1);
+      const yestEnd = new Date(todayStart);
+      yestEnd.setMilliseconds(-1);
+      return oDate >= yestStart && oDate <= yestEnd;
+    }
+
+    if (rangeKey === 'last_7') {
+      const d7 = new Date(todayStart);
+      d7.setDate(d7.getDate() - 6);
+      return oDate >= d7 && oDate <= todayEnd;
+    }
+
+    if (rangeKey === 'last_30') {
+      const d30 = new Date(todayStart);
+      d30.setDate(d30.getDate() - 29);
+      return oDate >= d30 && oDate <= todayEnd;
+    }
+
+    if (rangeKey === 'this_month') {
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      return oDate >= monthStart && oDate <= todayEnd;
+    }
+
+    if (rangeKey === 'custom') {
+      if (!startStr && !endStr) return true;
+      const start = startStr ? new Date(`${startStr}T00:00:00`) : new Date(0);
+      const end = endStr ? new Date(`${endStr}T23:59:59`) : new Date();
+      return oDate >= start && oDate <= end;
+    }
+
+    return true;
+  };
+
+  const getFilterLabel = () => {
+    if (dateRangeFilter === 'today') return "Today's";
+    if (dateRangeFilter === 'yesterday') return "Yesterday's";
+    if (dateRangeFilter === 'last_7') return "Last 7 Days";
+    if (dateRangeFilter === 'last_30') return "Last 30 Days";
+    if (dateRangeFilter === 'this_month') return "This Month's";
+    if (dateRangeFilter === 'custom') return "Custom Range";
+    return "All Time";
+  };
+
+  // Filtered Orders for the selected period
+  const periodOrdersList = (orders || []).filter((o) =>
+    isOrderInDateRange(o, dateRangeFilter, customStartDate, customEndDate)
+  );
+
+  const periodTotalSalesAmt = periodOrdersList.reduce(
     (sum, o) => sum + (o ? (Number(o.total) || 0) : 0),
     0
   );
-  const totalOrdersCount = todayOrders.length > 0 ? todayOrders.length : (orders.length || 14);
+
+  const periodTotalOrdersCount = periodOrdersList.length;
+
+  const avgOrderValue = periodTotalOrdersCount > 0
+    ? Math.round(periodTotalSalesAmt / periodTotalOrdersCount)
+    : 0;
+
+  const onlineOrders = periodOrdersList.filter(
+    (o) => o && (o.paymentMode === 'online' || String(o.paymentStatus).toLowerCase().includes('online') || String(o.paymentStatus).toLowerCase().includes('razorpay'))
+  );
+  const onlineSalesAmt = onlineOrders.reduce((sum, o) => sum + (o ? (Number(o.total) || 0) : 0), 0);
+
+  const cashOrders = periodOrdersList.filter(
+    (o) => !onlineOrders.includes(o)
+  );
+  const cashSalesAmt = cashOrders.reduce((sum, o) => sum + (o ? (Number(o.total) || 0) : 0), 0);
+
+  const activeKitchenTickets = (orders || []).filter(
+    (o) => o && (o.status === 'new' || o.status === 'preparing')
+  ).length;
+
+  // Deep Telemetry: Top items, combos, and repeat retention
+  const itemCounts = {};
+  const comboCounts = {};
+  periodOrdersList.forEach((o) => {
+    (o.items || []).forEach((it) => {
+      if (!it.name) return;
+      const q = Number(it.qty) || 1;
+      const p = Number(it.price) || 0;
+      if (!itemCounts[it.name]) itemCounts[it.name] = { name: it.name, qty: 0, sales: 0 };
+      itemCounts[it.name].qty += q;
+      itemCounts[it.name].sales += q * p;
+
+      if (it.name.toLowerCase().includes('combo')) {
+        if (!comboCounts[it.name]) comboCounts[it.name] = { name: it.name, qty: 0, sales: 0 };
+        comboCounts[it.name].qty += q;
+        comboCounts[it.name].sales += q * p;
+      }
+    });
+  });
+
+  const sortedDishes = Object.values(itemCounts).sort((a, b) => b.qty - a.qty);
+  const topDish = sortedDishes[0] || { name: 'No Orders In Range', qty: 0, sales: 0 };
+
+  const sortedCombos = Object.values(comboCounts).sort((a, b) => b.qty - a.qty);
+  const topCombo = sortedCombos[0] || { name: 'No Combos Sold Yet', qty: 0, sales: 0 };
+
+  const customerMap = {};
+  periodOrdersList.forEach((o) => {
+    const key = o.customer || o.customerPhone || o.phone || o.customerName;
+    if (!key) return;
+    customerMap[key] = (customerMap[key] || 0) + 1;
+  });
+  const uniqueCustomerCount = Object.keys(customerMap).length;
+  const repeatCustomerCount = Object.values(customerMap).filter((cnt) => cnt > 1).length;
+  const customerRepeatRate = uniqueCustomerCount > 0
+    ? ((repeatCustomerCount / uniqueCustomerCount) * 100).toFixed(1)
+    : '0.0';
 
   // Save Store Restrictions & UPI ID
   const handleSaveRestrictions = (e) => {
@@ -180,57 +311,288 @@ export default function PartnerPortalPage({ onShowToast }) {
       {/* MAIN CONTAINER */}
       <main style={{ maxWidth: '1240px', margin: '0 auto', padding: '32px 24px', display: 'flex', flexDirection: 'column', gap: '28px' }}>
         
-        {/* TELEMETRY CARDS GRID */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '20px' }}>
-          
-          {/* Card 1: Today's Total Sales */}
-          <div style={{ background: '#FFFFFF', borderRadius: '20px', padding: '24px', border: '1px solid #E2E8F0', boxShadow: '0 4px 14px rgba(0,0,0,0.03)', position: 'relative', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <span style={{ fontSize: '12.5px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Sales Today</span>
-              <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#ECFDF5', color: '#10B981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <TrendingUp size={20} />
+        {/* DATE RANGE & DAY-WISE CALENDAR SELECTION HEADER BAR */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '14px',
+            backgroundColor: '#FFFFFF',
+            padding: '16px 22px',
+            borderRadius: '20px',
+            border: '1.5px solid #E2E8F0',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.03)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: '#ECFDF5', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <TrendingUp size={22} />
+            </div>
+            <div>
+              <h2 style={{ margin: 0, fontSize: '19px', fontWeight: 900, color: '#0F172A' }}>
+                Store Sales &amp; Business Telemetry Analytics
+              </h2>
+              <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '2px' }}>
+                Centralized Analytics &amp; Revenue Telemetry for SuperAdmin Partner
               </div>
             </div>
-            <div style={{ fontSize: '30px', fontWeight: 900, color: '#0F172A' }}>
-              ₹{totalSalesToday.toLocaleString('en-IN')}
-            </div>
-            <div style={{ fontSize: '12px', color: '#10B981', fontWeight: 700, marginTop: '6px' }}>
-               Live Revenue from Today's Orders
-            </div>
+            {dateRangeFilter !== 'all' && (
+              <span style={{ fontSize: '12px', fontWeight: 800, color: '#059669', backgroundColor: '#ECFDF5', padding: '4px 12px', borderRadius: '14px', border: '1px solid #A7F3D0' }}>
+                Filter: {getFilterLabel()} ({periodOrdersList.length} Orders)
+              </span>
+            )}
           </div>
 
-          {/* Card 2: Today's Total Orders */}
-          <div style={{ background: '#FFFFFF', borderRadius: '20px', padding: '24px', border: '1px solid #E2E8F0', boxShadow: '0 4px 14px rgba(0,0,0,0.03)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <span style={{ fontSize: '12.5px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Today's Orders</span>
-              <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#EFF6FF', color: '#3B82F6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <ShoppingBag size={20} />
-              </div>
+          {/* DAY-WISE CALENDAR & DATE RANGE SELECTOR */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+              <select
+                value={dateRangeFilter}
+                onChange={(e) => setDateRangeFilter(e.target.value)}
+                style={{
+                  appearance: 'none',
+                  WebkitAppearance: 'none',
+                  backgroundColor: '#FFFFFF',
+                  border: '1.5px solid #CBD5E1',
+                  borderRadius: '12px',
+                  padding: '9px 36px 9px 36px',
+                  fontSize: '13.5px',
+                  fontWeight: 700,
+                  color: '#1E293B',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+                  outline: 'none',
+                }}
+              >
+                <option value="today"> Today</option>
+                <option value="yesterday"> Yesterday</option>
+                <option value="last_7"> Last 7 days</option>
+                <option value="last_30"> Last 30 days</option>
+                <option value="this_month"> This Month</option>
+                <option value="custom">️ Custom Date Range (Day-Wise Calendar)</option>
+                <option value="all"> All Time (All Sales)</option>
+              </select>
+              <Calendar size={17} color="#475569" style={{ position: 'absolute', left: '12px', pointerEvents: 'none' }} />
+              <ChevronDown size={16} color="#475569" style={{ position: 'absolute', right: '12px', pointerEvents: 'none' }} />
             </div>
-            <div style={{ fontSize: '30px', fontWeight: 900, color: '#0F172A' }}>
-              {totalOrdersCount} <span style={{ fontSize: '14px', color: '#64748B', fontWeight: 700 }}>Orders</span>
-            </div>
-            <div style={{ fontSize: '12px', color: '#3B82F6', fontWeight: 700, marginTop: '6px' }}>
-               Live Orders Count Today
-            </div>
-          </div>
 
-          {/* Card 3: Active Store UPI ID */}
-          <div style={{ background: '#FFFFFF', borderRadius: '20px', padding: '24px', border: '1px solid #E2E8F0', boxShadow: '0 4px 14px rgba(0,0,0,0.03)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <span style={{ fontSize: '12.5px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Store Active UPI ID</span>
-              <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#FFF7ED', color: '#EA580C', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <CreditCard size={20} />
+            {/* CUSTOM DAY-WISE CALENDAR PICKERS */}
+            {dateRangeFilter === 'custom' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#F8FAFC', padding: '6px 12px', borderRadius: '12px', border: '1px solid #CBD5E1' }}>
+                <div style={{ fontSize: '11.5px', fontWeight: 800, color: '#64748B' }}>From:</div>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  style={{ border: '1px solid #CBD5E1', borderRadius: '8px', padding: '5px 10px', fontSize: '12.5px', fontWeight: 600, color: '#0F172A' }}
+                />
+                <div style={{ fontSize: '11.5px', fontWeight: 800, color: '#64748B' }}>To:</div>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  style={{ border: '1px solid #CBD5E1', borderRadius: '8px', padding: '5px 10px', fontSize: '12.5px', fontWeight: 600, color: '#0F172A' }}
+                />
+                {(customStartDate || customEndDate) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomStartDate('');
+                      setCustomEndDate('');
+                    }}
+                    style={{ border: 'none', background: '#E2E8F0', borderRadius: '6px', padding: '4px 8px', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer', color: '#475569' }}
+                  >
+                    Reset
+                  </button>
+                )}
               </div>
-            </div>
-            <div style={{ fontSize: '20px', fontWeight: 900, color: '#EA580C', wordBreak: 'break-all' }}>
-              {restrictions.upiId || 'merchant@icici'}
-            </div>
-            <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 700, marginTop: '6px' }}>
-              Synced with Store &amp; Customer Mobile Menu QR
-            </div>
+            )}
           </div>
         </div>
+
+        {/* COMPREHENSIVE KPI ANALYTICS GRID */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '18px' }}>
+          
+          {/* Card 1: Total Period Sales */}
+          <div style={{ background: '#FFFFFF', borderRadius: '20px', padding: '22px', border: '1px solid #E2E8F0', boxShadow: '0 4px 14px rgba(0,0,0,0.03)', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{getFilterLabel()} Total Sales</span>
+              <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#ECFDF5', color: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <CreditCard size={22} />
+              </div>
+            </div>
+            <div style={{ fontSize: '30px', fontWeight: 900, color: '#059669' }}>
+              ₹{periodTotalSalesAmt.toLocaleString('en-IN')}
+            </div>
+            <div style={{ fontSize: '12px', color: '#10B981', fontWeight: 700, marginTop: '6px' }}>
+               Live Revenue for {getFilterLabel()}
+            </div>
+          </div>
+
+          {/* Card 2: Total Orders */}
+          <div style={{ background: '#FFFFFF', borderRadius: '20px', padding: '22px', border: '1px solid #E2E8F0', boxShadow: '0 4px 14px rgba(0,0,0,0.03)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{getFilterLabel()} Orders</span>
+              <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#EFF6FF', color: '#1D4ED8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <ShoppingBag size={22} />
+              </div>
+            </div>
+            <div style={{ fontSize: '30px', fontWeight: 900, color: '#0F172A' }}>
+              {periodTotalOrdersCount} <span style={{ fontSize: '14px', color: '#64748B', fontWeight: 700 }}>Orders</span>
+            </div>
+            <div style={{ fontSize: '12px', color: '#2563EB', fontWeight: 700, marginTop: '6px' }}>
+               Verified Completed &amp; Active
+            </div>
+          </div>
+
+          {/* Card 3: Average Order Value (AOV) */}
+          <div style={{ background: '#FFFFFF', borderRadius: '20px', padding: '22px', border: '1px solid #E2E8F0', boxShadow: '0 4px 14px rgba(0,0,0,0.03)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Avg Bill Value (AOV)</span>
+              <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#F5F3FF', color: '#7C3AED', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <DollarSign size={22} />
+              </div>
+            </div>
+            <div style={{ fontSize: '30px', fontWeight: 900, color: '#7C3AED' }}>
+              ₹{avgOrderValue} <span style={{ fontSize: '14px', color: '#64748B', fontWeight: 700 }}>/ order</span>
+            </div>
+            <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 600, marginTop: '6px' }}>
+              Across {periodTotalOrdersCount} total orders in filter
+            </div>
+          </div>
+
+          {/* Card 4: Active Kitchen Tickets */}
+          <div style={{ background: '#FFFFFF', borderRadius: '20px', padding: '22px', border: '1px solid #E2E8F0', boxShadow: '0 4px 14px rgba(0,0,0,0.03)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active Kitchen Tickets</span>
+              <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#FFF0EB', color: '#FF5E14', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <ChefHat size={22} />
+              </div>
+            </div>
+            <div style={{ fontSize: '30px', fontWeight: 900, color: '#FF5E14' }}>
+              {activeKitchenTickets} <span style={{ fontSize: '14px', color: '#64748B', fontWeight: 700 }}>Tickets</span>
+            </div>
+            <div style={{ fontSize: '12px', color: '#C2410C', fontWeight: 700, marginTop: '6px' }}>
+               Currently preparing on KDS
+            </div>
+          </div>
+
+          {/* Card 5: Payment Breakdown (Online UPI vs Counter) */}
+          <div style={{ background: '#FFFFFF', borderRadius: '20px', padding: '22px', border: '1px solid #E2E8F0', boxShadow: '0 4px 14px rgba(0,0,0,0.03)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Payment Modes</span>
+              <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#ECFDF5', color: '#047857', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <CheckCircle2 size={22} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                <span style={{ color: '#059669', fontWeight: 800 }}>Online UPI:</span>
+                <b style={{ color: '#0F172A' }}>₹{onlineSalesAmt.toLocaleString('en-IN')} ({onlineOrders.length})</b>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                <span style={{ color: '#D97706', fontWeight: 800 }}>Cash/Counter:</span>
+                <b style={{ color: '#0F172A' }}>₹{cashSalesAmt.toLocaleString('en-IN')} ({cashOrders.length})</b>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 6: Customer Repeat Rate & Loyalty */}
+          <div style={{ background: '#FFFFFF', borderRadius: '20px', padding: '22px', border: '1px solid #E2E8F0', boxShadow: '0 4px 14px rgba(0,0,0,0.03)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <span style={{ fontSize: '12px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Diner Repeat Rate</span>
+              <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: '#EEF2FF', color: '#4F46E5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Users size={22} />
+              </div>
+            </div>
+            <div style={{ fontSize: '30px', fontWeight: 900, color: '#4F46E5' }}>
+              {customerRepeatRate}%
+            </div>
+            <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 600, marginTop: '6px' }}>
+              {uniqueCustomerCount} unique diners • {repeatCustomerCount} repeat visits
+            </div>
+          </div>
+
+        </div>
+
+        {/* DEEP MENU & PRODUCT TELEMETRY SECTION (GROW ANALYTICS IN PARTNER) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px' }}>
+          
+          {/* Top Dish Card */}
+          <div style={{ background: '#FFFFFF', borderRadius: '20px', border: '1.5px solid #E2E8F0', padding: '24px', boxShadow: '0 4px 14px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#FEF3C7', color: '#D97706', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Utensils size={20} />
+                </div>
+                <span style={{ fontSize: '13px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase' }}>Most Ordered Dish</span>
+              </div>
+              <span style={{ fontSize: '11px', background: '#FEF3C7', color: '#B45309', padding: '2px 8px', borderRadius: '10px', fontWeight: 800 }}>#1 Dish</span>
+            </div>
+            <div>
+              <div style={{ fontSize: '19px', fontWeight: 900, color: '#0F172A', marginBottom: '4px' }}>{topDish.name}</div>
+              <div style={{ fontSize: '13px', color: topDish.qty > 0 ? '#059669' : '#64748B', fontWeight: 800 }}>
+                {topDish.qty > 0 ? ` ${topDish.qty} Units Sold • ₹${topDish.sales.toLocaleString('en-IN')} Total Revenue` : '₹0 Sales recorded in this period'}
+              </div>
+            </div>
+          </div>
+
+          {/* Top Combo Card */}
+          <div style={{ background: '#FFFFFF', borderRadius: '20px', border: '1.5px solid #E2E8F0', padding: '24px', boxShadow: '0 4px 14px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#EFF6FF', color: '#2563EB', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Package size={20} />
+                </div>
+                <span style={{ fontSize: '13px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase' }}>Best Selling Combo</span>
+              </div>
+              <span style={{ fontSize: '11px', background: '#EFF6FF', color: '#1D4ED8', padding: '2px 8px', borderRadius: '10px', fontWeight: 800 }}>#1 Combo</span>
+            </div>
+            <div>
+              <div style={{ fontSize: '19px', fontWeight: 900, color: '#0F172A', marginBottom: '4px' }}>{topCombo.name}</div>
+              <div style={{ fontSize: '13px', color: topCombo.qty > 0 ? '#2563EB' : '#64748B', fontWeight: 800 }}>
+                {topCombo.qty > 0 ? ` ${topCombo.qty} Combos Sold • ₹${topCombo.sales.toLocaleString('en-IN')} Total Revenue` : 'No combo sales recorded in this period'}
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        {/* TOP PERFORMING MENU ITEMS LEADERBOARD */}
+        {sortedDishes.length > 0 && (
+          <div style={{ background: '#FFFFFF', borderRadius: '20px', border: '1px solid #E2E8F0', padding: '24px', boxShadow: '0 4px 14px rgba(0,0,0,0.03)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <BarChart3 size={20} color="#059669" />
+                <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900, color: '#0F172A' }}>Top Selling Items Leaderboard ({getFilterLabel()})</h3>
+              </div>
+              <span style={{ fontSize: '12px', color: '#64748B', fontWeight: 700 }}>Ranked by Units Sold</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {sortedDishes.slice(0, 5).map((dish, idx) => {
+                const maxQty = sortedDishes[0]?.qty || 1;
+                const pct = Math.round((dish.qty / maxQty) * 100);
+                return (
+                  <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13.5px' }}>
+                      <span style={{ fontWeight: 800, color: '#0F172A' }}>
+                        #{idx + 1} {dish.name}
+                      </span>
+                      <span style={{ fontWeight: 700, color: '#059669' }}>
+                        {dish.qty} orders • <b style={{ color: '#0F172A' }}>₹{dish.sales.toLocaleString('en-IN')}</b>
+                      </span>
+                    </div>
+                    <div style={{ height: '7px', background: '#F1F5F9', borderRadius: '10px', overflow: 'hidden' }}>
+                      <div style={{ width: `${pct}%`, height: '100%', background: 'linear-gradient(90deg, #10B981, #059669)', borderRadius: '10px' }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* MASTER SAVE & SYNC LIVE APPS ACTION CARD */}
         <div style={{ background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)', borderRadius: '24px', padding: '24px 28px', color: '#FFFFFF', boxShadow: '0 8px 24px rgba(15,23,42,0.15)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
@@ -667,7 +1029,7 @@ export default function PartnerPortalPage({ onShowToast }) {
               </div>
             </div>
             <span style={{ fontSize: '12px', fontWeight: 800, background: '#EEF2FF', color: '#4F46E5', padding: '4px 12px', borderRadius: '12px' }}>
-              Total Stream: {orders.length} Orders
+              Showing {periodOrdersList.length} of {orders.length} Orders ({getFilterLabel()})
             </span>
           </div>
 
@@ -684,14 +1046,14 @@ export default function PartnerPortalPage({ onShowToast }) {
                 </tr>
               </thead>
               <tbody>
-                {orders.length === 0 ? (
+                {(periodOrdersList.length > 0 ? periodOrdersList : orders).length === 0 ? (
                   <tr>
                     <td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: '#64748B' }}>
-                      {loadingOrders ? 'Loading live orders stream...' : 'No store orders recorded yet.'}
+                      {loadingOrders ? 'Loading live orders stream...' : 'No store orders recorded for this filter period.'}
                     </td>
                   </tr>
                 ) : (
-                  orders.slice(0, 10).map((o, idx) => (
+                  (periodOrdersList.length > 0 ? periodOrdersList : orders).slice(0, 15).map((o, idx) => (
                     <tr key={o._id || o.id || idx} style={{ borderBottom: '1px solid #F1F5F9' }}>
                       <td style={{ padding: '12px 16px', fontWeight: 800, color: '#0F172A' }}>#{o.orderId || o.id || 'FP-100' + idx}</td>
                       <td style={{ padding: '12px 16px' }}>{o.customerName || o.customerPhone || 'Walk-in Diner'}</td>
