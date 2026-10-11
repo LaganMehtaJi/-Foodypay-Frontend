@@ -63,6 +63,9 @@ import {
   LayoutGrid,
   ArrowRightLeft,
   Bike,
+  Crown,
+  KeyRound,
+  DollarSign,
 } from 'lucide-react';
 import {
   playOrderPlaced,
@@ -133,6 +136,8 @@ import {
   deleteProductFromFirestore,
   saveTableToFirestore,
   deleteTableFromFirestore,
+  saveBusinessUserToFirestore,
+  getBusinessUserByUniqueId,
 } from '../utils/firestoreService';
 import './Dashboard.css';
 
@@ -353,6 +358,250 @@ export default function DashboardPage({ onShowToast }) {
       window.removeEventListener('foodypay_store_controls_updated', syncPartnerStoreLocks);
     };
   }, []);
+
+  // ==========================================================================
+  // MERCHANT ADMIN (STORE OWNER MASTER CONTROLS & CREDENTIALS SUITE)
+  // ==========================================================================
+  const [merchantAdminSalesFilter, setMerchantAdminSalesFilter] = useState('today'); // 'today' | 'yesterday' | 'last_7' | 'this_month' | 'last_month' | 'all'
+  const [merchantAdminSubTab, setMerchantAdminSubTab] = useState('overview'); // 'overview' | 'credentials' | 'accounts' | 'tables' | 'catalog'
+  const [adminUniqueId, setAdminUniqueId] = useState(() => {
+    return localStorage.getItem('foodypay_active_business_id') || currentUser?.foodypayId || currentUser?.uniqueId || 'FP-348330';
+  });
+  const [adminPartnerPassword, setAdminPartnerPassword] = useState(() => {
+    return currentUser?.password || '';
+  });
+  const [adminKitchenPassword, setAdminKitchenPassword] = useState(() => {
+    return currentUser?.kitchenPassword || 'SnackRack400';
+  });
+  const [credSaving, setCredSaving] = useState(false);
+  const [copiedField, setCopiedField] = useState(null);
+
+  // Sync latest business credentials from Firestore Business_Users
+  useEffect(() => {
+    async function loadBizProfile() {
+      const activeBid = adminUniqueId || localStorage.getItem('foodypay_active_business_id');
+      if (!activeBid) return;
+      try {
+        const bp = await getBusinessUserByUniqueId(activeBid);
+        if (bp) {
+          if (bp.password) setAdminPartnerPassword(bp.password);
+          if (bp.kitchenPassword) setAdminKitchenPassword(bp.kitchenPassword);
+        }
+      } catch (e) {}
+    }
+    loadBizProfile();
+  }, [adminUniqueId]);
+
+  const handleGenerateUniqueId = () => {
+    const newUid = `FP-${Math.floor(100000 + Math.random() * 900000)}`;
+    setAdminUniqueId(newUid);
+    addToast(`Generated Unique ID: ${newUid}. Click "Save & Sync" to activate!`, <Sparkles size={18} color="#FF5E14" />);
+  };
+
+  const handleGeneratePartnerPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$';
+    let pass = 'FP#';
+    for (let i = 0; i < 6; i++) {
+      pass += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setAdminPartnerPassword(pass);
+    addToast('Generated new Merchant Password! Click "Save" to apply.', <KeyRound size={18} color="#16A34A" />);
+  };
+
+  const handleGenerateKitchenPassword = () => {
+    const kPass = `Chef-${Math.floor(1000 + Math.random() * 9000)}`;
+    setAdminKitchenPassword(kPass);
+    addToast(`Generated Kitchen Password: ${kPass}! Click "Save" to apply.`, <ChefHat size={18} color="#FF5E14" />);
+  };
+
+  const handleSaveCredentials = async () => {
+    setCredSaving(true);
+    try {
+      const cleanUid = adminUniqueId.trim().toUpperCase();
+      const cleanPass = adminPartnerPassword.trim();
+      const cleanKPass = adminKitchenPassword.trim();
+
+      if (!cleanUid) {
+        addToast('Please enter a valid Unique ID (e.g. FP-348330)', <AlertCircle size={18} color="#EF4444" />);
+        setCredSaving(false);
+        return;
+      }
+
+      const payload = {
+        uniqueId: cleanUid,
+        businessId: cleanUid,
+        foodypayId: cleanUid,
+        businessName: storeControls.restName || currentUser?.businessName || 'My Restaurant POS',
+        ownerName: currentUser?.ownerName || currentUser?.name || '',
+        email: currentUser?.email || '',
+        phone: currentUser?.phone || currentUser?.contactNo || '',
+        password: cleanPass,
+        kitchenPassword: cleanKPass,
+        plan: currentUser?.plan || 'Pro',
+      };
+
+      const res = await saveBusinessUserToFirestore(payload);
+      if (res && res.success) {
+        const updatedUser = {
+          ...currentUser,
+          ...payload,
+        };
+        localStorage.setItem('foodypay_user', JSON.stringify(updatedUser));
+        localStorage.setItem('foodypay_active_business_id', cleanUid);
+        setStoreControls((prev) => ({ ...prev, foodypayId: cleanUid }));
+
+        playMilestoneCelebration();
+        confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
+        addToast(`🎉 Store Unique ID [${cleanUid}] & Passwords Synced to Cloud Firestore!`, <CheckCircle2 size={18} color="#16A34A" />);
+      } else {
+        throw new Error('Failed to save to Firestore.');
+      }
+    } catch (err) {
+      addToast(`Error saving credentials: ${err.message}`, <AlertCircle size={18} color="#EF4444" />);
+    } finally {
+      setCredSaving(false);
+    }
+  };
+
+  const copyToClipboard = (text, fieldName) => {
+    try {
+      navigator.clipboard.writeText(text);
+      setCopiedField(fieldName);
+      addToast(`Copied ${fieldName} to clipboard!`, <Check size={18} color="#16A34A" />);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch (e) {}
+  };
+
+  // Sales analytics calculated strictly from real-time Firestore orders
+  const merchantAdminSalesData = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const yesterdayStart = todayStart - 86400000;
+    const last7DaysStart = todayStart - 7 * 86400000;
+    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999).getTime();
+
+    const filtered = (orders || []).filter((o) => {
+      if (!o) return false;
+      const t = new Date(o.createdAt || o.date || 0).getTime();
+      if (merchantAdminSalesFilter === 'today') return t >= todayStart;
+      if (merchantAdminSalesFilter === 'yesterday') return t >= yesterdayStart && t < todayStart;
+      if (merchantAdminSalesFilter === 'last_7') return t >= last7DaysStart;
+      if (merchantAdminSalesFilter === 'this_month') return t >= thisMonthStart;
+      if (merchantAdminSalesFilter === 'last_month') return t >= lastMonthStart && t <= lastMonthEnd;
+      return true; // 'all'
+    });
+
+    const nonCancelled = filtered.filter((o) => o.status !== 'cancelled');
+    const totalSales = nonCancelled.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+    const completedOrders = nonCancelled.filter((o) => o.status === 'completed' || o.status === 'ready');
+    const completedSales = completedOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+
+    const paidOrders = nonCancelled.filter((o) => {
+      const ps = String(o.paymentStatus || '').toLowerCase();
+      return ps === 'paid' || ps.startsWith('paid-') || ps === 'completed';
+    });
+    const paidSales = paidOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+
+    const unpaidOrders = nonCancelled.filter((o) => {
+      const ps = String(o.paymentStatus || '').toLowerCase();
+      return !ps.includes('paid');
+    });
+    const unpaidSales = unpaidOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+
+    const upiSales = nonCancelled.filter((o) => String(o.paymentStatus).includes('upi') || String(o.paymentStatus).includes('razorpay')).reduce((s, o) => s + (Number(o.total) || 0), 0);
+    const cashSales = nonCancelled.filter((o) => String(o.paymentStatus).includes('cash')).reduce((s, o) => s + (Number(o.total) || 0), 0);
+
+    const aov = nonCancelled.length > 0 ? Math.round(totalSales / nonCancelled.length) : 0;
+
+    return {
+      filteredOrders: filtered,
+      totalSales,
+      completedOrdersCount: completedOrders.length,
+      totalOrdersCount: nonCancelled.length,
+      paidSales,
+      unpaidSales,
+      unpaidOrders,
+      upiSales,
+      cashSales,
+      aov,
+    };
+  }, [orders, merchantAdminSalesFilter]);
+
+  // All unpaid orders across whole system for Accounts / Khata
+  const merchantAdminUnpaidOrdersAllTime = useMemo(() => {
+    return (orders || []).filter((o) => {
+      if (!o || o.status === 'cancelled') return false;
+      const ps = String(o.paymentStatus || '').toLowerCase();
+      return !ps.includes('paid');
+    });
+  }, [orders]);
+
+  // All Customers summary calculated from real orders
+  const merchantAdminCustomersList = useMemo(() => {
+    const custMap = new Map();
+    (orders || []).forEach((o) => {
+      if (!o) return;
+      const key = String(o.phone || o.customer || o.customerName || 'Walk-in Diner').trim();
+      const existing = custMap.get(key) || {
+        name: o.customer || o.customerName || 'Walk-in Diner',
+        phone: o.phone || '',
+        email: o.email || '',
+        orderCount: 0,
+        totalSpent: 0,
+        lastOrderDate: o.createdAt || o.date,
+        unpaidAmount: 0,
+      };
+      existing.orderCount += 1;
+      const isPaid = String(o.paymentStatus || '').toLowerCase().includes('paid');
+      const amt = Number(o.total) || 0;
+      if (isPaid) existing.totalSpent += amt;
+      else existing.unpaidAmount += amt;
+      if (new Date(o.createdAt || o.date || 0) > new Date(existing.lastOrderDate || 0)) {
+        existing.lastOrderDate = o.createdAt || o.date;
+      }
+      custMap.set(key, existing);
+    });
+    return Array.from(custMap.values());
+  }, [orders]);
+
+  const handleSettleUnpaidOrder = async (orderId) => {
+    if (!orderId) return;
+    try {
+      await updateOrderInFirestore(orderId, {
+        paymentStatus: 'paid-cash',
+        paymentLabel: 'Cash Received (Settled in Merchant Admin)',
+        paidAt: new Date().toISOString(),
+      });
+      setOrders((prev) =>
+        prev.map((o) =>
+          String(o._id || o.id || o.orderId) === String(orderId)
+            ? { ...o, paymentStatus: 'paid-cash', paymentLabel: 'Cash Received (Settled)' }
+            : o
+        )
+      );
+      playBillPaid();
+      addToast(`Order #${orderId} marked as Paid & Settled in Cloud Firestore!`, <CheckCircle2 size={18} color="#16A34A" />);
+    } catch (err) {
+      addToast('Failed to settle order due.', <AlertCircle size={18} color="#EF4444" />);
+    }
+  };
+
+  const handleSendWhatsAppReminder = (order) => {
+    const rawPhone = String(order.phone || '').replace(/\D/g, '');
+    if (!rawPhone || rawPhone.length < 10) {
+      addToast('No valid customer contact number on this order.', <AlertCircle size={18} color="#EF4444" />);
+      return;
+    }
+    const cleanPhone = rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;
+    const store = storeControls.restName || 'Restaurant';
+    const amount = order.total || 0;
+    const msg = encodeURIComponent(
+      `Hello ${order.customer || 'Customer'}! Friendly payment reminder from ${store}. You have a pending bill of ₹${amount} for Order #${order._id || order.id || ''}. Please clear at counter or via UPI. Thank you!`
+    );
+    window.open(`https://wa.me/${cleanPhone}?text=${msg}`, '_blank');
+  };
 
   // Customer Groups Cohorts State for Telemetry & Targeted Campaigns
   const [customerGroups, setCustomerGroups] = useState(() => {
@@ -4403,6 +4652,36 @@ export default function DashboardPage({ onShowToast }) {
         </div>
 
         <nav className="crm-sidebar-menu">
+          {/* 👑 Merchant Admin Control Suite */}
+          <button
+            type="button"
+            title="Merchant Admin (Store Master Controls & Analytics)"
+            className={`crm-menu-link ${activeTab === 'merchant_admin' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('merchant_admin');
+              setMobileMenuOpen(false);
+            }}
+            style={{
+              background: activeTab === 'merchant_admin' ? 'linear-gradient(135deg, #FF5E14 0%, #EA580C 100%)' : '#FFF7ED',
+              color: activeTab === 'merchant_admin' ? '#FFFFFF' : '#C2410C',
+              border: '1.5px solid #FFEDD5',
+              borderRadius: '12px',
+              margin: '4px 6px 10px 6px',
+              fontWeight: 800,
+              boxShadow: activeTab === 'merchant_admin' ? '0 4px 12px rgba(234,88,12,0.3)' : 'none',
+            }}
+          >
+            <div className="crm-menu-link-left">
+              <span className="crm-menu-icon">
+                <Crown size={20} color={activeTab === 'merchant_admin' ? '#FFFFFF' : '#EA580C'} />
+              </span>
+              <span>Merchant Admin</span>
+            </div>
+            <span style={{ fontSize: '10px', fontWeight: 900, background: activeTab === 'merchant_admin' ? 'rgba(255,255,255,0.25)' : '#FFEDD5', color: activeTab === 'merchant_admin' ? '#FFFFFF' : '#C2410C', padding: '2px 7px', borderRadius: '8px' }}>
+              PRO
+            </span>
+          </button>
+
           {/* 1. Home / Orders */}
           <button
             type="button"
@@ -4771,6 +5050,7 @@ export default function DashboardPage({ onShowToast }) {
             <div>
               <h1 className="crm-page-heading" style={{ margin: 0, fontSize: '20px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 {activeTab === 'home_orders' && <><Home size={22} color="#1D4ED8" /> Home / Orders Overview</>}
+                {activeTab === 'merchant_admin' && <><Crown size={22} color="#EA580C" /> 👑 Merchant Admin Control Suite</>}
                 {activeTab === 'kitchen' && <><ChefHat size={22} color="#FF5E14" /> Kitchen Display System (KDS)</>}
                 {activeTab === 'catalog' && <><Package size={22} color="#1D4ED8" /> Catalog / Products</>}
                 {activeTab === 'catalog_collections' && <><Utensils size={22} color="#FF5E14" /> Meal Collections & Custom Combos</>}
@@ -4789,6 +5069,29 @@ export default function DashboardPage({ onShowToast }) {
           </div>
 
           <div className="crm-header-right" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {/* Merchant Admin Header Button */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('merchant_admin')}
+              style={{
+                background: activeTab === 'merchant_admin' ? 'linear-gradient(135deg, #FF5E14 0%, #EA580C 100%)' : '#FFF7ED',
+                color: activeTab === 'merchant_admin' ? '#FFFFFF' : '#C2410C',
+                border: '1.5px solid #FFEDD5',
+                padding: '7px 14px',
+                borderRadius: '8px',
+                fontSize: '12.5px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: '0 2px 6px rgba(255,94,20,0.15)',
+              }}
+              title="Open Merchant Admin Dashboard"
+            >
+              <Crown size={15} />
+              <span>Merchant Admin</span>
+            </button>
             {/* 1. Add Table Button */}
             <button
               type="button"
@@ -8724,6 +9027,750 @@ export default function DashboardPage({ onShowToast }) {
                 </>
               );
             })()}
+          </div>
+        )}
+
+        {/* ==========================================================================
+            VIEW: MERCHANT ADMIN (STORE OWNER MASTER CONTROLS & CREDENTIALS SUITE)
+            ========================================================================== */}
+        {activeTab === 'merchant_admin' && (
+          <div className="crm-merchant-admin-page animate-fade-in" key={activeTab} style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+            
+            {/* 1. HERO HEADER CARD */}
+            <div style={{
+              background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)',
+              borderRadius: '20px',
+              padding: '24px 28px',
+              color: '#FFFFFF',
+              boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.25)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '16px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <div style={{
+                    width: '52px',
+                    height: '52px',
+                    borderRadius: '16px',
+                    background: 'linear-gradient(135deg, #FF5E14 0%, #EA580C 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 4px 14px rgba(255, 94, 20, 0.4)'
+                  }}>
+                    <Crown size={28} color="#FFFFFF" />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <h2 style={{ margin: 0, fontSize: '22px', fontWeight: 900, letterSpacing: '-0.5px' }}>
+                        Merchant Admin Control Suite
+                      </h2>
+                      <span style={{
+                        background: 'rgba(255, 94, 20, 0.2)',
+                        border: '1px solid #FF5E14',
+                        color: '#FF8A4C',
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        fontSize: '11px',
+                        fontWeight: 900
+                      }}>
+                        STORE OWNER
+                      </span>
+                    </div>
+                    <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#94A3B8' }}>
+                      Control sales telemetry from Today to Last Month, generate Unique ID and staff passwords, manage dining tables, and audit unpaid customer accounts.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255, 255, 255, 0.08)', padding: '6px 14px', borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.12)' }}>
+                  <Store size={18} color="#38BDF8" />
+                  <div>
+                    <div style={{ fontSize: '10px', color: '#94A3B8', fontWeight: 700, textTransform: 'uppercase' }}>Active Store</div>
+                    <div style={{ fontSize: '13px', fontWeight: 900, color: '#FFFFFF' }}>{storeControls.restName} ({adminUniqueId})</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sub-tab Pill Navigation */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflowX: 'auto', paddingTop: '10px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                {[
+                  { id: 'overview', label: '📊 Total Sales & Analytics', badge: `₹${merchantAdminSalesData.totalSales.toLocaleString('en-IN')}` },
+                  { id: 'credentials', label: '🔑 Unique ID & Passwords', badge: 'Generate' },
+                  { id: 'accounts', label: '💳 Accounts & Unpaid Dues', badge: `${merchantAdminSalesData.unpaidOrders.length} Dues` },
+                  { id: 'tables', label: '🪑 Dining Tables', badge: `${tables.length} Tables` },
+                  { id: 'catalog', label: '📦 Catalog & Master Controls', badge: `${dishes.length} Items` },
+                ].map((st) => (
+                  <button
+                    key={st.id}
+                    type="button"
+                    onClick={() => setMerchantAdminSubTab(st.id)}
+                    style={{
+                      background: merchantAdminSubTab === st.id ? 'linear-gradient(135deg, #FF5E14 0%, #EA580C 100%)' : 'rgba(255, 255, 255, 0.08)',
+                      color: merchantAdminSubTab === st.id ? '#FFFFFF' : '#CBD5E1',
+                      border: 'none',
+                      padding: '8px 16px',
+                      borderRadius: '10px',
+                      fontSize: '13px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      whiteSpace: 'nowrap',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    <span>{st.label}</span>
+                    <span style={{
+                      background: merchantAdminSubTab === st.id ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.12)',
+                      padding: '2px 6px',
+                      borderRadius: '6px',
+                      fontSize: '11px',
+                      fontWeight: 900
+                    }}>
+                      {st.badge}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* SUB-TAB 1: OVERVIEW & SALES ANALYTICS (TODAY TO LAST MONTH) */}
+            {merchantAdminSubTab === 'overview' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                {/* Sales Date Range Filter Buttons */}
+                <div style={{
+                  background: '#FFFFFF',
+                  borderRadius: '16px',
+                  padding: '16px 20px',
+                  border: '1.5px solid #E2E8F0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '12px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Calendar size={18} color="#FF5E14" />
+                    <span style={{ fontSize: '14px', fontWeight: 900, color: '#0F172A' }}>Store Sales Period:</span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    {[
+                      { id: 'today', label: '⚡ Today' },
+                      { id: 'yesterday', label: '📅 Yesterday' },
+                      { id: 'last_7', label: '🗓️ Last 7 Days' },
+                      { id: 'this_month', label: '📆 This Month' },
+                      { id: 'last_month', label: '📊 Last Month' },
+                      { id: 'all', label: '🌐 All Time' },
+                    ].map((btn) => (
+                      <button
+                        key={btn.id}
+                        type="button"
+                        onClick={() => setMerchantAdminSalesFilter(btn.id)}
+                        style={{
+                          background: merchantAdminSalesFilter === btn.id ? '#FF5E14' : '#F8FAFC',
+                          color: merchantAdminSalesFilter === btn.id ? '#FFFFFF' : '#475569',
+                          border: `1.5px solid ${merchantAdminSalesFilter === btn.id ? '#FF5E14' : '#E2E8F0'}`,
+                          padding: '7px 14px',
+                          borderRadius: '10px',
+                          fontSize: '12.5px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          transition: 'all 0.15s'
+                        }}
+                      >
+                        {btn.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Metrics 4-Cards Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+                  {/* Card 1: Total Store Sales */}
+                  <div style={{ background: '#FFFFFF', borderRadius: '16px', padding: '18px 20px', border: '1.5px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 800, color: '#64748B' }}>Gross Store Sales</span>
+                      <span style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <DollarSign size={20} color="#10B981" />
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '26px', fontWeight: 900, color: '#0F172A', marginTop: '10px' }}>
+                      ₹{merchantAdminSalesData.totalSales.toLocaleString('en-IN')}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#10B981', fontWeight: 700, marginTop: '4px' }}>
+                      {merchantAdminSalesData.totalOrdersCount} Total Customer Orders
+                    </div>
+                  </div>
+
+                  {/* Card 2: Completed / Settled Sales */}
+                  <div style={{ background: '#FFFFFF', borderRadius: '16px', padding: '18px 20px', border: '1.5px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 800, color: '#64748B' }}>Paid &amp; Realized Revenue</span>
+                      <span style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <CheckCircle2 size={20} color="#2563EB" />
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '26px', fontWeight: 900, color: '#2563EB', marginTop: '10px' }}>
+                      ₹{merchantAdminSalesData.paidSales.toLocaleString('en-IN')}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 700, marginTop: '4px' }}>
+                      {merchantAdminSalesData.completedOrdersCount} Orders Served &amp; Cleared
+                    </div>
+                  </div>
+
+                  {/* Card 3: Unpaid / Pending Khata */}
+                  <div style={{ background: '#FFFFFF', borderRadius: '16px', padding: '18px 20px', border: '1.5px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 800, color: '#64748B' }}>Unpaid / Pending Bill</span>
+                      <span style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <AlertCircle size={20} color="#DC2626" />
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '26px', fontWeight: 900, color: '#DC2626', marginTop: '10px' }}>
+                      ₹{merchantAdminSalesData.unpaidSales.toLocaleString('en-IN')}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#DC2626', fontWeight: 700, marginTop: '4px' }}>
+                      {merchantAdminSalesData.unpaidOrders.length} Diners Pending Clearance
+                    </div>
+                  </div>
+
+                  {/* Card 4: Average Order Value */}
+                  <div style={{ background: '#FFFFFF', borderRadius: '16px', padding: '18px 20px', border: '1.5px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 800, color: '#64748B' }}>Average Order Value</span>
+                      <span style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#FFF7ED', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <TrendingUp size={20} color="#EA580C" />
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '26px', fontWeight: 900, color: '#0F172A', marginTop: '10px' }}>
+                      ₹{merchantAdminSalesData.aov.toLocaleString('en-IN')}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#EA580C', fontWeight: 700, marginTop: '4px' }}>
+                      Per Diner Basket Average
+                    </div>
+                  </div>
+                </div>
+
+                {/* Payment Breakdown Card */}
+                <div style={{ background: '#FFFFFF', borderRadius: '16px', padding: '20px', border: '1.5px solid #E2E8F0' }}>
+                  <h3 style={{ margin: '0 0 14px', fontSize: '15px', fontWeight: 900, color: '#0F172A' }}>
+                    Payment Channels Breakdown ({merchantAdminSalesFilter.replace('_', ' ').toUpperCase()})
+                  </h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
+                    <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 800, color: '#64748B' }}>📱 Online / UPI / QR</div>
+                      <div style={{ fontSize: '20px', fontWeight: 900, color: '#0F172A', marginTop: '4px' }}>₹{merchantAdminSalesData.upiSales.toLocaleString('en-IN')}</div>
+                    </div>
+                    <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 800, color: '#64748B' }}>💵 Cash at Counter</div>
+                      <div style={{ fontSize: '20px', fontWeight: 900, color: '#0F172A', marginTop: '4px' }}>₹{merchantAdminSalesData.cashSales.toLocaleString('en-IN')}</div>
+                    </div>
+                    <div style={{ background: '#FEF2F2', padding: '14px', borderRadius: '12px', border: '1px solid #FCA5A5' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 800, color: '#DC2626' }}>⚠️ Unpaid / Khata Udhaar</div>
+                      <div style={{ fontSize: '20px', fontWeight: 900, color: '#DC2626', marginTop: '4px' }}>₹{merchantAdminSalesData.unpaidSales.toLocaleString('en-IN')}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SUB-TAB 2: UNIQUE ID & PASSWORDS GENERATOR */}
+            {merchantAdminSubTab === 'credentials' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '850px' }}>
+                <div style={{ background: '#FFFFFF', borderRadius: '18px', padding: '24px', border: '1.5px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '22px' }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <KeyRound size={20} color="#FF5E14" /> Store Unique ID &amp; Credentials Generator
+                    </h3>
+                    <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748B' }}>
+                      Generate custom credentials for Store Login and Kitchen KDS. Login will work via both registered Gmail and this Unique ID!
+                    </p>
+                  </div>
+
+                  {/* 1. Store Unique ID */}
+                  <div style={{ background: '#F8FAFC', padding: '18px', borderRadius: '14px', border: '1px solid #E2E8F0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label style={{ fontSize: '13px', fontWeight: 900, color: '#0F172A' }}>
+                        1. Store Unique ID (Restaurant Identification Key)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleGenerateUniqueId}
+                        style={{ background: '#FFF0EB', color: '#FF5E14', border: '1px solid #FFDCD0', padding: '4px 10px', borderRadius: '8px', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <Sparkles size={14} /> Generate New Unique ID
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input
+                        type="text"
+                        value={adminUniqueId}
+                        onChange={(e) => setAdminUniqueId(e.target.value.toUpperCase())}
+                        placeholder="e.g. FP-348330"
+                        style={{ flex: 1, padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #CBD5E1', fontSize: '14px', fontWeight: 800, letterSpacing: '0.5px' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(adminUniqueId, 'Unique ID')}
+                        style={{ background: '#F1F5F9', border: '1.5px solid #CBD5E1', padding: '10px 14px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 800, fontSize: '12px' }}
+                      >
+                        {copiedField === 'Unique ID' ? <Check size={16} color="#16A34A" /> : <Copy size={16} />}
+                        <span>{copiedField === 'Unique ID' ? 'Copied' : 'Copy'}</span>
+                      </button>
+                    </div>
+                    <p style={{ margin: '6px 0 0', fontSize: '11.5px', color: '#64748B' }}>
+                      💡 Merchants &amp; cashiers can enter this ID at <strong>/login</strong> along with their password instead of typing their email.
+                    </p>
+                  </div>
+
+                  {/* 2. Merchant Partner Password */}
+                  <div style={{ background: '#F8FAFC', padding: '18px', borderRadius: '14px', border: '1px solid #E2E8F0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label style={{ fontSize: '13px', fontWeight: 900, color: '#0F172A' }}>
+                        2. Merchant Partner Login Password
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleGeneratePartnerPassword}
+                        style={{ background: '#DCFCE7', color: '#15803D', border: '1px solid #BBF7D0', padding: '4px 10px', borderRadius: '8px', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <KeyRound size={14} /> Generate Strong Password
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input
+                        type="text"
+                        value={adminPartnerPassword}
+                        onChange={(e) => setAdminPartnerPassword(e.target.value)}
+                        placeholder="Enter or generate merchant password"
+                        style={{ flex: 1, padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #CBD5E1', fontSize: '14px', fontWeight: 800 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(adminPartnerPassword, 'Merchant Password')}
+                        style={{ background: '#F1F5F9', border: '1.5px solid #CBD5E1', padding: '10px 14px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 800, fontSize: '12px' }}
+                      >
+                        {copiedField === 'Merchant Password' ? <Check size={16} color="#16A34A" /> : <Copy size={16} />}
+                        <span>{copiedField === 'Merchant Password' ? 'Copied' : 'Copy'}</span>
+                      </button>
+                    </div>
+                    <p style={{ margin: '6px 0 0', fontSize: '11.5px', color: '#64748B' }}>
+                      💡 Use this password along with your registered Email or Unique ID to sign in.
+                    </p>
+                  </div>
+
+                  {/* 3. Kitchen KDS Password */}
+                  <div style={{ background: '#F8FAFC', padding: '18px', borderRadius: '14px', border: '1px solid #E2E8F0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <label style={{ fontSize: '13px', fontWeight: 900, color: '#0F172A' }}>
+                        3. Kitchen KDS Access Password (For Kitchen Chefs)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleGenerateKitchenPassword}
+                        style={{ background: '#FFF0EB', color: '#FF5E14', border: '1px solid #FFDCD0', padding: '4px 10px', borderRadius: '8px', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <ChefHat size={14} /> Generate Kitchen PIN
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input
+                        type="text"
+                        value={adminKitchenPassword}
+                        onChange={(e) => setAdminKitchenPassword(e.target.value)}
+                        placeholder="e.g. Chef-4920 or SnackRack400"
+                        style={{ flex: 1, padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #CBD5E1', fontSize: '14px', fontWeight: 800 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(adminKitchenPassword, 'Kitchen Password')}
+                        style={{ background: '#F1F5F9', border: '1.5px solid #CBD5E1', padding: '10px 14px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 800, fontSize: '12px' }}
+                      >
+                        {copiedField === 'Kitchen Password' ? <Check size={16} color="#16A34A" /> : <Copy size={16} />}
+                        <span>{copiedField === 'Kitchen Password' ? 'Copied' : 'Copy'}</span>
+                      </button>
+                    </div>
+                    <p style={{ margin: '6px 0 0', fontSize: '11.5px', color: '#64748B' }}>
+                      💡 Kitchen chefs use this password on the Kitchen tab or at <strong>/kds</strong> to access live cooking queues.
+                    </p>
+                  </div>
+
+                  {/* Save Credentials to Firestore Button */}
+                  <div style={{ paddingTop: '10px', borderTop: '1px solid #E2E8F0', display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      disabled={credSaving}
+                      onClick={handleSaveCredentials}
+                      style={{
+                        background: 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
+                        color: '#FFFFFF',
+                        border: 'none',
+                        padding: '12px 24px',
+                        borderRadius: '12px',
+                        fontSize: '14px',
+                        fontWeight: 900,
+                        cursor: credSaving ? 'wait' : 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        boxShadow: '0 4px 12px rgba(22, 163, 74, 0.3)'
+                      }}
+                    >
+                      <Save size={18} />
+                      <span>{credSaving ? 'Syncing to Firestore...' : '💾 Save & Sync Credentials to Firestore'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SUB-TAB 3: ACCOUNTS & UNPAID CUSTOMERS */}
+            {merchantAdminSubTab === 'accounts' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {/* Unpaid Orders Section */}
+                <div style={{ background: '#FFFFFF', borderRadius: '18px', padding: '20px', border: '1.5px solid #E2E8F0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900, color: '#DC2626', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <AlertCircle size={20} color="#DC2626" /> Unpaid / Not Paid Customer Dues ({merchantAdminUnpaidOrdersAllTime.length})
+                      </h3>
+                      <p style={{ margin: '4px 0 0', fontSize: '12.5px', color: '#64748B' }}>
+                        Track diners with pending payments. Click "Mark Paid" to clear dues or send an instant WhatsApp reminder.
+                      </p>
+                    </div>
+
+                    <div style={{ background: '#FEF2F2', padding: '8px 16px', borderRadius: '12px', border: '1px solid #FCA5A5' }}>
+                      <span style={{ fontSize: '12px', color: '#991B1B', fontWeight: 800 }}>Total Pending: </span>
+                      <strong style={{ fontSize: '18px', color: '#DC2626' }}>
+                        ₹{merchantAdminUnpaidOrdersAllTime.reduce((s, o) => s + (Number(o.total) || 0), 0).toLocaleString('en-IN')}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {merchantAdminUnpaidOrdersAllTime.length === 0 ? (
+                    <div style={{ padding: '40px', textAlign: 'center', background: '#F8FAFC', borderRadius: '14px' }}>
+                      <CheckCircle2 size={38} color="#16A34A" style={{ margin: '0 auto 10px' }} />
+                      <div style={{ fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>All Customer Accounts are Cleared!</div>
+                      <div style={{ fontSize: '13px', color: '#64748B', marginTop: '4px' }}>Zero pending dues or unpaid orders.</div>
+                    </div>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                        <thead>
+                          <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0', color: '#475569', fontWeight: 800 }}>
+                            <th style={{ padding: '12px 14px' }}>Order ID</th>
+                            <th style={{ padding: '12px 14px' }}>Customer Name</th>
+                            <th style={{ padding: '12px 14px' }}>Contact Phone</th>
+                            <th style={{ padding: '12px 14px' }}>Table / Type</th>
+                            <th style={{ padding: '12px 14px' }}>Amount Due</th>
+                            <th style={{ padding: '12px 14px' }}>Date</th>
+                            <th style={{ padding: '12px 14px', textAlign: 'right' }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {merchantAdminUnpaidOrdersAllTime.map((o) => (
+                            <tr key={o._id || o.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                              <td style={{ padding: '12px 14px', fontWeight: 800, color: '#1D4ED8' }}>#{String(o._id || o.id).slice(-6)}</td>
+                              <td style={{ padding: '12px 14px', fontWeight: 800, color: '#0F172A' }}>{o.customer || 'Walk-in Diner'}</td>
+                              <td style={{ padding: '12px 14px', color: '#475569' }}>{o.phone || 'N/A'}</td>
+                              <td style={{ padding: '12px 14px' }}>
+                                <span style={{ background: '#F1F5F9', padding: '3px 8px', borderRadius: '6px', fontWeight: 700, fontSize: '11.5px' }}>
+                                  {o.table || o.type || 'Dine-in'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '12px 14px', fontWeight: 900, color: '#DC2626', fontSize: '14px' }}>₹{o.total}</td>
+                              <td style={{ padding: '12px 14px', color: '#64748B', fontSize: '12px' }}>
+                                {o.createdAt ? new Date(o.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Today'}
+                              </td>
+                              <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                                <div style={{ display: 'inline-flex', gap: '6px' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSettleUnpaidOrder(o._id || o.id)}
+                                    style={{ background: '#16A34A', color: '#FFFFFF', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                                  >
+                                    <Check size={14} /> Settle Paid
+                                  </button>
+                                  {o.phone && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSendWhatsAppReminder(o)}
+                                      style={{ background: '#25D366', color: '#FFFFFF', border: 'none', padding: '6px 10px', borderRadius: '8px', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer' }}
+                                      title="Send WhatsApp payment reminder"
+                                    >
+                                      WhatsApp
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* All Customers Directory Section */}
+                <div style={{ background: '#FFFFFF', borderRadius: '18px', padding: '20px', border: '1.5px solid #E2E8F0' }}>
+                  <h3 style={{ margin: '0 0 14px', fontSize: '16px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Users size={18} color="#0D9488" /> All Customers Directory ({merchantAdminCustomersList.length})
+                  </h3>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0', color: '#475569', fontWeight: 800 }}>
+                          <th style={{ padding: '12px 14px' }}>Customer Name</th>
+                          <th style={{ padding: '12px 14px' }}>Phone Number</th>
+                          <th style={{ padding: '12px 14px' }}>Total Visits</th>
+                          <th style={{ padding: '12px 14px' }}>Lifetime Spent</th>
+                          <th style={{ padding: '12px 14px' }}>Pending Dues</th>
+                          <th style={{ padding: '12px 14px' }}>Last Order</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {merchantAdminCustomersList.map((c, idx) => (
+                          <tr key={idx} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                            <td style={{ padding: '12px 14px', fontWeight: 800, color: '#0F172A' }}>{c.name}</td>
+                            <td style={{ padding: '12px 14px', color: '#475569' }}>{c.phone || 'N/A'}</td>
+                            <td style={{ padding: '12px 14px' }}>
+                              <span style={{ background: '#E0F2FE', color: '#0369A1', padding: '2px 8px', borderRadius: '6px', fontWeight: 800, fontSize: '11.5px' }}>
+                                {c.orderCount} Orders
+                              </span>
+                            </td>
+                            <td style={{ padding: '12px 14px', fontWeight: 900, color: '#16A34A' }}>₹{c.totalSpent.toLocaleString('en-IN')}</td>
+                            <td style={{ padding: '12px 14px', fontWeight: 800, color: c.unpaidAmount > 0 ? '#DC2626' : '#64748B' }}>
+                              {c.unpaidAmount > 0 ? `₹${c.unpaidAmount.toLocaleString('en-IN')}` : '₹0'}
+                            </td>
+                            <td style={{ padding: '12px 14px', color: '#64748B', fontSize: '12px' }}>
+                              {c.lastOrderDate ? new Date(c.lastOrderDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Recent'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SUB-TAB 4: DINING TABLES */}
+            {merchantAdminSubTab === 'tables' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                <div style={{
+                  background: '#FFFFFF',
+                  borderRadius: '16px',
+                  padding: '18px 22px',
+                  border: '1.5px solid #E2E8F0',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '12px'
+                }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900, color: '#0F172A' }}>
+                      Dining Tables Manager ({tables.length} Total Tables)
+                    </h3>
+                    <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748B' }}>
+                      Add tables, organize categories/sections (Main Hall, Cafe, Terrace), and manage dine-in capacity.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAddTableModal(null)}
+                    style={{
+                      background: 'linear-gradient(135deg, #DC2626 0%, #B91C1C 100%)',
+                      color: '#FFFFFF',
+                      border: 'none',
+                      padding: '10px 18px',
+                      borderRadius: '10px',
+                      fontSize: '13px',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      boxShadow: '0 4px 12px rgba(220, 38, 38, 0.25)'
+                    }}
+                  >
+                    <Plus size={16} /> Add New Table
+                  </button>
+                </div>
+
+                {/* Table Cards Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '14px' }}>
+                  {tables.map((t) => (
+                    <div
+                      key={t._id || t.id}
+                      style={{
+                        background: '#FFFFFF',
+                        borderRadius: '14px',
+                        padding: '16px',
+                        border: '1.5px solid #E2E8F0',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        gap: '10px'
+                      }}
+                    >
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '16px', fontWeight: 900, color: '#0F172A' }}>{t.name}</span>
+                          <span style={{ background: '#F1F5F9', color: '#475569', padding: '2px 7px', borderRadius: '6px', fontSize: '11px', fontWeight: 800 }}>
+                            {t.section || 'Main Hall'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
+                          Capacity: <strong>{t.capacity || 4} Guests</strong>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px', borderTop: '1px solid #F1F5F9' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenAddTableModal(t)}
+                          style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', padding: '5px 10px', borderRadius: '6px', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer' }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTable(t)}
+                          style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#DC2626', padding: '5px 10px', borderRadius: '6px', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer' }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* SUB-TAB 5: CATALOG & MASTER CONTROLS */}
+            {merchantAdminSubTab === 'catalog' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                <div style={{
+                  background: '#FFFFFF',
+                  borderRadius: '16px',
+                  padding: '18px 22px',
+                  border: '1.5px solid #E2E8F0',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '12px'
+                }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900, color: '#0F172A' }}>
+                      Catalog &amp; Products Master Controller ({dishes.length} Items)
+                    </h3>
+                    <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748B' }}>
+                      Quick stock toggle, add new products, and configure store operational channels.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAddDishModal(null)}
+                    style={{
+                      background: 'linear-gradient(135deg, #1D4ED8 0%, #1E40AF 100%)',
+                      color: '#FFFFFF',
+                      border: 'none',
+                      padding: '10px 18px',
+                      borderRadius: '10px',
+                      fontSize: '13px',
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      boxShadow: '0 4px 12px rgba(29, 78, 216, 0.25)'
+                    }}
+                  >
+                    <Plus size={16} /> Add Product to Catalog
+                  </button>
+                </div>
+
+                {/* Quick Products Table */}
+                <div style={{ background: '#FFFFFF', borderRadius: '16px', padding: '16px', border: '1.5px solid #E2E8F0', overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                    <thead>
+                      <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0', color: '#475569', fontWeight: 800 }}>
+                        <th style={{ padding: '12px 14px' }}>Dish Name</th>
+                        <th style={{ padding: '12px 14px' }}>Category</th>
+                        <th style={{ padding: '12px 14px' }}>Price</th>
+                        <th style={{ padding: '12px 14px' }}>Food Type</th>
+                        <th style={{ padding: '12px 14px' }}>Stock Status</th>
+                        <th style={{ padding: '12px 14px', textAlign: 'right' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dishes.map((d) => (
+                        <tr key={d._id || d.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                          <td style={{ padding: '12px 14px', fontWeight: 800, color: '#0F172A' }}>{d.name}</td>
+                          <td style={{ padding: '12px 14px', color: '#64748B' }}>{d.category || 'Main Course'}</td>
+                          <td style={{ padding: '12px 14px', fontWeight: 900, color: '#0F172A' }}>₹{d.price}</td>
+                          <td style={{ padding: '12px 14px' }}>
+                            <span style={{
+                              background: d.veg ? '#DCFCE7' : '#FEE2E2',
+                              color: d.veg ? '#15803D' : '#991B1B',
+                              padding: '2px 8px',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: 800
+                            }}>
+                              {d.veg ? '🌱 VEG' : '🍗 NON-VEG'}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px 14px' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleDishStock(d)}
+                              style={{
+                                background: d.inStock !== false ? '#DCFCE7' : '#F1F5F9',
+                                color: d.inStock !== false ? '#15803D' : '#64748B',
+                                border: 'none',
+                                padding: '4px 10px',
+                                borderRadius: '8px',
+                                fontSize: '11.5px',
+                                fontWeight: 800,
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {d.inStock !== false ? 'In Stock (Active)' : 'Out of Stock'}
+                            </button>
+                          </td>
+                          <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                            <div style={{ display: 'inline-flex', gap: '6px' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenAddDishModal(d)}
+                                style={{ background: '#F8FAFC', border: '1px solid #CBD5E1', padding: '5px 10px', borderRadius: '6px', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer' }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteDish(d)}
+                                style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#DC2626', padding: '5px 10px', borderRadius: '6px', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer' }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
           </div>
         )}
 

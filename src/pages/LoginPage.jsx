@@ -180,7 +180,7 @@ export default function LoginPage({ onShowToast }) {
   };
 
   // 3. KDS Kitchen Login Submit
-  const handleKdsLogin = (e) => {
+  const handleKdsLogin = async (e) => {
     e.preventDefault();
     setError('');
     const cleanStoreId = (kdsStoreId || 'FP-348330').trim().toUpperCase();
@@ -191,23 +191,34 @@ export default function LoginPage({ onShowToast }) {
       return;
     }
 
-    const check = validateKitchenLogin(cleanStoreId, cleanPass, cleanStoreId);
-    const isSnackRackPass = cleanPass === 'SnackRack400' || cleanPass.toLowerCase() === 'snackrack400';
+    setLoading(true);
+    try {
+      // Check custom kitchen password in Firestore Business_Users
+      const bProfile = await getBusinessUserByUniqueId(cleanStoreId).catch(() => null);
+      const isCustomMatch = bProfile && bProfile.kitchenPassword && bProfile.kitchenPassword === cleanPass;
 
-    if ((check && check.valid) || isSnackRackPass) {
-      localStorage.setItem('foodypay_kitchen_logged_in', 'true');
-      localStorage.setItem('foodypay_kitchen_store_id', cleanStoreId);
-      localStorage.setItem('foodypay_kitchen_role', (check && check.role) || 'Kitchen Chef');
+      const check = validateKitchenLogin(cleanStoreId, cleanPass, cleanStoreId);
+      const isSnackRackPass = cleanPass === 'SnackRack400' || cleanPass.toLowerCase() === 'snackrack400';
 
-      playMilestoneCelebration();
-      confetti({ particleCount: 100, spread: 70, origin: { y: 0.5 } });
-      if (onShowToast) onShowToast(`Kitchen KDS Authenticated for Store ${cleanStoreId}!`);
+      if (isCustomMatch || (check && check.valid) || isSnackRackPass) {
+        localStorage.setItem('foodypay_kitchen_logged_in', 'true');
+        localStorage.setItem('foodypay_kitchen_store_id', cleanStoreId);
+        localStorage.setItem('foodypay_kitchen_role', 'Kitchen Chef');
 
-      setTimeout(() => {
-        navigate(`/kds`);
-      }, 500);
-    } else {
-      setError('Invalid Kitchen Password. Use store kitchen password or SnackRack400.');
+        playMilestoneCelebration();
+        confetti({ particleCount: 100, spread: 70, origin: { y: 0.5 } });
+        if (onShowToast) onShowToast(`Kitchen KDS Authenticated for Store ${cleanStoreId}!`);
+
+        setTimeout(() => {
+          navigate(`/kds`);
+        }, 500);
+      } else {
+        setError('Invalid Kitchen Password. Use the password configured in Merchant Admin or SnackRack400.');
+      }
+    } catch (err) {
+      setError('Failed to authenticate Kitchen password.');
+    } finally {
+      setLoading(false);
     }
   };
 

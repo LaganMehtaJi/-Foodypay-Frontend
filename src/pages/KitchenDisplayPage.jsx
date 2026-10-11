@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { playFoodPreparing, playFoodReady, startKitchenAlarm, stopKitchenAlarm, sortOrdersNewestFirst } from '../utils/soundEffects';
 import { fetchOrdersApi, fetchPublicOrdersApi, updateOrderStatusApi, markKitchenSeenApi } from '../utils/api';
-import { subscribeToOrders } from '../utils/firestoreService';
+import { subscribeToOrders, getBusinessUserByUniqueId } from '../utils/firestoreService';
 import { validateKitchenLogin, getPartnerCredentials } from '../utils/partnerAuth';
 
 export default function KitchenDisplayPage({ onShowToast }) {
@@ -76,10 +76,10 @@ export default function KitchenDisplayPage({ onShowToast }) {
     if (merchantId) setKInput(merchantId);
   }, [merchantId]);
 
-  const handleKitchenLoginSubmit = (e) => {
+  const handleKitchenLoginSubmit = async (e) => {
     e.preventDefault();
     setKError('');
-    const cleanIn = (kInput || effectiveMerchantId || 'FP-348330').trim();
+    const cleanIn = (kInput || effectiveMerchantId || 'FP-348330').trim().toUpperCase();
     const cleanPa = kPass.trim();
 
     if (!cleanPa) {
@@ -87,15 +87,22 @@ export default function KitchenDisplayPage({ onShowToast }) {
       return;
     }
 
-    const res = validateKitchenLogin(cleanIn, cleanPa, effectiveMerchantId);
-    const isSnackRackPass = cleanPa === 'SnackRack400' || cleanPa.toLowerCase() === 'snackrack400';
-    if ((res && res.valid) || isSnackRackPass) {
-      localStorage.setItem('foodypay_kitchen_logged_in', 'true');
-      localStorage.setItem('foodypay_kitchen_role', (res && res.role) || 'Kitchen Chef');
-      setIsKitchenAuth(true);
-      if (onShowToast) onShowToast(`Kitchen KDS Authenticated for Store ${effectiveMerchantId}!`);
-    } else {
-      setKError('Invalid Kitchen Password. Use password SnackRack400 or store password.');
+    try {
+      const bProfile = await getBusinessUserByUniqueId(cleanIn).catch(() => null);
+      const isCustomMatch = bProfile && bProfile.kitchenPassword && bProfile.kitchenPassword === cleanPa;
+
+      const res = validateKitchenLogin(cleanIn, cleanPa, cleanIn);
+      const isSnackRackPass = cleanPa === 'SnackRack400' || cleanPa.toLowerCase() === 'snackrack400';
+      if (isCustomMatch || (res && res.valid) || isSnackRackPass) {
+        localStorage.setItem('foodypay_kitchen_logged_in', 'true');
+        localStorage.setItem('foodypay_kitchen_role', 'Kitchen Chef');
+        setIsKitchenAuth(true);
+        if (onShowToast) onShowToast(`Kitchen KDS Authenticated for Store ${cleanIn}!`);
+      } else {
+        setKError('Invalid Kitchen Password. Use password set in Merchant Admin or SnackRack400.');
+      }
+    } catch (err) {
+      setKError('Failed to verify Kitchen Password.');
     }
   };
 

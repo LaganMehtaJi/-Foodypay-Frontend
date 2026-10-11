@@ -402,6 +402,8 @@ export async function saveBusinessUserToFirestore(businessData) {
       state: businessData.state || 'Punjab',
       logoUrl: businessData.logoUrl || businessData.logo?.url || '',
       upiId: businessData.upiId || '7496888449@ptsbi',
+      password: businessData.password !== undefined ? businessData.password : undefined,
+      kitchenPassword: businessData.kitchenPassword !== undefined ? businessData.kitchenPassword : undefined,
       isLocked: Boolean(businessData.isLocked),
       lockReason: businessData.lockReason || 'Subscription Payment Required',
       status: businessData.isLocked ? 'Locked' : (new Date(dates.expireDate) < new Date() ? 'Expired' : 'Active'),
