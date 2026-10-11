@@ -36,10 +36,10 @@ export default function LoginPage({ onShowToast }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // Active Login Role: 'user' | 'merchant' | 'kds' | 'master'
+  // Active Login Role: 'merchant' | 'kds' | 'master'
   const [loginRole, setLoginRole] = useState(() => {
     const roleParam = searchParams.get('role');
-    if (roleParam && ['user', 'merchant', 'kds', 'master'].includes(roleParam)) {
+    if (roleParam && ['merchant', 'kds', 'master'].includes(roleParam)) {
       return roleParam;
     }
     return 'merchant'; // default to merchant for POS
@@ -71,7 +71,7 @@ export default function LoginPage({ onShowToast }) {
 
   useEffect(() => {
     const roleParam = searchParams.get('role');
-    if (roleParam && ['user', 'merchant', 'kds', 'master'].includes(roleParam)) {
+    if (roleParam && ['merchant', 'kds', 'master'].includes(roleParam)) {
       setLoginRole(roleParam);
     }
   }, [searchParams]);
@@ -83,58 +83,6 @@ export default function LoginPage({ onShowToast }) {
     if (savedEmail) setEmailOrId(savedEmail);
     if (savedPass) setPassword(savedPass);
   }, []);
-
-  // 1. Customer / User Login Submit
-  const handleUserLogin = async (e) => {
-    e.preventDefault();
-    setError('');
-    const cleanEmail = emailOrId.trim().toLowerCase();
-    const cleanPass = password.trim();
-
-    if (!cleanEmail || !cleanEmail.includes('@')) {
-      setError('Please enter a valid user email address.');
-      return;
-    }
-    if (!cleanPass) {
-      setError('Please enter your password.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const fbRes = await loginWithFirebaseEmail(cleanEmail, cleanPass);
-      const user = fbRes.user;
-
-      const userData = {
-        token: fbRes.token,
-        uid: user.uid,
-        name: user.displayName || cleanEmail.split('@')[0],
-        email: cleanEmail,
-        role: 'Customer',
-        emailVerified: user.emailVerified,
-      };
-
-      localStorage.setItem('foodypay_token', userData.token);
-      localStorage.setItem('foodypay_user', JSON.stringify(userData));
-
-      if (rememberMe) {
-        localStorage.setItem('foodypay_remember_email', cleanEmail);
-        localStorage.setItem('foodypay_remember_password', cleanPass);
-      }
-
-      playMilestoneCelebration();
-      confetti({ particleCount: 100, spread: 70, origin: { y: 0.5 } });
-      if (onShowToast) onShowToast(`Welcome back, ${userData.name}!`);
-
-      setTimeout(() => {
-        navigate('/');
-      }, 500);
-    } catch (err) {
-      setError(err.message || 'Incorrect email or password. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // 2. Merchant Partner Login Submit (Controls Cafe / Restaurant Dashboard)
   const handleMerchantLogin = async (e) => {
@@ -504,7 +452,7 @@ export default function LoginPage({ onShowToast }) {
               </div>
 
               <h2 style={{ fontSize: '22px', fontWeight: 900, lineHeight: 1.25, margin: '0 0 12px', letterSpacing: '-0.3px' }}>
-                Unified Portal for Restaurants, KDS, Customers &amp; Master Admin
+                Unified Portal for Restaurants, KDS &amp; Master Admin
               </h2>
 
               <p style={{ fontSize: '13px', color: '#94A3B8', lineHeight: 1.5, margin: '0 0 20px' }}>
@@ -539,11 +487,10 @@ export default function LoginPage({ onShowToast }) {
           {/* RIGHT LOGIN FORM */}
           <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             
-            {/* 4 LOGIN ROLE SWITCHER TABS */}
+            {/* 3 LOGIN ROLE SWITCHER TABS (MERCHANT, KITCHEN, MASTER ADMIN) */}
             <div style={{ marginBottom: '16px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', backgroundColor: '#F1F5F9', padding: '4px', borderRadius: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', backgroundColor: '#F1F5F9', padding: '4px', borderRadius: '12px' }}>
                 {[
-                  { id: 'user', label: 'Customer', icon: User, badgeColor: '#3B82F6' },
                   { id: 'merchant', label: 'Merchant', icon: Building2, badgeColor: '#FF5E14' },
                   { id: 'kds', label: 'Kitchen', icon: ChefHat, badgeColor: '#8B5CF6' },
                   { id: 'master', label: 'Master', icon: Crown, badgeColor: '#10B981' },
@@ -559,13 +506,13 @@ export default function LoginPage({ onShowToast }) {
                         setError('');
                       }}
                       style={{
-                        padding: '8px 4px',
+                        padding: '9px 4px',
                         borderRadius: '9px',
                         border: 'none',
                         backgroundColor: isActive ? '#FFFFFF' : 'transparent',
                         color: isActive ? tab.badgeColor : '#64748B',
                         fontWeight: isActive ? 900 : 700,
-                        fontSize: '11.5px',
+                        fontSize: '12px',
                         cursor: 'pointer',
                         display: 'flex',
                         flexDirection: 'column',
@@ -575,7 +522,7 @@ export default function LoginPage({ onShowToast }) {
                         transition: 'all 0.15s ease',
                       }}
                     >
-                      <Icon size={16} color={isActive ? tab.badgeColor : '#64748B'} />
+                      <Icon size={17} color={isActive ? tab.badgeColor : '#64748B'} />
                       <span>{tab.label}</span>
                     </button>
                   );
@@ -586,13 +533,11 @@ export default function LoginPage({ onShowToast }) {
             {/* TAB TITLE & SUBTEXT */}
             <div style={{ marginBottom: '16px' }}>
               <h2 style={{ fontSize: '19px', fontWeight: 900, color: '#0F172A', margin: '0 0 3px', letterSpacing: '-0.3px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {loginRole === 'user' && '👤 Customer / User Login'}
                 {loginRole === 'merchant' && '🏢 Merchant Partner Login'}
                 {loginRole === 'kds' && '🍳 Kitchen Display (KDS) Login'}
                 {loginRole === 'master' && '👑 Master SuperAdmin Login'}
               </h2>
               <p style={{ fontSize: '12.5px', color: '#64748B', margin: 0 }}>
-                {loginRole === 'user' && 'Sign in to access order history, saved addresses & loyalty points'}
                 {loginRole === 'merchant' && 'Manage your cafe, restaurant menu, tables, bills & reports'}
                 {loginRole === 'kds' && 'Enter your Kitchen Unique ID & Password to open live orders screen'}
                 {loginRole === 'master' && 'Master access to view ALL businesses, plans & platform telemetry'}
@@ -620,74 +565,6 @@ export default function LoginPage({ onShowToast }) {
                   </Link>
                 )}
               </div>
-            )}
-
-            {/* ========================================================= */}
-            {/* 1. CUSTOMER LOGIN FORM */}
-            {/* ========================================================= */}
-            {loginRole === 'user' && (
-              <form onSubmit={handleUserLogin} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
-                    Your Email Address
-                  </label>
-                  <div style={{ position: 'relative' }}>
-                    <Mail size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
-                    <input
-                      type="email"
-                      value={emailOrId}
-                      onChange={(e) => setEmailOrId(e.target.value)}
-                      placeholder="customer@gmail.com"
-                      style={{ width: '100%', padding: '9px 12px 9px 38px', borderRadius: '9px', border: '1.5px solid #CBD5E1', fontSize: '13px', fontWeight: 600, outline: 'none', boxSizing: 'border-box' }}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                    <label style={{ fontSize: '12px', fontWeight: 800, color: '#334155' }}>Password</label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setResetEmail(emailOrId);
-                        setResetMsg('');
-                        setResetError('');
-                        setShowForgotModal(true);
-                      }}
-                      style={{ background: 'none', border: 'none', color: '#FF5E14', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer', padding: 0 }}
-                    >
-                      Forgot Password?
-                    </button>
-                  </div>
-                  <div style={{ position: 'relative' }}>
-                    <Lock size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••"
-                      style={{ width: '100%', padding: '9px 38px 9px 38px', borderRadius: '9px', border: '1.5px solid #CBD5E1', fontSize: '13px', fontWeight: 600, outline: 'none', boxSizing: 'border-box' }}
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}
-                    >
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  style={{ width: '100%', padding: '10px', borderRadius: '9px', background: 'linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)', color: '#FFFFFF', border: 'none', fontWeight: 900, fontSize: '13.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)', marginTop: '4px' }}
-                >
-                  {loading ? 'Signing in...' : 'Sign In as Customer →'}
-                </button>
-              </form>
             )}
 
             {/* ========================================================= */}
