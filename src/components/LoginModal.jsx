@@ -3,6 +3,7 @@ import confetti from 'canvas-confetti';
 import { playMilestoneCelebration } from '../utils/soundEffects';
 import { loginApi, googleAuthApi, firebaseAuthApi, checkEmailExistsApi } from '../utils/api';
 import { loginWithFirebaseEmail, loginWithFirebaseGoogle, sendFirebasePasswordReset } from '../utils/firebase';
+import { getBusinessUserByEmail } from '../utils/firestoreService';
 
 export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSignup }) {
   const [email, setEmail] = useState('');
@@ -58,6 +59,16 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
     try {
       let response = null;
 
+      // Strict Database Verification: Must exist in Database (Firestore or MongoDB)
+      const [fsBiz, dbCheck] = await Promise.all([
+        getBusinessUserByEmail(cleanEmail).catch(() => null),
+        checkEmailExistsApi(cleanEmail).catch(() => null),
+      ]);
+
+      if (!fsBiz && (!dbCheck || !dbCheck.exists)) {
+        throw new Error(`No registered Business account found for "${cleanEmail}". Please register first on /register!`);
+      }
+
       // 1. Primary Authentication: Attempt MongoDB Backend login directly
       try {
         response = await loginApi(cleanEmail, cleanPassword);
@@ -78,6 +89,20 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
         } catch (fbErr) {
           throw dbErr;
         }
+      }
+
+      // If response is still null but found in Firestore, craft session
+      if (!response && fsBiz) {
+        response = {
+          success: true,
+          data: {
+            ...fsBiz,
+            token: 'token_fs_' + Date.now(),
+            role: 'Restaurant Owner',
+            foodypayId: fsBiz.uniqueId,
+            businessId: fsBiz.uniqueId,
+          }
+        };
       }
 
       if (response && response.success && response.data) {
@@ -131,23 +156,42 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
       const gUid = firebaseRes?.user?.uid || 'google_uid_' + Date.now();
       const gPhoto = firebaseRes?.user?.photoURL || '';
 
+      // Check if Business exists in Database (Firestore Business_Users or MongoDB)
+      const [fsBiz, dbCheck] = await Promise.all([
+        getBusinessUserByEmail(gEmail).catch(() => null),
+        checkEmailExistsApi(gEmail).catch(() => null),
+      ]);
+
+      if (!fsBiz && (!dbCheck || !dbCheck.exists)) {
+        throw new Error(`Google Email "${gEmail}" is verified, but NO Business account is registered in Database! Please register on /register first.`);
+      }
+
       const googlePayload = {
         firebaseToken: firebaseRes?.token || 'google_token_' + Date.now(),
         credential: firebaseRes?.token || 'google_token_' + Date.now(),
         uid: gUid,
         email: gEmail,
-        name: gName,
+        name: fsBiz?.ownerName || gName,
         picture: gPhoto,
         providerId: 'google.com',
       };
 
       const res = await firebaseAuthApi(googlePayload).catch(() => googleAuthApi(googlePayload));
-      if (res && res.success && res.data) {
-        if (res.data.token) {
-          localStorage.setItem('foodypay_token', res.data.token);
-          localStorage.setItem('foodypay_user', JSON.stringify(res.data));
+      const finalData = (res && res.success && res.data) ? res.data : (fsBiz ? {
+        ...fsBiz,
+        token: 'token_google_' + Date.now(),
+        role: 'Restaurant Owner',
+        foodypayId: fsBiz.uniqueId,
+        businessId: fsBiz.uniqueId,
+      } : null);
+
+      if (finalData) {
+        if (finalData.token) {
+          localStorage.setItem('foodypay_token', finalData.token);
+          localStorage.setItem('foodypay_user', JSON.stringify(finalData));
+          localStorage.setItem('foodypay_active_business_id', finalData.foodypayId || finalData.uniqueId || 'FP-348330');
         }
-        setSuccessUser(res.data);
+        setSuccessUser(finalData);
         playMilestoneCelebration();
         confetti({ particleCount: 100, spread: 70, origin: { y: 0.5 } });
         if (onShowToast) onShowToast(`Logged in with Google via Firebase as ${res.data.name}!`);

@@ -30,6 +30,7 @@ import {
   getBusinessUserByEmail,
   saveBusinessUserToFirestore
 } from '../utils/firestoreService';
+import { checkEmailExistsApi, loginApi } from '../utils/api';
 
 export default function LoginPage({ onShowToast }) {
   const navigate = useNavigate();
@@ -190,7 +191,7 @@ export default function LoginPage({ onShowToast }) {
         return;
       }
 
-      // Step B: Check Firestore Business_Users by Unique ID or Email
+      // Step B: Check Business Registration in Database (Cloud Firestore or MongoDB)
       let businessProfile = null;
       if (cleanInput.toUpperCase().startsWith('FP-') || !cleanInput.includes('@')) {
         businessProfile = await getBusinessUserByUniqueId(cleanInput);
@@ -198,19 +199,47 @@ export default function LoginPage({ onShowToast }) {
         businessProfile = await getBusinessUserByEmail(cleanInput);
       }
 
-      // Step C: Try Firebase Auth if email format
+      // Also check MongoDB backend if cleanInput is an email
+      let mongoUserFound = false;
+      if (cleanInput.includes('@')) {
+        try {
+          const dbCheck = await checkEmailExistsApi(cleanInput);
+          if (dbCheck && dbCheck.exists) {
+            mongoUserFound = true;
+          }
+        } catch (dbErr) {
+          // If 404/not found, mongoUserFound stays false
+        }
+      }
+
+      // If NOT found in Firestore Business_Users AND not found in MongoDB Database, BLOCK LOGIN!
+      if (!businessProfile && !mongoUserFound) {
+        setNoAccountEmail(cleanInput);
+        throw new Error(`No registered Business found for "${cleanInput}". You must register your Business first on /register!`);
+      }
+
+      // Step C: If user exists in Database, proceed with authentication
       let authSuccess = false;
       let token = 'token_' + Date.now();
       let fbUser = null;
 
       if (cleanInput.includes('@')) {
+        // Try backend login first, then Firebase
         try {
-          const fbRes = await loginWithFirebaseEmail(cleanInput.toLowerCase(), cleanPass);
-          token = fbRes.token;
-          fbUser = fbRes.user;
-          authSuccess = true;
-        } catch (fbErr) {
-          // Fall through to business profile check
+          const apiRes = await loginApi(cleanInput.toLowerCase(), cleanPass);
+          if (apiRes && apiRes.data) {
+            token = apiRes.data.token || token;
+            authSuccess = true;
+          }
+        } catch (apiErr) {
+          try {
+            const fbRes = await loginWithFirebaseEmail(cleanInput.toLowerCase(), cleanPass);
+            token = fbRes.token;
+            fbUser = fbRes.user;
+            authSuccess = true;
+          } catch (fbErr) {
+            throw new Error('Incorrect password. Please enter your registered password.');
+          }
         }
       }
 
@@ -248,7 +277,7 @@ export default function LoginPage({ onShowToast }) {
         return;
       }
 
-      if (authSuccess) {
+      if (authSuccess && mongoUserFound) {
         const uId = `FP-${Math.floor(100000 + Math.random() * 900000)}`;
         const userData = {
           token,
@@ -343,47 +372,57 @@ export default function LoginPage({ onShowToast }) {
     setError('');
     try {
       const fbRes = await loginWithFirebaseGoogle();
-      const gEmail = fbRes?.user?.email ? fbRes.user.email.toLowerCase().trim() : 'merchant@foodypay.com';
+      const gEmail = fbRes?.user?.email ? fbRes.user.email.toLowerCase().trim() : '';
       const gName = fbRes?.user?.displayName || gEmail.split('@')[0];
       const gUid = fbRes?.user?.uid;
 
-      // Check if Business User profile exists
-      let bProfile = await getBusinessUserByEmail(gEmail);
-      if (!bProfile) {
-        const generatedId = `FP-${Math.floor(100000 + Math.random() * 900000)}`;
-        bProfile = {
-          uniqueId: generatedId,
-          businessId: generatedId,
-          foodypayId: generatedId,
-          businessName: `${gName}'s Restaurant`,
-          ownerName: gName,
-          email: gEmail,
-          plan: 'Free',
-          status: 'Active',
-          isLocked: false,
-        };
-        await saveBusinessUserToFirestore(bProfile);
+      if (!gEmail) {
+        throw new Error('Could not retrieve email from Google Account.');
       }
+
+      // Check if Business User profile exists in Firestore Business_Users
+      let bProfile = await getBusinessUserByEmail(gEmail);
+
+      // Check if user exists in MongoDB backend
+      let mongoUserFound = false;
+      try {
+        const dbCheck = await checkEmailExistsApi(gEmail);
+        if (dbCheck && dbCheck.exists) {
+          mongoUserFound = true;
+        }
+      } catch (e) {}
+
+      // If user is NOT registered in database, DO NOT allow login even if Google email is verified!
+      if (!bProfile && !mongoUserFound) {
+        setNoAccountEmail(gEmail);
+        throw new Error(`Email "${gEmail}" is verified, but NO Business account is registered in our Database! Please complete registration at /register first.`);
+      }
+
+      if (bProfile && bProfile.isLocked) {
+        throw new Error(`This Business account is locked. Reason: ${bProfile.lockReason || 'Subscription Payment Required'}`);
+      }
+
+      const activeBizId = bProfile?.uniqueId || bProfile?.businessId || `FP-${Math.floor(100000 + Math.random() * 900000)}`;
 
       const userData = {
         token: fbRes?.token || 'token_' + Date.now(),
         uid: gUid,
-        name: gName,
+        name: bProfile?.ownerName || gName,
         email: gEmail,
         role: 'Restaurant Owner',
-        foodypayId: bProfile.uniqueId,
-        businessId: bProfile.uniqueId,
-        businessName: bProfile.businessName,
-        plan: bProfile.plan || 'Free',
+        foodypayId: activeBizId,
+        businessId: activeBizId,
+        businessName: bProfile?.businessName || `${gName}'s Restaurant`,
+        plan: bProfile?.plan || 'Free',
       };
 
       localStorage.setItem('foodypay_token', userData.token);
       localStorage.setItem('foodypay_user', JSON.stringify(userData));
-      localStorage.setItem('foodypay_active_business_id', bProfile.uniqueId);
+      localStorage.setItem('foodypay_active_business_id', activeBizId);
 
       playMilestoneCelebration();
       confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
-      if (onShowToast) onShowToast(`Gmail Verified (${gEmail})! Logged into Dashboard!`);
+      if (onShowToast) onShowToast(`Logged into ${userData.businessName}!`);
 
       setTimeout(() => {
         navigate('/dashboard');
