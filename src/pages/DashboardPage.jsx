@@ -140,6 +140,7 @@ import {
   saveBusinessUserToFirestore,
   getBusinessUserByUniqueId,
 } from '../utils/firestoreService';
+import { printThermalKot, printThermalReceipt } from '../utils/thermalPrinter';
 import './Dashboard.css';
 
 // Initial Datasets
@@ -6689,7 +6690,8 @@ export default function DashboardPage({ onShowToast }) {
                                 type="button"
                                 className="crm-btn-secondary"
                                 style={{ flex: 1 }}
-                                onClick={() => window.print()}
+                                onClick={() => printThermalKot(order, storeControls)}
+                                title="Print Kitchen Order Ticket (KOT)"
                               >
                                 <Printer size={15} />
                                 <span>Print KOT</span>
@@ -13718,89 +13720,173 @@ export default function DashboardPage({ onShowToast }) {
       )}
 
       {/* ==========================================================================
-          MODAL: VIEW FULL ORDER DETAILS (Triggered when clicking Completed / Cancelled cards)
+          MODAL: VIEW FULL ORDER DETAILS / RECEIPT PREVIEW
           ========================================================================== */}
       {viewingOrderDetails && (
-        <div className="crm-modal-backdrop" onClick={() => setViewingOrderDetails(null)}>
-          <div className="crm-modal-card" style={{ maxWidth: '520px' }} onClick={(e) => e.stopPropagation()}>
-            <div className="crm-modal-header">
-              <h3> Order Receipt — {viewingOrderDetails.orderId || viewingOrderDetails.id}</h3>
+        <div className="crm-modal-backdrop" onClick={() => setViewingOrderDetails(null)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+          <div className="crm-modal-card" style={{ maxWidth: '420px', width: '100%', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.35)' }} onClick={(e) => e.stopPropagation()}>
+            <div className="crm-modal-header" style={{ background: '#0F172A', color: '#FFFFFF', padding: '14px 18px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Printer size={18} color="#38BDF8" />
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#FFFFFF' }}>
+                  Receipt / KOT Preview
+                </h3>
+              </div>
               <button
                 type="button"
                 className="crm-modal-close-btn"
+                style={{ color: '#94A3B8' }}
                 onClick={() => setViewingOrderDetails(null)}
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
-            <div className="crm-modal-body" style={{ padding: '16px 20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', background: '#F8FAFC', padding: '12px 14px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
-                <div>
-                  <div style={{ fontSize: '14.5px', fontWeight: 800, color: '#0F172A' }}>{viewingOrderDetails.customer}</div>
-                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
-                    {viewingOrderDetails.phone} • {viewingOrderDetails.table} ({viewingOrderDetails.type})
+            <div className="crm-modal-body" style={{ padding: '16px', background: '#F1F5F9', maxHeight: '75vh', overflowY: 'auto' }}>
+              {/* Paper Thermal Slip Container */}
+              <div
+                style={{
+                  background: '#FFFFFF',
+                  padding: '20px 18px',
+                  borderRadius: '10px',
+                  boxShadow: '0 4px 14px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05)',
+                  fontFamily: "'Courier New', Courier, monospace",
+                  color: '#000000',
+                  lineHeight: '1.3',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  border: '1px solid #E2E8F0',
+                  margin: '0 auto',
+                  maxWidth: '340px'
+                }}
+              >
+                {/* Header */}
+                <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '20px', fontWeight: 900, letterSpacing: '1px' }}>
+                    {viewingOrderDetails.status === 'completed' ? 'TAX INVOICE' : 'KOT'}
+                  </div>
+                  <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px' }}>
+                    {storeControls.restName || currentUser?.businessName || 'Restaurant'}
+                  </div>
+                  {storeControls.address && (
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#334155', marginTop: '2px' }}>
+                      {storeControls.address}
+                    </div>
+                  )}
+                  {storeControls.phone && (
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#334155' }}>
+                      Ph: {storeControls.phone}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ borderTop: '1.5px solid #000000', margin: '6px 0' }} />
+
+                {/* Table & Meta Info */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', fontWeight: 800 }}>
+                  <span>Table: {viewingOrderDetails.table || 'Dine-In'}</span>
+                  <span>{viewingOrderDetails.type || 'Dine In'}</span>
+                </div>
+                <div style={{ fontSize: '11.5px', fontWeight: 600, marginTop: '2px', color: '#1E293B' }}>
+                  {viewingOrderDetails.createdAt ? new Date(viewingOrderDetails.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : new Date().toLocaleString()}
+                </div>
+                {viewingOrderDetails.customer && (
+                  <div style={{ fontSize: '11.5px', fontWeight: 600, marginTop: '2px', color: '#1E293B' }}>
+                    Cust: {viewingOrderDetails.customer} {viewingOrderDetails.phone ? `(${viewingOrderDetails.phone})` : ''}
+                  </div>
+                )}
+
+                <div style={{ borderTop: '1.5px solid #000000', margin: '6px 0' }} />
+
+                {/* Columns Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', fontWeight: 900 }}>
+                  <span style={{ flex: 1 }}>ITEM</span>
+                  <span style={{ flex: '0 0 35px', textAlign: 'center' }}>QTY</span>
+                  <span style={{ flex: '0 0 55px', textAlign: 'right' }}>PRICE</span>
+                </div>
+
+                <div style={{ borderTop: '1px dashed #000000', margin: '6px 0' }} />
+
+                {/* Items List */}
+                <div style={{ margin: '6px 0' }}>
+                  {(viewingOrderDetails.items || []).map((it, idx) => (
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', margin: '5px 0', fontSize: '12.5px', fontWeight: 700 }}>
+                      <div style={{ flex: 1, paddingRight: '6px', wordBreak: 'break-word' }}>
+                        {idx + 1}. {it.name}
+                      </div>
+                      <div style={{ flex: '0 0 35px', textAlign: 'center', fontWeight: 800 }}>
+                        {it.qty}
+                      </div>
+                      <div style={{ flex: '0 0 55px', textAlign: 'right', fontWeight: 900 }}>
+                        ₹{Number(it.price || 0) * Number(it.qty || 1)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ borderTop: '1px dashed #000000', margin: '6px 0' }} />
+
+                {/* Totals Calculation */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 700, margin: '3px 0' }}>
+                  <span>Total Items:</span>
+                  <span>{(viewingOrderDetails.items || []).reduce((s, i) => s + Number(i.qty || 1), 0)} items</span>
+                </div>
+
+                <div style={{ borderTop: '1.5px solid #000000', margin: '6px 0' }} />
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: 900, margin: '6px 0' }}>
+                  <span>GRAND TOTAL:</span>
+                  <span>₹{viewingOrderDetails.total}</span>
+                </div>
+
+                <div style={{ borderTop: '1px dashed #000000', margin: '6px 0' }} />
+
+                {/* Payment Status */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 800, margin: '3px 0' }}>
+                  <span>Status:</span>
+                  <span style={{ color: viewingOrderDetails.isPaid || viewingOrderDetails.status === 'completed' ? '#16A34A' : '#EA580C' }}>
+                    {viewingOrderDetails.isPaid || viewingOrderDetails.status === 'completed' ? 'PAID / SETTLED' : 'UNPAID / PENDING'}
+                  </span>
+                </div>
+
+                <div style={{ borderTop: '1px dashed #000000', margin: '8px 0 6px 0' }} />
+
+                {/* Footer Branding */}
+                <div style={{ textAlign: 'center', fontSize: '11px', fontWeight: 600, color: '#475569', marginTop: '6px' }}>
+                  *** Thank You! Visit Again ***
+                  <div style={{ fontSize: '10px', marginTop: '3px', color: '#64748B' }}>
+                    -- Powered by FoodyPay --
                   </div>
                 </div>
-                {viewingOrderDetails.status === 'completed' ? (
-                  <span className="crm-completed-badge">
-                    <CheckCircle2 size={13} /> Paid &amp; Served
-                  </span>
-                ) : viewingOrderDetails.status === 'cancelled' ? (
-                  <span className="crm-cancelled-badge">
-                    <Frown size={13} /> Voided
-                  </span>
-                ) : (
-                  <span className={`crm-status-pill ${viewingOrderDetails.status || 'new'}`}>
-                    {(viewingOrderDetails.status || 'NEW').toUpperCase()}
-                  </span>
-                )}
-              </div>
-
-              <div style={{ fontSize: '12px', fontWeight: 800, color: '#475569', letterSpacing: '0.04em', marginBottom: '6px' }}>
-                ORDER ITEMS SUMMARY
-              </div>
-              <div style={{ border: '1px solid #E2E8F0', borderRadius: '10px', overflow: 'hidden', marginBottom: '14px' }}>
-                {(viewingOrderDetails.items || []).map((it, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      padding: '8px 12px',
-                      borderBottom: idx === (viewingOrderDetails.items || []).length - 1 ? 'none' : '1px solid #F1F5F9',
-                      fontSize: '13px',
-                      background: idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span className={it.isVeg ? 'crm-veg-dot' : 'crm-nonveg-dot'} />
-                      <span>{it.name}</span>
-                      <span style={{ fontWeight: 800, color: '#2563EB', fontSize: '12px' }}>x{it.qty}</span>
-                    </div>
-                    <b style={{ color: '#0F172A' }}>₹{it.price * it.qty}</b>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ background: '#F1F5F9', padding: '12px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontWeight: 800, fontSize: '14px', color: '#0F172A' }}>Total Paid Amount:</span>
-                <span style={{ fontWeight: 900, fontSize: '18px', color: '#2563EB' }}>₹{viewingOrderDetails.total}</span>
               </div>
             </div>
 
-            <div className="crm-modal-footer" style={{ padding: '12px 20px', borderTop: '1px solid #E2E8F0', background: '#F8FAFC', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <div className="crm-modal-footer" style={{ padding: '12px 18px', borderTop: '1px solid #E2E8F0', background: '#FFFFFF', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  className="crm-btn-secondary"
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', padding: '8px 14px', background: '#FFF7ED', borderColor: '#FDBA74', color: '#EA580C', fontWeight: 800 }}
+                  onClick={() => printThermalKot(viewingOrderDetails, storeControls)}
+                >
+                  <Printer size={15} />
+                  <span>Print KOT</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn-create-order-primary"
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', padding: '8px 14px', background: '#1D4ED8', fontWeight: 800 }}
+                  onClick={() => printThermalReceipt(viewingOrderDetails, storeControls)}
+                >
+                  <Printer size={15} />
+                  <span>Print Receipt</span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 className="crm-btn-secondary"
-                onClick={() => window.print()}
-              >
-                <Printer size={15} />
-                <span>Print KOT</span>
-              </button>
-              <button
-                type="button"
-                className="btn-create-order-primary"
+                style={{ fontSize: '12.5px', padding: '8px 14px' }}
                 onClick={() => setViewingOrderDetails(null)}
               >
                 Close

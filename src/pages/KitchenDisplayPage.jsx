@@ -21,12 +21,14 @@ import {
   Sparkles,
   ShieldCheck,
   KeyRound,
-  Lock
+  Lock,
+  Printer
 } from 'lucide-react';
 import { playFoodPreparing, playFoodReady, startKitchenAlarm, stopKitchenAlarm, sortOrdersNewestFirst } from '../utils/soundEffects';
 import { fetchOrdersApi, fetchPublicOrdersApi, updateOrderStatusApi, markKitchenSeenApi } from '../utils/api';
 import { subscribeToOrders, getBusinessUserByUniqueId, updateOrderInFirestore } from '../utils/firestoreService';
 import { validateKitchenLogin, getPartnerCredentials } from '../utils/partnerAuth';
+import { printThermalKot } from '../utils/thermalPrinter';
 
 export default function KitchenDisplayPage({ onShowToast }) {
   const { restaurantSlug, merchantId } = useParams();
@@ -990,6 +992,27 @@ export default function KitchenDisplayPage({ onShowToast }) {
                             <span>STOP BELL</span>
                           </>
                         )}
+                      </button>
+
+                      <button
+                        onClick={() => printThermalKot(order, { restName: storeName || 'Restaurant' })}
+                        style={{
+                          backgroundColor: '#F1F5F9',
+                          border: '1.5px solid #CBD5E1',
+                          color: '#334155',
+                          padding: '6px 9px',
+                          borderRadius: '8px',
+                          fontSize: '11px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                        title="Print KOT Slip"
+                      >
+                        <Printer size={13} color="#475569" />
+                        <span>KOT</span>
                       </button>
 
                       <span style={{
