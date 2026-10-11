@@ -4955,7 +4955,7 @@ export default function DashboardPage({ onShowToast }) {
         </div>
 
         <nav className="crm-sidebar-menu">
-          {/* 👑 Merchant Admin Control Suite */}
+          {/* Merchant Admin Control Suite */}
           <button
             type="button"
             title="Merchant Admin (Store Master Controls & Analytics)"
@@ -4980,9 +4980,6 @@ export default function DashboardPage({ onShowToast }) {
               </span>
               <span>Merchant Admin</span>
             </div>
-            <span style={{ fontSize: '10px', fontWeight: 900, background: activeTab === 'merchant_admin' ? 'rgba(255,255,255,0.25)' : '#FFEDD5', color: activeTab === 'merchant_admin' ? '#FFFFFF' : '#C2410C', padding: '2px 7px', borderRadius: '8px' }}>
-              PRO
-            </span>
           </button>
 
           {/* 1. Home / Orders */}
@@ -6098,7 +6095,7 @@ export default function DashboardPage({ onShowToast }) {
                                     {/* Center: Dining Table Illustration matching Screenshot with animations */}
                                     <div className="pos-table-illustration">
                                       {isOccupied ? (
-                                        <svg width="102" height="60" viewBox="0 0 118 68" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <svg width="84" height="46" viewBox="0 0 118 68" fill="none" xmlns="http://www.w3.org/2000/svg">
                                           {/* Customer Avatars / Chairs */}
                                           {/* Top 2 chairs */}
                                           <circle className="svg-chair-avatar" cx="44" cy="5" r="4.5" fill={statusKey === 'eating' ? '#38BDF8' : statusKey === 'waiting' ? '#FB923C' : statusKey === 'paid' ? '#F87171' : '#34D399'} />
@@ -6166,9 +6163,9 @@ export default function DashboardPage({ onShowToast }) {
                                           )}
                                         </svg>
                                       ) : (
-                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60px', width: '100%' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '44px', width: '100%' }}>
                                           <div className="pos-add-table-icon">
-                                            <Plus size={16} strokeWidth={2.5} />
+                                            <Plus size={15} strokeWidth={2.5} />
                                           </div>
                                         </div>
                                       )}
