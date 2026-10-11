@@ -282,12 +282,15 @@ export default function DashboardPage({ onShowToast }) {
       if (rawCtrl) savedControls = JSON.parse(rawCtrl);
     } catch(e) {}
 
+    const activeStoredBid = localStorage.getItem('foodypay_active_business_id') || '';
+    const resolvedFpId = savedControls.foodypayId || activeStoredBid || 'FP-348330';
+
     try {
       const savedUser = localStorage.getItem('foodypay_user');
       if (savedUser) {
         const u = JSON.parse(savedUser);
+        const userBid = u.foodypayId || u.uniqueId || u.businessId || activeStoredBid || 'FP-348330';
         return {
-          foodypayId: u.foodypayId || 'FP-985569',
           storeStatus: savedControls.storeStatus !== undefined ? savedControls.storeStatus : true,
           deliveryStatus: savedControls.deliveryStatus !== undefined ? savedControls.deliveryStatus : true,
           pickupStatus: savedControls.pickupStatus !== undefined ? savedControls.pickupStatus : true,
@@ -307,12 +310,12 @@ export default function DashboardPage({ onShowToast }) {
           lockOrderDeletion: false,
           lockSettingsPanel: false,
           kitchenAutoDispatchSeconds: savedControls.kitchenAutoDispatchSeconds !== undefined ? Number(savedControls.kitchenAutoDispatchSeconds) : 30,
-          ...savedControls
+          ...savedControls,
+          foodypayId: savedControls.foodypayId || userBid,
         };
       }
     } catch (e) {}
     return {
-      foodypayId: '',
       storeStatus: savedControls.storeStatus !== undefined ? savedControls.storeStatus : true,
       deliveryStatus: savedControls.deliveryStatus !== undefined ? savedControls.deliveryStatus : true,
       pickupStatus: savedControls.pickupStatus !== undefined ? savedControls.pickupStatus : true,
@@ -332,7 +335,8 @@ export default function DashboardPage({ onShowToast }) {
       lockOrderDeletion: false,
       lockSettingsPanel: false,
       kitchenAutoDispatchSeconds: savedControls.kitchenAutoDispatchSeconds !== undefined ? Number(savedControls.kitchenAutoDispatchSeconds) : 30,
-      ...savedControls
+      ...savedControls,
+      foodypayId: resolvedFpId,
     };
   });
 
@@ -5361,7 +5365,9 @@ export default function DashboardPage({ onShowToast }) {
                 {activeTab === 'store_controls' && <><Settings size={22} color="#475569" /> Store Controls & Security Settings</>}
               </h1>
               <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '3px' }}>
-                {storeControls.restName} • Merchant ID: <strong style={{ color: '#1D4ED8' }}>{storeControls.foodypayId}</strong>
+                {storeControls.restName || currentUser?.businessName || 'Foodypay Store'} • Merchant ID: <strong style={{ color: '#1D4ED8', letterSpacing: '0.5px' }}>
+                  {storeControls.foodypayId || currentUser?.foodypayId || currentUser?.uniqueId || adminUniqueId || localStorage.getItem('foodypay_active_business_id') || 'FP-348330'}
+                </strong>
               </div>
             </div>
           </div>
