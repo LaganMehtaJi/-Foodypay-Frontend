@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import { playFoodPreparing, playFoodReady, startKitchenAlarm, stopKitchenAlarm, sortOrdersNewestFirst } from '../utils/soundEffects';
 import { fetchOrdersApi, fetchPublicOrdersApi, updateOrderStatusApi, markKitchenSeenApi } from '../utils/api';
-import { subscribeToOrders, getBusinessUserByUniqueId } from '../utils/firestoreService';
+import { subscribeToOrders, getBusinessUserByUniqueId, updateOrderInFirestore } from '../utils/firestoreService';
 import { validateKitchenLogin, getPartnerCredentials } from '../utils/partnerAuth';
 
 export default function KitchenDisplayPage({ onShowToast }) {
@@ -229,7 +229,6 @@ export default function KitchenDisplayPage({ onShowToast }) {
 
     return () => {
       if (typeof unsubscribeFs === 'function') unsubscribeFs();
-      clearInterval(pollInterval);
       if (bc) bc.close();
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('foodypay_order_created', loadOrders);
@@ -334,8 +333,25 @@ export default function KitchenDisplayPage({ onShowToast }) {
 
       const token = localStorage.getItem('foodypay_token');
       const targetObj = orders.find((o) => (o._id || o.id || o.orderId) === orderId || String(o._id || o.id || o.orderId) === oIdStr);
-      const targetId = (targetObj && targetObj._id) || orderId;
-      await updateOrderStatusApi(token, targetId, newStatus);
+      const targetId = (targetObj && (targetObj._id || targetObj.id)) || orderId;
+
+      // Update strictly in Cloud Firestore real-time database
+      try {
+        await updateOrderInFirestore(targetId, {
+          status: newStatus,
+          seen: true,
+          kitchenSeen: true,
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (fsErr) {
+        console.warn('Firestore KDS status sync note:', fsErr);
+      }
+
+      if (token) {
+        try {
+          await updateOrderStatusApi(token, targetId, newStatus);
+        } catch (apiErr) {}
+      }
     } catch (err) {
       console.error('Error updating status:', err);
     } finally {
@@ -370,13 +386,17 @@ export default function KitchenDisplayPage({ onShowToast }) {
     );
 
     try {
+      const targetObj = orders.find((o) => (o._id || o.id || o.orderId) === orderId || String(o._id || o.id || o.orderId) === oIdStr);
+      const targetId = (targetObj && (targetObj._id || targetObj.id)) || orderId;
+      await updateOrderInFirestore(targetId, { kitchenSeen: true });
+    } catch (e) {}
+
+    try {
       const token = localStorage.getItem('foodypay_token');
       const targetObj = orders.find((o) => (o._id || o.id || o.orderId) === orderId || String(o._id || o.id || o.orderId) === oIdStr);
       const targetId = (targetObj && targetObj._id) || orderId;
-      await markKitchenSeenApi(token, targetId);
-    } catch (e) {
-      console.error('Failed to mark kitchen order seen on server:', e);
-    }
+      if (token) await markKitchenSeenApi(token, targetId);
+    } catch (e) {}
   };
 
   // Add Counter POS Order directly to kitchen
