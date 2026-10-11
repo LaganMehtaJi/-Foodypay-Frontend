@@ -26,6 +26,30 @@ function formatPrintDate(dateInput) {
   }
 }
 
+function formatKotDateTime(dateInput) {
+  try {
+    const d = dateInput ? new Date(dateInput) : new Date();
+    if (isNaN(d.getTime())) return { date: '12/10/2026', time: '3:51 AM' };
+
+    const day = d.getDate().toString().padStart(2, '0');
+    const month = (d.getMonth() + 1).toString().padStart(2, '0');
+    const year = d.getFullYear();
+
+    let hours = d.getHours();
+    const mins = d.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+
+    return {
+      date: `${day}/${month}/${year}`,
+      time: `${hours}:${mins} ${ampm}`
+    };
+  } catch (e) {
+    return { date: '', time: '' };
+  }
+}
+
 /**
  * Print standard Kitchen Order Ticket (KOT)
  * Matches the exact thermal KOT slip format from user reference image.
@@ -33,10 +57,10 @@ function formatPrintDate(dateInput) {
 export function printThermalKot(order, storeInfo = {}) {
   if (!order) return;
 
-  const restName = storeInfo.restName || storeInfo.businessName || order.restaurantName || 'Restaurant';
+  const restName = storeInfo.restName || storeInfo.businessName || order.restaurantName || 'FoodyPay';
   const tableName = order.table || order.tableNo || 'Table 1';
-  const orderType = order.type || 'Dine In';
-  const dateTimeStr = formatPrintDate(order.createdAt || order.date);
+  const orderType = (order.type || 'Dine-In').toUpperCase();
+  const dt = formatKotDateTime(order.createdAt || order.date);
   const items = Array.isArray(order.items) ? order.items : [];
   const totalItemCount = items.reduce((sum, item) => sum + Number(item.qty || item.quantity || 1), 0);
 
@@ -49,14 +73,14 @@ export function printThermalKot(order, storeInfo = {}) {
   printFrame.style.border = 'none';
   document.body.appendChild(printFrame);
 
-  const itemsHtml = items.map((it, idx) => {
-    const name = it.name || it.title || 'Item';
+  const itemsHtml = items.map((it) => {
+    const name = String(it.name || it.title || 'Item').toUpperCase();
     const qty = it.qty || it.quantity || 1;
     const notes = it.notes || it.customization ? `<div class="item-notes">* ${it.notes || it.customization}</div>` : '';
     return `
       <div class="item-row">
-        <div class="item-name">${idx + 1}. ${name}${notes}</div>
-        <div class="item-qty">${qty}</div>
+        <div class="item-name">${name}${notes}</div>
+        <div class="item-qty">&times; ${qty}</div>
       </div>
     `;
   }).join('');
@@ -80,73 +104,85 @@ export function printThermalKot(order, storeInfo = {}) {
             padding: 0;
           }
           body {
-            font-family: 'Courier New', Courier, monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            font-size: 13px;
-            font-weight: 700;
-            line-height: 1.25;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-size: 13.5px;
             color: #000000;
             background: #FFFFFF;
             width: 100%;
-            max-width: 76mm; /* Perfect fit for 80mm & 58mm thermal printers */
-            padding: 6px 8px;
+            max-width: 76mm; /* Standard 58mm & 80mm thermal fit */
+            padding: 10px 12px;
             margin: 0 auto;
+            line-height: 1.35;
           }
           .text-center {
             text-align: center;
           }
-          .kot-title {
-            font-size: 20px;
-            font-weight: 900;
-            letter-spacing: 1.5px;
+          .store-name {
+            font-size: 21px;
+            font-weight: 800;
+            letter-spacing: -0.3px;
             margin-bottom: 2px;
           }
-          .rest-name {
-            font-size: 14px;
-            font-weight: 700;
-            margin-bottom: 6px;
+          .kot-subtitle {
+            font-size: 11.5px;
+            font-weight: 800;
+            letter-spacing: 0.8px;
+            margin-bottom: 8px;
           }
-          .solid-divider {
-            border-top: 1.5px solid #000000;
+          .thick-divider {
+            border-top: 2px solid #000000;
+            margin: 8px 0;
+          }
+          .light-divider {
+            border-top: 1px solid #CBD5E1;
+            margin: 8px 0;
+          }
+          .meta-grid {
+            display: flex;
+            justify-content: space-between;
             margin: 4px 0;
           }
-          .dashed-divider {
-            border-top: 1px dashed #000000;
-            margin: 5px 0;
+          .meta-col-left {
+            text-align: left;
           }
-          .meta-row {
+          .meta-col-right {
+            text-align: right;
+          }
+          .meta-label {
+            font-size: 10.5px;
+            font-weight: 700;
+            color: #64748B;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 2px;
+          }
+          .meta-val-large {
+            font-size: 15px;
+            font-weight: 900;
+            color: #000000;
+            margin-bottom: 2px;
+          }
+          .meta-val-sub {
+            font-size: 14px;
+            font-weight: 800;
+            color: #000000;
+          }
+          .items-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 12.5px;
-            font-weight: 700;
-            margin: 2px 0;
-          }
-          .table-title {
-            font-weight: 800;
-          }
-          .date-row {
-            font-size: 12px;
-            font-weight: 600;
-            margin: 2px 0 4px 0;
-          }
-          .col-headers {
-            display: flex;
-            justify-content: space-between;
-            font-size: 13px;
+            font-size: 14px;
             font-weight: 900;
             letter-spacing: 0.5px;
-            padding: 2px 0;
-          }
-          .items-container {
-            margin: 4px 0;
+            padding: 4px 0;
           }
           .item-row {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            margin: 4px 0;
-            font-size: 13px;
-            font-weight: 700;
+            margin: 8px 0;
+            font-size: 15px;
+            font-weight: 900;
           }
           .item-name {
             flex: 1;
@@ -154,69 +190,87 @@ export function printThermalKot(order, storeInfo = {}) {
             word-break: break-word;
           }
           .item-qty {
-            flex: 0 0 24px;
+            flex: 0 0 45px;
             text-align: right;
+            font-size: 15px;
             font-weight: 900;
-            font-size: 14px;
+            white-space: nowrap;
           }
           .item-notes {
             font-size: 11px;
-            font-weight: 600;
+            font-weight: 700;
+            color: #475569;
             margin-top: 2px;
-            padding-left: 10px;
+            text-transform: none;
           }
           .total-row {
-            text-align: right;
-            font-size: 12.5px;
-            font-weight: 800;
-            margin: 6px 0 4px 0;
-          }
-          .footer-branding {
-            text-align: center;
-            font-size: 10.5px;
-            font-weight: 600;
-            margin-top: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            font-weight: 900;
             letter-spacing: 0.3px;
+            padding: 4px 0;
+          }
+          .total-val {
+            font-size: 15px;
+            font-weight: 900;
+          }
+          .powered-footer {
+            text-align: center;
+            font-size: 11.5px;
+            font-weight: 600;
+            color: #475569;
+            margin-top: 10px;
+            letter-spacing: 0.2px;
           }
         </style>
       </head>
       <body>
         <div class="text-center">
-          <div class="kot-title">KOT</div>
-          <div class="rest-name">${restName}</div>
+          <div class="store-name">${restName}</div>
+          <div class="kot-subtitle">KITCHEN ORDER TICKET</div>
         </div>
 
-        <div class="solid-divider"></div>
+        <div class="thick-divider"></div>
 
-        <div class="meta-row">
-          <span class="table-title">Table: ${tableName}</span>
-          <span>${orderType}</span>
+        <div class="meta-grid">
+          <div class="meta-col-left">
+            <div class="meta-label">ORDER TYPE</div>
+            <div class="meta-val-large">${orderType}</div>
+            <div class="meta-val-sub">${tableName}</div>
+          </div>
+          <div class="meta-col-right">
+            <div class="meta-label">DATE &amp; TIME</div>
+            <div class="meta-val-large">${dt.date}</div>
+            <div class="meta-val-sub">${dt.time}</div>
+          </div>
         </div>
-        <div class="date-row">${dateTimeStr}</div>
 
-        <div class="solid-divider"></div>
+        <div class="thick-divider"></div>
 
-        <div class="col-headers">
+        <div class="items-header">
           <span>ITEM</span>
           <span>QTY</span>
         </div>
 
-        <div class="dashed-divider"></div>
+        <div class="light-divider"></div>
 
-        <div class="items-container">
+        <div class="items-list">
           ${itemsHtml}
         </div>
 
-        <div class="dashed-divider"></div>
+        <div class="thick-divider"></div>
 
         <div class="total-row">
-          Total: ${totalItemCount} ${totalItemCount === 1 ? 'item' : 'items'}
+          <span>TOTAL ITEMS</span>
+          <span class="total-val">${totalItemCount}</span>
         </div>
 
-        <div class="dashed-divider"></div>
+        <div class="thick-divider"></div>
 
-        <div class="footer-branding">
-          -- Powered by FoodyPay --
+        <div class="powered-footer">
+          Powered by FoodyPay
         </div>
       </body>
     </html>

@@ -13759,103 +13759,81 @@ export default function DashboardPage({ onShowToast }) {
                   maxWidth: '340px'
                 }}
               >
-                {/* Header */}
+                {/* Header: Store Name on top */}
                 <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-                  <div style={{ fontSize: '20px', fontWeight: 900, letterSpacing: '1px' }}>
-                    {viewingOrderDetails.status === 'completed' ? 'TAX INVOICE' : 'KOT'}
+                  <div style={{ fontSize: '20px', fontWeight: 900, letterSpacing: '-0.3px', color: '#0F172A' }}>
+                    {storeControls.restName || currentUser?.businessName || 'FoodyPay'}
                   </div>
-                  <div style={{ fontSize: '14px', fontWeight: 700, marginTop: '2px' }}>
-                    {storeControls.restName || currentUser?.businessName || 'Restaurant'}
+                  <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.8px', color: '#334155', marginTop: '2px' }}>
+                    KITCHEN ORDER TICKET
                   </div>
-                  {storeControls.address && (
-                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#334155', marginTop: '2px' }}>
-                      {storeControls.address}
+                </div>
+
+                <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
+
+                {/* Table & Meta Info Split Grid */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', margin: '4px 0' }}>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>
+                      ORDER TYPE
                     </div>
-                  )}
-                  {storeControls.phone && (
-                    <div style={{ fontSize: '11px', fontWeight: 600, color: '#334155' }}>
-                      Ph: {storeControls.phone}
+                    <div style={{ fontSize: '14.5px', fontWeight: 900, color: '#000000', marginBottom: '2px' }}>
+                      {(viewingOrderDetails.type || 'Dine-In').toUpperCase()}
                     </div>
-                  )}
-                </div>
-
-                <div style={{ borderTop: '1.5px solid #000000', margin: '6px 0' }} />
-
-                {/* Table & Meta Info */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', fontWeight: 800 }}>
-                  <span>Table: {viewingOrderDetails.table || 'Dine-In'}</span>
-                  <span>{viewingOrderDetails.type || 'Dine In'}</span>
-                </div>
-                <div style={{ fontSize: '11.5px', fontWeight: 600, marginTop: '2px', color: '#1E293B' }}>
-                  {viewingOrderDetails.createdAt ? new Date(viewingOrderDetails.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) : new Date().toLocaleString()}
-                </div>
-                {viewingOrderDetails.customer && (
-                  <div style={{ fontSize: '11.5px', fontWeight: 600, marginTop: '2px', color: '#1E293B' }}>
-                    Cust: {viewingOrderDetails.customer} {viewingOrderDetails.phone ? `(${viewingOrderDetails.phone})` : ''}
+                    <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#000000' }}>
+                      {viewingOrderDetails.table || 'Table 1'}
+                    </div>
                   </div>
-                )}
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>
+                      DATE &amp; TIME
+                    </div>
+                    <div style={{ fontSize: '14px', fontWeight: 900, color: '#000000', marginBottom: '2px' }}>
+                      {viewingOrderDetails.createdAt ? new Date(viewingOrderDetails.createdAt).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')}
+                    </div>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#000000' }}>
+                      {viewingOrderDetails.createdAt ? new Date(viewingOrderDetails.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                    </div>
+                  </div>
+                </div>
 
-                <div style={{ borderTop: '1.5px solid #000000', margin: '6px 0' }} />
+                <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
 
                 {/* Columns Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', fontWeight: 900 }}>
-                  <span style={{ flex: 1 }}>ITEM</span>
-                  <span style={{ flex: '0 0 35px', textAlign: 'center' }}>QTY</span>
-                  <span style={{ flex: '0 0 55px', textAlign: 'right' }}>PRICE</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 900, letterSpacing: '0.5px', padding: '2px 0' }}>
+                  <span>ITEM</span>
+                  <span>QTY</span>
                 </div>
 
-                <div style={{ borderTop: '1px dashed #000000', margin: '6px 0' }} />
+                <div style={{ borderTop: '1px solid #CBD5E1', margin: '6px 0' }} />
 
                 {/* Items List */}
                 <div style={{ margin: '6px 0' }}>
                   {(viewingOrderDetails.items || []).map((it, idx) => (
-                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', margin: '5px 0', fontSize: '12.5px', fontWeight: 700 }}>
-                      <div style={{ flex: 1, paddingRight: '6px', wordBreak: 'break-word' }}>
-                        {idx + 1}. {it.name}
+                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', margin: '6px 0', fontSize: '14px', fontWeight: 900 }}>
+                      <div style={{ flex: 1, paddingRight: '8px', wordBreak: 'break-word' }}>
+                        {String(it.name || 'Item').toUpperCase()}
                       </div>
-                      <div style={{ flex: '0 0 35px', textAlign: 'center', fontWeight: 800 }}>
-                        {it.qty}
-                      </div>
-                      <div style={{ flex: '0 0 55px', textAlign: 'right', fontWeight: 900 }}>
-                        ₹{Number(it.price || 0) * Number(it.qty || 1)}
+                      <div style={{ flex: '0 0 45px', textAlign: 'right', fontWeight: 900, whiteSpace: 'nowrap' }}>
+                        &times; {it.qty || 1}
                       </div>
                     </div>
                   ))}
                 </div>
 
-                <div style={{ borderTop: '1px dashed #000000', margin: '6px 0' }} />
+                <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
 
                 {/* Totals Calculation */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 700, margin: '3px 0' }}>
-                  <span>Total Items:</span>
-                  <span>{(viewingOrderDetails.items || []).reduce((s, i) => s + Number(i.qty || 1), 0)} items</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13.5px', fontWeight: 900, padding: '2px 0' }}>
+                  <span>TOTAL ITEMS</span>
+                  <span>{(viewingOrderDetails.items || []).reduce((s, i) => s + Number(i.qty || 1), 0)}</span>
                 </div>
 
-                <div style={{ borderTop: '1.5px solid #000000', margin: '6px 0' }} />
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: 900, margin: '6px 0' }}>
-                  <span>GRAND TOTAL:</span>
-                  <span>₹{viewingOrderDetails.total}</span>
-                </div>
-
-                <div style={{ borderTop: '1px dashed #000000', margin: '6px 0' }} />
-
-                {/* Payment Status */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 800, margin: '3px 0' }}>
-                  <span>Status:</span>
-                  <span style={{ color: viewingOrderDetails.isPaid || viewingOrderDetails.status === 'completed' ? '#16A34A' : '#EA580C' }}>
-                    {viewingOrderDetails.isPaid || viewingOrderDetails.status === 'completed' ? 'PAID / SETTLED' : 'UNPAID / PENDING'}
-                  </span>
-                </div>
-
-                <div style={{ borderTop: '1px dashed #000000', margin: '8px 0 6px 0' }} />
+                <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
 
                 {/* Footer Branding */}
-                <div style={{ textAlign: 'center', fontSize: '11px', fontWeight: 600, color: '#475569', marginTop: '6px' }}>
-                  *** Thank You! Visit Again ***
-                  <div style={{ fontSize: '10px', marginTop: '3px', color: '#64748B' }}>
-                    -- Powered by FoodyPay --
-                  </div>
+                <div style={{ textAlign: 'center', fontSize: '11.5px', fontWeight: 600, color: '#475569', marginTop: '8px' }}>
+                  Powered by FoodyPay
                 </div>
               </div>
             </div>
