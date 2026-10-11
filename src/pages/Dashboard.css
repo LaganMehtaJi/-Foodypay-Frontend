@@ -3241,42 +3241,121 @@ input:checked + .crm-blue-slider:before {
   color: #FFFFFF;
 }
 
-/* Table Cards Grid */
+/* Category & Table Add Action Buttons */
+.pos-btn-add-category {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 800;
+  border: 1.5px dashed #FF5E14;
+  background: #FFF7ED;
+  color: #EA580C;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  white-space: nowrap;
+  user-select: none;
+  margin-left: auto;
+}
+
+.pos-btn-add-category:hover {
+  background: #FF5E14;
+  color: #FFFFFF;
+  border-style: solid;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(255, 94, 20, 0.28);
+}
+
+.pos-btn-add-category:active {
+  transform: scale(0.96);
+}
+
+.pos-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px;
+  border-bottom: 1.5px solid #F1F5F9;
+  padding-bottom: 8px;
+}
+
+.pos-section-header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.pos-section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pos-btn-section-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid #E2E8F0;
+  background: #FFFFFF;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.pos-btn-section-action:hover {
+  background: #F8FAFC;
+  border-color: #CBD5E1;
+  color: #0F172A;
+}
+
+.pos-btn-section-action.delete:hover {
+  background: #FEF2F2;
+  border-color: #FECACA;
+  color: #DC2626;
+}
+
+/* Table Cards Grid - Compact Sleek Layout */
 .pos-tables-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
-  gap: 16px;
-  margin-top: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
 }
 
 @media (max-width: 640px) {
   .pos-tables-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+    gap: 10px;
   }
 }
 
-/* Dining Table Card Base */
+/* Dining Table Card Base - Compact Height & Clean Borders */
 .pos-dining-card {
   background: #FFFFFF;
-  border-radius: 18px;
+  border-radius: 14px;
   border: 1.5px solid #E2E8F0;
-  padding: 14px 14px;
+  padding: 10px 10px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  min-height: 220px;
+  min-height: 182px;
   position: relative;
-  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  transition: all 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
   cursor: pointer;
-  animation: posCardEntrance 0.35s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation: posCardEntrance 0.3s cubic-bezier(0.16, 1, 0.3, 1) backwards;
   overflow: hidden;
 }
 
 .pos-dining-card:hover {
-  transform: translateY(-4px) scale(1.015);
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.1);
+  transform: translateY(-3px) scale(1.01);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
   border-color: #CBD5E1;
 }
 
@@ -3293,26 +3372,26 @@ input:checked + .crm-blue-slider:before {
 .pos-dining-card.is-available:hover {
   border-color: #3B82F6;
   background: #F0F7FF;
-  box-shadow: 0 10px 24px rgba(59, 130, 246, 0.12);
+  box-shadow: 0 8px 18px rgba(59, 130, 246, 0.1);
 }
 
 .pos-dining-card.is-available:hover .pos-add-table-icon {
-  transform: scale(1.15) rotate(90deg);
+  transform: scale(1.1) rotate(90deg);
   border-color: #3B82F6;
   color: #3B82F6;
   background: #FFFFFF;
 }
 
 .pos-add-table-icon {
-  width: 56px;
-  height: 34px;
-  border-radius: 10px;
-  border: 2px dashed #CBD5E1;
+  width: 44px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1.5px dashed #CBD5E1;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #94A3B8;
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 /* Specific Card Glows by Status */
@@ -3321,7 +3400,7 @@ input:checked + .crm-blue-slider:before {
 }
 .pos-dining-card.status-waiting:hover {
   border-color: #F97316;
-  box-shadow: 0 12px 28px rgba(249, 115, 22, 0.12);
+  box-shadow: 0 8px 20px rgba(249, 115, 22, 0.12);
 }
 
 .pos-dining-card.status-eating {
@@ -3329,7 +3408,7 @@ input:checked + .crm-blue-slider:before {
 }
 .pos-dining-card.status-eating:hover {
   border-color: #0284C7;
-  box-shadow: 0 12px 28px rgba(2, 132, 199, 0.12);
+  box-shadow: 0 8px 20px rgba(2, 132, 199, 0.12);
 }
 
 .pos-dining-card.status-paid {
@@ -3337,7 +3416,7 @@ input:checked + .crm-blue-slider:before {
 }
 .pos-dining-card.status-paid:hover {
   border-color: #EF4444;
-  box-shadow: 0 12px 28px rgba(239, 68, 68, 0.15);
+  box-shadow: 0 8px 20px rgba(239, 68, 68, 0.14);
 }
 
 /* Top Row: Table Name & Status Badge */
@@ -3349,10 +3428,10 @@ input:checked + .crm-blue-slider:before {
 }
 
 .pos-table-number {
-  font-size: 19px;
+  font-size: 16px;
   font-weight: 900;
   color: #0F172A;
-  letter-spacing: -0.3px;
+  letter-spacing: -0.2px;
   transition: color 0.15s ease;
 }
 
@@ -3366,19 +3445,19 @@ input:checked + .crm-blue-slider:before {
 
 /* Status Badges */
 .pos-status-badge {
-  font-size: 11px;
+  font-size: 9.5px;
   font-weight: 800;
-  padding: 3px 9px;
+  padding: 2px 7px;
   border-radius: 9999px;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 3px;
   white-space: nowrap;
   transition: transform 0.2s ease;
 }
 
 .pos-dining-card:hover .pos-status-badge {
-  transform: scale(1.05);
+  transform: scale(1.04);
 }
 
 .pos-status-badge.eating {
@@ -3412,16 +3491,16 @@ input:checked + .crm-blue-slider:before {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 0;
+  padding: 4px 0;
   user-select: none;
 }
 
 .pos-table-illustration svg {
-  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .pos-dining-card:hover .pos-table-illustration svg {
-  transform: scale(1.06);
+  transform: scale(1.05);
 }
 
 /* SVG Dish & Clock Animations */
@@ -3450,12 +3529,12 @@ input:checked + .crm-blue-slider:before {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin-top: 8px;
-  margin-bottom: 10px;
+  margin-top: 6px;
+  margin-bottom: 8px;
 }
 
 .pos-card-amount {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 900;
   color: #0F172A;
   letter-spacing: -0.3px;
@@ -3463,23 +3542,23 @@ input:checked + .crm-blue-slider:before {
 }
 
 .pos-dining-card:hover .pos-card-amount {
-  transform: scale(1.03);
+  transform: scale(1.02);
 }
 
 .pos-card-time {
-  font-size: 12px;
+  font-size: 10.5px;
   font-weight: 700;
   color: #64748B;
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
 }
 
 /* Card Action Buttons */
 .pos-card-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
 }
 
@@ -3489,22 +3568,21 @@ input:checked + .crm-blue-slider:before {
   border: 1.5px solid #E2E8F0;
   color: #0F172A;
   border-radius: 9999px;
-  padding: 7px 10px;
-  font-size: 12px;
+  padding: 5px 8px;
+  font-size: 11px;
   font-weight: 800;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 3px;
   transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .btn-card-add-item:hover {
   background: #F8FAFC;
   border-color: #0F172A;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
 }
 
 .btn-card-add-item:active {
@@ -3517,22 +3595,21 @@ input:checked + .crm-blue-slider:before {
   border: none;
   color: #FFFFFF;
   border-radius: 9999px;
-  padding: 7.5px 12px;
-  font-size: 12px;
+  padding: 5.5px 8px;
+  font-size: 11px;
   font-weight: 800;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  box-shadow: 0 3px 8px rgba(220, 38, 38, 0.28);
+  gap: 3px;
+  box-shadow: 0 2px 6px rgba(220, 38, 38, 0.22);
   transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .btn-card-bill:hover {
   background: #B91C1C;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 14px rgba(220, 38, 38, 0.38);
+  transform: translateY(-1px);
 }
 
 .btn-card-bill:active {
@@ -3545,27 +3622,56 @@ input:checked + .crm-blue-slider:before {
   border: none;
   color: #FFFFFF;
   border-radius: 9999px;
-  padding: 8px 12px;
-  font-size: 12.5px;
+  padding: 6.5px 10px;
+  font-size: 11.5px;
   font-weight: 800;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.32);
+  gap: 4px;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25);
   transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
   animation: posGentleBounce 2.5s infinite;
 }
 
 .btn-card-vacate:hover {
   background: #B91C1C;
-  transform: translateY(-2px) scale(1.02);
-  box-shadow: 0 8px 18px rgba(220, 38, 38, 0.42);
+  transform: translateY(-1px) scale(1.01);
 }
 
 .btn-card-vacate:active {
   transform: scale(0.96);
+}
+
+/* Quick Delete Table Button on Hover */
+.btn-table-quick-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(254, 242, 242, 0.9);
+  color: #DC2626;
+  border: 1px solid #FECACA;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.18s ease;
+  z-index: 5;
+}
+
+.pos-dining-card:hover .btn-table-quick-delete {
+  opacity: 1;
+}
+
+.btn-table-quick-delete:hover {
+  background: #DC2626;
+  color: #FFFFFF;
+  transform: scale(1.15);
 }
 
 

@@ -131,6 +131,8 @@ import {
   subscribeToProducts,
   saveProductToFirestore,
   deleteProductFromFirestore,
+  saveTableToFirestore,
+  deleteTableFromFirestore,
 } from '../utils/firestoreService';
 import './Dashboard.css';
 
@@ -2124,6 +2126,42 @@ export default function DashboardPage({ onShowToast }) {
   // Table Status Filter State for Visual POS Table View ('all' | 'available' | 'eating' | 'waiting' | 'bill_ready' | 'paid')
   const [tableStatusFilter, setTableStatusFilter] = useState('all');
 
+  // Custom Table Categories / Sections (e.g. Restaurant, Cafe, Family Hall, Rooftop, Bar, etc.)
+  const [customSections, setCustomSections] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_table_sections');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return ['Restaurant', 'Cafe', 'Family Hall'];
+  });
+
+  // Save customSections to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('foodypay_table_sections', JSON.stringify(customSections));
+    } catch (e) {}
+  }, [customSections]);
+
+  // Prompt to quickly add a new Table Category
+  const handleAddNewCategory = () => {
+    const name = window.prompt('Enter new Category / Section name (e.g. Rooftop, Bar, Garden, VIP Lounge):');
+    if (!name || !name.trim()) return;
+    const cleanName = name.trim();
+    if (customSections.some((s) => s.toLowerCase() === cleanName.toLowerCase())) {
+      addToast(`Category "${cleanName}" already exists!`, <AlertCircle size={18} />);
+      return;
+    }
+    setCustomSections((prev) => [...prev, cleanName]);
+    addToast(`Added new category "${cleanName}"!`, <Check size={18} />);
+  };
+
+  // Delete an entire Category
+  const handleDeleteCategory = (catName) => {
+    if (!window.confirm(`Delete "${catName}" category? Tables assigned to this category will stay intact.`)) return;
+    setCustomSections((prev) => prev.filter((s) => s !== catName));
+    addToast(`Removed "${catName}" category!`, <Check size={18} />);
+  };
+
   // Move KOT / Items to another Table Modal State
   const [isMoveKotModalOpen, setIsMoveKotModalOpen] = useState(false);
   const [moveKotSourceOrder, setMoveKotSourceOrder] = useState(null);
@@ -4065,7 +4103,7 @@ export default function DashboardPage({ onShowToast }) {
     }
   };
 
-  const handleOpenAddTableModal = (tableToEdit = null) => {
+  const handleOpenAddTableModal = (tableToEdit = null, defaultSection = null) => {
     if (storeControls.lockTableCrud) {
       addToast(' Table QR Modifications (Add/Edit/Delete) are Locked in Store Settings!', <Lock size={18} />);
       return;
@@ -4077,7 +4115,7 @@ export default function DashboardPage({ onShowToast }) {
       setTableForm({
         name: tableToEdit.name || 'Table 1',
         purpose: tableToEdit.purpose || 'Contactless Self Ordering',
-        section: tableToEdit.section || 'Indoor AC Dining',
+        section: tableToEdit.section || defaultSection || 'Restaurant',
         capacity: tableToEdit.capacity || 4,
         url: getUniqueTableUrl(tableToEdit.name, tableToEdit.url),
         theme: tableToEdit.theme || 'acrylic',
@@ -4087,12 +4125,15 @@ export default function DashboardPage({ onShowToast }) {
       });
     } else {
       setEditingTableObj(null);
-      const nextNum = tables.length + 1;
-      const tableName = `Table ${nextNum}`;
+      const chosenSection = defaultSection || (customSections[0] || 'Restaurant');
+      // Count tables in this section to pick a smart next name (e.g. 1, 2, or Table 1)
+      const tablesInSection = (tables || []).filter((t) => (t.section || 'Restaurant').toLowerCase() === chosenSection.toLowerCase());
+      const nextNum = tablesInSection.length + 1;
+      const tableName = `${nextNum}`;
       setTableForm({
         name: tableName,
         purpose: 'Contactless Self Ordering',
-        section: 'Indoor AC Dining',
+        section: chosenSection,
         capacity: 4,
         url: getUniqueTableUrl(tableName),
         theme: 'acrylic',
@@ -4114,7 +4155,7 @@ export default function DashboardPage({ onShowToast }) {
     const newTableData = {
       name: tableForm.name.trim(),
       purpose: tableForm.purpose.trim() || 'Contactless Self Ordering',
-      section: tableForm.section.trim() || 'Indoor AC Dining',
+      section: tableForm.section.trim() || 'Restaurant',
       capacity: Number(tableForm.capacity) || 4,
       url: targetUrl,
       theme: tableForm.theme || 'acrylic',
@@ -4137,12 +4178,14 @@ export default function DashboardPage({ onShowToast }) {
       setTables((prev) =>
         prev.map((t) => (t.id === editingTableObj.id || t._id === editingTableObj._id ? updatedTable : t))
       );
-      addToast(`Updated ${tableForm.name} QR Standee!`, <Check size={18} />);
+      saveTableToFirestore({ ...updatedTable, businessId: currentUser?.foodypayId || currentUser?._id });
+      addToast(`Updated Table ${tableForm.name}!`, <Check size={18} />);
     } else {
       let createdTable = {
         ...newTableData,
         id: 't_' + Date.now(),
         _id: 't_' + Date.now(),
+        businessId: currentUser?.foodypayId || currentUser?._id,
       };
       if (token) {
         try {
@@ -4153,7 +4196,8 @@ export default function DashboardPage({ onShowToast }) {
         }
       }
       setTables((prev) => [...prev, createdTable]);
-      addToast(`Created ${tableForm.name} QR Code!`, <Check size={18} />);
+      saveTableToFirestore({ ...createdTable, businessId: currentUser?.foodypayId || currentUser?._id });
+      addToast(`Created Table ${tableForm.name} in ${newTableData.section}!`, <Check size={18} />);
     }
 
     setIsAddTableModalOpen(false);
@@ -4168,7 +4212,7 @@ export default function DashboardPage({ onShowToast }) {
       return;
     }
     const tableId = tableObj._id || tableObj.id;
-    if (!window.confirm(`Are you sure you want to delete ${tableObj.name} QR Code?`)) return;
+    if (!window.confirm(`Are you sure you want to delete Table "${tableObj.name}"?`)) return;
 
     if (token && tableObj._id && !tableObj._id.startsWith('t_')) {
       try {
@@ -4178,8 +4222,11 @@ export default function DashboardPage({ onShowToast }) {
       }
     }
 
+    // Delete from Firestore
+    deleteTableFromFirestore(tableId);
+
     setTables((prev) => prev.filter((t) => (t._id || t.id) !== tableId));
-    addToast(`Deleted ${tableObj.name} QR Code!`, <Check size={18} />);
+    addToast(`Deleted Table "${tableObj.name}"!`, <Check size={18} />);
   };
 
   // Day-Wise Calendar & Date Range Filter State
@@ -5329,65 +5376,30 @@ export default function DashboardPage({ onShowToast }) {
             {posTableViewMode === 'tables' ? (
               <div className="crm-pos-table-view-container" style={{ display: 'flex', flexDirection: 'column', gap: '22px', marginTop: '4px' }}>
                 {(() => {
-                  // Pre-configured sections & default tables matching real POS systems & user uploaded reference
-                  const defaultSections = [
-                    {
-                      name: 'Restaurant',
-                      tables: [
-                        { name: '1', capacity: 4 },
-                        { name: '2', capacity: 4 },
-                        { name: '3', capacity: 2 },
-                        { name: '4', capacity: 4 },
-                        { name: '5', capacity: 6 },
-                        { name: '6', capacity: 4 },
-                        { name: '7', capacity: 4 },
-                        { name: 'F1', capacity: 4 },
-                        { name: 'F2', capacity: 4 },
-                        { name: 'F3', capacity: 6 },
-                        { name: 'CAR 1', capacity: 4 },
-                        { name: 'CAR 2', capacity: 4 },
-                      ],
-                    },
-                    {
-                      name: 'Cafe',
-                      tables: [
-                        { name: 'T1', capacity: 2 },
-                        { name: 'T2', capacity: 2 },
-                        { name: 'T3', capacity: 4 },
-                        { name: 'T4', capacity: 4 },
-                      ],
-                    },
-                    {
-                      name: 'Family Hall',
-                      tables: [
-                        { name: 'PARTY', capacity: 12 },
-                      ],
-                    },
-                  ];
-
-                  // Merge with any custom tables user added in Utilities
+                  // Dynamic sections derived purely from merchant's custom categories & tables
                   const userTables = Array.isArray(tables) && tables.length > 0 ? tables : [];
                   const userAddedSectionsMap = {};
                   userTables.forEach((t) => {
-                    const sec = t.section || 'Restaurant';
+                    const sec = t.section || (customSections[0] || 'Restaurant');
                     if (!userAddedSectionsMap[sec]) userAddedSectionsMap[sec] = [];
                     userAddedSectionsMap[sec].push(t);
                   });
 
-                  // Build combined sections list
-                  const displaySections = defaultSections.map((sec) => {
-                    const addedForThisSec = userAddedSectionsMap[sec.name] || [];
-                    const existingNames = new Set(sec.tables.map((t) => String(t.name).toLowerCase()));
-                    const extraTables = addedForThisSec.filter((t) => !existingNames.has(String(t.name).toLowerCase()));
-                    return {
-                      ...sec,
-                      tables: [...sec.tables, ...extraTables],
-                    };
+                  // Build displaySections prioritizing customSections list
+                  const displaySections = [];
+                  const coveredSections = new Set();
+
+                  (customSections || ['Restaurant', 'Cafe', 'Family Hall']).forEach((secName) => {
+                    coveredSections.add(secName.toLowerCase());
+                    displaySections.push({
+                      name: secName,
+                      tables: userAddedSectionsMap[secName] || [],
+                    });
                   });
 
-                  // Any custom user sections not in default
+                  // Include any existing table sections not yet in customSections
                   Object.keys(userAddedSectionsMap).forEach((secName) => {
-                    if (!defaultSections.some((s) => s.name.toLowerCase() === secName.toLowerCase())) {
+                    if (!coveredSections.has(secName.toLowerCase())) {
                       displaySections.push({
                         name: secName,
                         tables: userAddedSectionsMap[secName],
@@ -5409,58 +5421,71 @@ export default function DashboardPage({ onShowToast }) {
 
                   return (
                     <>
-                      {/* TOP FILTER PILLS BAR (MATCHING USER REFERENCE DESIGN) */}
-                      <div className="pos-table-filter-bar">
-                        {(() => {
-                          // Compute dynamic counts across all tables in displaySections
-                          const allFlatTables = displaySections.flatMap((s) => s.tables);
-                          const totalTablesCount = allFlatTables.length;
+                      {/* TOP FILTER PILLS BAR (MATCHING USER REFERENCE DESIGN) + ADD CATEGORY BUTTON */}
+                      <div className="pos-table-filter-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflowX: 'auto', flex: 1 }}>
+                          {(() => {
+                            // Compute dynamic counts across all tables in displaySections
+                            const allFlatTables = displaySections.flatMap((s) => s.tables);
+                            const totalTablesCount = allFlatTables.length;
 
-                          let availableCount = 0;
-                          let eatingCount = 0;
-                          let waitingCount = 0;
-                          let billReadyCount = 0;
-                          let paidCount = 0;
+                            let availableCount = 0;
+                            let eatingCount = 0;
+                            let waitingCount = 0;
+                            let billReadyCount = 0;
+                            let paidCount = 0;
 
-                          allFlatTables.forEach((tbl) => {
-                            const ord = getRunningOrderForTable(tbl.name);
-                            if (!ord) {
-                              availableCount += 1;
-                            } else if (ord.status === 'paid' || (ord.isPaid && !ord.tableCleared)) {
-                              paidCount += 1;
-                            } else if (ord.billPrinted || ord.status === 'printed') {
-                              billReadyCount += 1;
-                            } else if (ord.status === 'preparing' || ord.hasPendingKot || ord.status === 'new') {
-                              waitingCount += 1;
-                            } else {
-                              eatingCount += 1;
-                            }
-                          });
+                            allFlatTables.forEach((tbl) => {
+                              const ord = getRunningOrderForTable(tbl.name);
+                              if (!ord) {
+                                availableCount += 1;
+                              } else if (ord.status === 'paid' || (ord.isPaid && !ord.tableCleared)) {
+                                paidCount += 1;
+                              } else if (ord.billPrinted || ord.status === 'printed') {
+                                billReadyCount += 1;
+                              } else if (ord.status === 'preparing' || ord.hasPendingKot || ord.status === 'new') {
+                                waitingCount += 1;
+                              } else {
+                                eatingCount += 1;
+                              }
+                            });
 
-                          const filtersList = [
-                            { key: 'all', label: 'All', count: totalTablesCount, dotColor: null },
-                            { key: 'available', label: 'Available', count: availableCount, dotColor: '#94A3B8' },
-                            { key: 'eating', label: 'Eating', count: eatingCount, dotColor: '#06B6D4' },
-                            { key: 'waiting', label: 'Waiting for food', count: waitingCount, dotColor: '#F97316' },
-                            { key: 'bill_ready', label: 'Bill ready', count: billReadyCount, dotColor: '#10B981' },
-                            { key: 'paid', label: 'Paid', count: paidCount, dotColor: '#EF4444' },
-                          ];
+                            const filtersList = [
+                              { key: 'all', label: 'All', count: totalTablesCount, dotColor: null },
+                              { key: 'available', label: 'Available', count: availableCount, dotColor: '#94A3B8' },
+                              { key: 'eating', label: 'Eating', count: eatingCount, dotColor: '#06B6D4' },
+                              { key: 'waiting', label: 'Waiting for food', count: waitingCount, dotColor: '#F97316' },
+                              { key: 'bill_ready', label: 'Bill ready', count: billReadyCount, dotColor: '#10B981' },
+                              { key: 'paid', label: 'Paid', count: paidCount, dotColor: '#EF4444' },
+                            ];
 
-                          return filtersList.map((f) => (
-                            <button
-                              key={f.key}
-                              type="button"
-                              className={`pos-filter-pill ${tableStatusFilter === f.key ? 'active' : ''}`}
-                              onClick={() => setTableStatusFilter(f.key)}
-                            >
-                              {f.dotColor && (
-                                <span className="status-dot" style={{ backgroundColor: f.dotColor }} />
-                              )}
-                              <span>{f.label}</span>
-                              <span className="pill-badge">{f.count}</span>
-                            </button>
-                          ));
-                        })()}
+                            return filtersList.map((f) => (
+                              <button
+                                key={f.key}
+                                type="button"
+                                className={`pos-filter-pill ${tableStatusFilter === f.key ? 'active' : ''}`}
+                                onClick={() => setTableStatusFilter(f.key)}
+                              >
+                                {f.dotColor && (
+                                  <span className="status-dot" style={{ backgroundColor: f.dotColor }} />
+                                )}
+                                <span>{f.label}</span>
+                                <span className="pill-badge">{f.count}</span>
+                              </button>
+                            ));
+                          })()}
+                        </div>
+
+                        {/* Add Category Button */}
+                        <button
+                          type="button"
+                          className="pos-btn-add-category"
+                          onClick={handleAddNewCategory}
+                          title="Add new Section/Category (e.g. Restaurant, Cafe, Rooftop, Bar)"
+                        >
+                          <Plus size={15} strokeWidth={2.8} />
+                          <span>+ Add Category</span>
+                        </button>
                       </div>
 
                       {/* SECTIONS & TABLE CARDS */}
@@ -5478,20 +5503,41 @@ export default function DashboardPage({ onShowToast }) {
                           return true;
                         });
 
-                        if (sectionFilteredTables.length === 0 && tableStatusFilter !== 'all') {
-                          return null;
-                        }
-
                         return (
                           <div key={section.name} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            {/* Section Header: e.g. "Restaurant 12 tables" */}
-                            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', padding: '0 4px' }}>
-                              <h3 style={{ fontSize: '18px', fontWeight: 900, color: '#0F172A', margin: 0 }}>
-                                {section.name}
-                              </h3>
-                              <span style={{ fontSize: '13px', fontWeight: 600, color: '#64748B' }}>
-                                {section.tables.length} tables
-                              </span>
+                            {/* Section Header: Category Name, Table Count & Section Actions */}
+                            <div className="pos-section-header">
+                              <div className="pos-section-header-left">
+                                <h3 style={{ fontSize: '18px', fontWeight: 900, color: '#0F172A', margin: 0 }}>
+                                  {section.name}
+                                </h3>
+                                <span style={{ fontSize: '13px', fontWeight: 600, color: '#64748B' }}>
+                                  {section.tables.length} {section.tables.length === 1 ? 'table' : 'tables'}
+                                </span>
+                              </div>
+
+                              <div className="pos-section-header-actions">
+                                <button
+                                  type="button"
+                                  className="pos-btn-section-action"
+                                  onClick={() => handleOpenAddTableModal(null, section.name)}
+                                  title={`Add a new Table to ${section.name}`}
+                                >
+                                  <Plus size={13} color="#FF5E14" />
+                                  <span>Add Table</span>
+                                </button>
+                                {customSections.length > 1 && (
+                                  <button
+                                    type="button"
+                                    className="pos-btn-section-action delete"
+                                    onClick={() => handleDeleteCategory(section.name)}
+                                    title={`Delete ${section.name} category`}
+                                  >
+                                    <Trash2 size={12} />
+                                    <span>Delete Category</span>
+                                  </button>
+                                )}
+                              </div>
                             </div>
 
                             {/* Tables Grid */}
@@ -5535,7 +5581,7 @@ export default function DashboardPage({ onShowToast }) {
 
                                 return (
                                   <div
-                                    key={tbl.name || tIdx}
+                                    key={tbl._id || tbl.id || tbl.name || tIdx}
                                     className={`pos-dining-card ${!isOccupied ? 'is-available' : `status-${statusKey}`}`}
                                     style={{
                                       animationDelay: `${Math.min(tIdx * 0.04, 0.4)}s`,
@@ -5553,6 +5599,19 @@ export default function DashboardPage({ onShowToast }) {
                                       }
                                     }}
                                   >
+                                    {/* Quick Delete Table Button (Hover) */}
+                                    <button
+                                      type="button"
+                                      className="btn-table-quick-delete"
+                                      title={`Delete Table ${tbl.name}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteTable(tbl);
+                                      }}
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+
                                     {/* Top Row: Table Name + Status Badge */}
                                     <div className="pos-card-header">
                                       <span className="pos-table-number">{tbl.name}</span>
@@ -5566,7 +5625,7 @@ export default function DashboardPage({ onShowToast }) {
                                     {/* Center: Dining Table Illustration matching Screenshot with animations */}
                                     <div className="pos-table-illustration">
                                       {isOccupied ? (
-                                        <svg width="118" height="68" viewBox="0 0 118 68" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <svg width="102" height="60" viewBox="0 0 118 68" fill="none" xmlns="http://www.w3.org/2000/svg">
                                           {/* Customer Avatars / Chairs */}
                                           {/* Top 2 chairs */}
                                           <circle className="svg-chair-avatar" cx="44" cy="5" r="4.5" fill={statusKey === 'eating' ? '#38BDF8' : statusKey === 'waiting' ? '#FB923C' : statusKey === 'paid' ? '#F87171' : '#34D399'} />
@@ -5634,9 +5693,9 @@ export default function DashboardPage({ onShowToast }) {
                                           )}
                                         </svg>
                                       ) : (
-                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '68px', width: '100%' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60px', width: '100%' }}>
                                           <div className="pos-add-table-icon">
-                                            <Plus size={18} strokeWidth={2.5} />
+                                            <Plus size={16} strokeWidth={2.5} />
                                           </div>
                                         </div>
                                       )}
@@ -5697,13 +5756,42 @@ export default function DashboardPage({ onShowToast }) {
                                         </div>
                                       )
                                     ) : (
-                                      <div style={{ textAlign: 'center', color: '#94A3B8', fontSize: '11.5px', fontWeight: 700, padding: '4px 0' }}>
+                                      <div style={{ textAlign: 'center', color: '#94A3B8', fontSize: '11px', fontWeight: 700, padding: '2px 0' }}>
                                         Tap to place order
                                       </div>
                                     )}
                                   </div>
                                 );
                               })}
+
+                              {/* Dotted Card with + in center to Add Table in this Category */}
+                              {(tableStatusFilter === 'all' || tableStatusFilter === 'available') && (
+                                <div
+                                  className="pos-dining-card is-available"
+                                  style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    gap: '8px',
+                                    borderStyle: 'dashed',
+                                    borderWidth: '2px',
+                                  }}
+                                  onClick={() => handleOpenAddTableModal(null, section.name)}
+                                  title={`Add new Table to ${section.name}`}
+                                >
+                                  <div className="pos-add-table-icon" style={{ width: '46px', height: '36px' }}>
+                                    <Plus size={22} strokeWidth={2.8} />
+                                  </div>
+                                  <span style={{ fontSize: '12px', fontWeight: 800, color: '#64748B' }}>
+                                    + Add Table
+                                  </span>
+                                  <span style={{ fontSize: '10.5px', fontWeight: 600, color: '#94A3B8' }}>
+                                    in {section.name}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
