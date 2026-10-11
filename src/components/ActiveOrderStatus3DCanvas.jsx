@@ -3,90 +3,73 @@ import * as THREE from 'three';
 import { CheckCircle2, Star, X, Clock, ChefHat, Flame, Bike, PackageCheck, Sparkles } from 'lucide-react';
 
 /**
- * Stage mapping helper:
- * 1: Placed (new, pending, placed)
- * 2: Acknowledged (seen, accepted, acknowledged)
- * 3: Kitchen / Preparing (preparing, cooking, in-kitchen)
- * 4: Ready / Out for Delivery (ready, out_for_delivery, serving)
- * 5: Delivered / Completed (completed, delivered, served)
+ * 4-Stage User Flow:
+ * 1: Placed (placed, new, waiting)
+ * 2: In Kitchen (preparing, cooking, in-kitchen)
+ * 3: Served (served, ready, delivered)
+ * 4: Bill Paid (completed, paid, settled, done)
  */
-function getStageDetails(status, seen, isDelivery) {
+function getStageDetails(status, seen, isDelivery, sentToKitchen) {
   const rawStatus = (status || 'new').toLowerCase().trim();
   const normalizedStatus = rawStatus.replace(/[^a-z0-9_]/g, '');
 
   if (
-    ['completed', 'delivered', 'done', 'paid', 'served'].includes(rawStatus) ||
-    ['completed', 'delivered', 'done', 'paid', 'served'].includes(normalizedStatus)
+    ['completed', 'paid', 'settled', 'done'].includes(rawStatus) ||
+    ['completed', 'paid', 'settled', 'done'].includes(normalizedStatus)
   ) {
     return {
-      stage: 5,
-      title: 'Order Completed!',
-      subtitle: isDelivery ? 'Delivered to your doorstep.' : 'Served fresh at your table. Enjoy your meal!',
+      stage: 4,
+      title: 'Bill Paid & Completed!',
+      subtitle: 'Thank you for dining with us. Hope you enjoyed your meal!',
       color: '#10B981',
       bgGradient: 'linear-gradient(135deg, #064E3B 0%, #022C22 100%)',
       accentColor: '#34D399',
       progressPercent: 100,
-      badgeText: 'Completed'
+      badgeText: 'Paid & Completed'
     };
   }
 
   if (
-    ['ready', 'out_for_delivery', 'out for delivery', 'on the way', 'serving', 'dispatched'].includes(rawStatus) ||
-    ['ready', 'out_for_delivery', 'outfordelivery', 'ontheway', 'serving', 'dispatched'].includes(normalizedStatus)
-  ) {
-    return {
-      stage: 4,
-      title: isDelivery ? 'Out For Delivery' : 'Order Ready to Serve!',
-      subtitle: isDelivery ? 'Delivery partner is on the way to your location.' : 'Freshly prepared and ready at your table.',
-      color: '#059669',
-      bgGradient: 'linear-gradient(135deg, #065F46 0%, #064E3B 100%)',
-      accentColor: '#6EE7B7',
-      progressPercent: 85,
-      badgeText: isDelivery ? 'On The Way' : 'Ready'
-    };
-  }
-
-  if (
-    ['preparing', 'cooking', 'in-kitchen', 'kitchen', 'in_kitchen', 'food_preparing', 'kitchen display system'].includes(rawStatus) ||
-    ['preparing', 'cooking', 'inkitchen', 'kitchen', 'in_kitchen', 'foodpreparing'].includes(normalizedStatus)
+    ['served', 'ready', 'delivered'].includes(rawStatus) ||
+    ['served', 'ready', 'delivered'].includes(normalizedStatus)
   ) {
     return {
       stage: 3,
-      title: 'Cooking In Kitchen',
-      subtitle: 'Chef is crafting your order with fresh ingredients.',
-      color: '#F59E0B',
-      bgGradient: 'linear-gradient(135deg, #451A03 0%, #1E1B4B 100%)',
-      accentColor: '#FBBF24',
-      progressPercent: 55,
-      badgeText: 'Preparing'
+      title: isDelivery ? 'Order Delivered!' : 'Food Served on Table!',
+      subtitle: isDelivery ? 'Delivered fresh to your doorstep.' : 'Your food has arrived at your table. Enjoy your meal!',
+      color: '#059669',
+      bgGradient: 'linear-gradient(135deg, #065F46 0%, #064E3B 100%)',
+      accentColor: '#6EE7B7',
+      progressPercent: 75,
+      badgeText: 'Food Served'
     };
   }
 
   if (
-    seen ||
-    ['accepted', 'acknowledged', 'seen', 'confirmed', 'processing'].includes(rawStatus) ||
-    ['accepted', 'acknowledged', 'seen', 'confirmed', 'processing'].includes(normalizedStatus)
+    sentToKitchen ||
+    ['preparing', 'cooking', 'in-kitchen', 'kitchen', 'in_kitchen', 'accepted'].includes(rawStatus) ||
+    ['preparing', 'cooking', 'inkitchen', 'kitchen', 'in_kitchen'].includes(normalizedStatus)
   ) {
     return {
       stage: 2,
-      title: 'Order Acknowledged',
-      subtitle: 'Kitchen staff has accepted your order request.',
-      color: '#3B82F6',
-      bgGradient: 'linear-gradient(135deg, #1E3A8A 0%, #0F172A 100%)',
-      accentColor: '#60A5FA',
-      progressPercent: 35,
-      badgeText: 'Accepted'
+      title: 'Cooking in Kitchen',
+      subtitle: 'Chef is preparing your dishes fresh in the kitchen.',
+      color: '#F59E0B',
+      bgGradient: 'linear-gradient(135deg, #451A03 0%, #1E1B4B 100%)',
+      accentColor: '#FBBF24',
+      progressPercent: 50,
+      badgeText: 'Cooking in Kitchen'
     };
   }
 
   return {
     stage: 1,
     title: 'Order Placed',
-    subtitle: 'Sent to restaurant. Waiting for kitchen confirmation.',
+    subtitle: 'Order received at counter. Forwarding to kitchen...',
     color: '#06B6D4',
     bgGradient: 'linear-gradient(135deg, #083344 0%, #0F172A 100%)',
     accentColor: '#22D3EE',
-    progressPercent: 15,
+    progressPercent: 25,
     badgeText: 'Order Placed'
   };
 }
@@ -96,6 +79,22 @@ export default function ActiveOrderStatus3DCard({ order, onRatingClick, onDismis
   const isDelivery = order?.table === 'Delivery' || order?.type === 'Home Delivery';
   const stageInfo = getStageDetails(order?.status, order?.seen, isDelivery);
   const [estimatedMins, setEstimatedMins] = useState(15);
+  const [secondsLeftToKitchen, setSecondsLeftToKitchen] = useState(30);
+
+  useEffect(() => {
+    // If order is placed/new, compute remaining seconds of 30-sec grace window
+    if (stageInfo.stage === 1) {
+      const createdAtMs = order?.createdAt ? new Date(order.createdAt).getTime() : Date.now();
+      const updateCountdown = () => {
+        const elapsed = Math.floor((Date.now() - createdAtMs) / 1000);
+        const remaining = Math.max(0, 30 - elapsed);
+        setSecondsLeftToKitchen(remaining);
+      };
+      updateCountdown();
+      const interval = setInterval(updateCountdown, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [order?.createdAt, stageInfo.stage]);
 
   useEffect(() => {
     // Random countdown logic for preparation UI
@@ -185,20 +184,7 @@ export default function ActiveOrderStatus3DCard({ order, onRatingClick, onDismis
       activeCoreMesh.add(innerMesh);
 
     } else if (stageInfo.stage === 2) {
-      // Stage 2: Acknowledged Badge Shield (Torus Knot Shield)
-      const geo = new THREE.TorusKnotGeometry(0.95, 0.28, 100, 16);
-      const mat = new THREE.MeshStandardMaterial({
-        color: 0x3b82f6,
-        roughness: 0.15,
-        metalness: 0.85,
-        emissive: 0x1d4ed8,
-        emissiveIntensity: 0.4
-      });
-      activeCoreMesh = new THREE.Mesh(geo, mat);
-      stageGroup.add(activeCoreMesh);
-
-    } else if (stageInfo.stage === 3) {
-      // Stage 3: Kitchen / Wok Fire Pan
+      // Stage 2: Kitchen / Wok Fire Pan
       const wokGeo = new THREE.SphereGeometry(1.4, 32, 16, 0, Math.PI * 2, 0, Math.PI * 0.55);
       const wokMat = new THREE.MeshStandardMaterial({
         color: 0x334155,
@@ -226,8 +212,8 @@ export default function ActiveOrderStatus3DCard({ order, onRatingClick, onDismis
       activeCoreMesh.position.y = 0.2;
       stageGroup.add(activeCoreMesh);
 
-    } else if (stageInfo.stage === 4) {
-      // Stage 4: Cloche Food Dome / Ready
+    } else if (stageInfo.stage === 3) {
+      // Stage 3: Cloche Food Dome / Ready & Served
       const domeGeo = new THREE.SphereGeometry(1.4, 32, 16, 0, Math.PI * 2, 0, Math.PI * 0.5);
       const domeMat = new THREE.MeshStandardMaterial({
         color: 0xe2e8f0,
@@ -248,7 +234,7 @@ export default function ActiveOrderStatus3DCard({ order, onRatingClick, onDismis
       activeCoreMesh.add(knobMesh);
 
     } else {
-      // Stage 5: Completed Trophy Star
+      // Stage 4: Bill Paid & Completed Trophy Star
       const starGeo = new THREE.DodecahedronGeometry(1.2, 0);
       const starMat = new THREE.MeshStandardMaterial({
         color: 0x10b981,
@@ -481,16 +467,23 @@ export default function ActiveOrderStatus3DCard({ order, onRatingClick, onDismis
                 {isDelivery ? 'Home Delivery' : `Table: ${order?.table || 'Dine-In'}`}
               </span>
             </div>
+            {stageInfo.stage === 1 && secondsLeftToKitchen > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(234, 88, 12, 0.25)', padding: '4px 10px', borderRadius: '8px', border: '1px solid #F97316' }}>
+                <Clock size={13} color="#FB923C" />
+                <span style={{ fontSize: '11.5px', color: '#FDBA74', fontWeight: 700 }}>
+                  Kitchen in: {secondsLeftToKitchen}s
+                </span>
+              </div>
+            )}
           </div>
 
-          {/* 5-Stage Animated Responsive Progress Bar */}
+          {/* 4-Stage Animated Responsive Progress Bar */}
           <div style={{ width: '100%' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '11px', fontWeight: 700 }}>
               <span style={{ color: stageInfo.stage >= 1 ? stageInfo.accentColor : '#64748B' }}>1. Placed</span>
-              <span style={{ color: stageInfo.stage >= 2 ? stageInfo.accentColor : '#64748B' }}>2. Accepted</span>
-              <span style={{ color: stageInfo.stage >= 3 ? stageInfo.accentColor : '#64748B' }}>3. Kitchen</span>
-              <span style={{ color: stageInfo.stage >= 4 ? stageInfo.accentColor : '#64748B' }}>4. {isDelivery ? 'Delivery' : 'Served'}</span>
-              <span style={{ color: stageInfo.stage >= 5 ? '#34D399' : '#64748B' }}>5. Done</span>
+              <span style={{ color: stageInfo.stage >= 2 ? stageInfo.accentColor : '#64748B' }}>2. In Kitchen</span>
+              <span style={{ color: stageInfo.stage >= 3 ? stageInfo.accentColor : '#64748B' }}>3. {isDelivery ? 'Delivered' : 'Served'}</span>
+              <span style={{ color: stageInfo.stage >= 4 ? '#34D399' : '#64748B' }}>4. Bill Paid</span>
             </div>
 
             {/* Glowing Progress Track */}

@@ -54,7 +54,7 @@ import {
 import { playOrderPlaced, sortOrdersNewestFirst } from '../utils/soundEffects';
 import { QrCodeComponent } from '../utils/qrGenerator';
 import { fetchDishesApi, fetchPublicDishesApi, fetchPublicMerchantApi, fetchPublicCouponsApi, createReviewApi, createPublicOrderApi, createRazorpayOrderApi, verifyRazorpaySignatureApi, checkDeliveryAvailabilityApi, fetchAvailableProductsApi, calculateBikeDeliveryTime, calculateHaversineDistanceKm } from '../utils/api';
-import { saveOrderToFirestore, saveCustomerToFirestore } from '../utils/firestoreService';
+import { saveOrderToFirestore, saveCustomerToFirestore, subscribeToOrders } from '../utils/firestoreService';
 const AVAILABLE_COUPONS = [];
 
 const DEFAULT_10_PRODUCTS = [];
@@ -725,11 +725,9 @@ export default function CustomerMenuPage({ onShowToast }) {
 
         if (
           liveOrder &&
-          liveOrder.status !== 'completed' &&
-          liveOrder.status !== 'delivered' &&
-          liveOrder.status !== 'served' &&
           liveOrder.status !== 'cancelled'
         ) {
+          // If order is completed & cleared or dismissed, customer can dismiss it
           setActivePlacedOrder(liveOrder);
           sessionStorage.setItem('foodypay_active_order', JSON.stringify(liveOrder));
         } else {
@@ -741,7 +739,7 @@ export default function CustomerMenuPage({ onShowToast }) {
 
       // Find any unpaid pending bill order for THIS specific active order or current table/session
       const unpaidMatch = allOrdersList.find((o) => {
-        if (!o || o.status === 'cancelled' || o.status === 'completed' || o.status === 'served' || o.status === 'delivered') {
+        if (!o || o.status === 'cancelled' || o.status === 'completed') {
           return false;
         }
 
@@ -804,15 +802,48 @@ export default function CustomerMenuPage({ onShowToast }) {
       };
     } catch (e) {}
 
+    // Real-time Firestore subscription for instant status update from KDS / POS
+    let unsubscribeFirestore = () => {};
+    try {
+      unsubscribeFirestore = subscribeToOrders(effectiveMerchantId, (firestoreOrders) => {
+        if (Array.isArray(firestoreOrders) && firestoreOrders.length > 0) {
+          setCustomerOrders((prev) => {
+            const map = new Map((prev || []).map(o => [String(o.id || o._id), o]));
+            firestoreOrders.forEach(fo => map.set(String(fo.id || fo._id), { ...map.get(String(fo.id || fo._id)), ...fo }));
+            return sortOrdersNewestFirst(Array.from(map.values()));
+          });
+
+          // Check if session order is updated in Firestore
+          const sessionOrderRaw = sessionStorage.getItem('foodypay_active_order');
+          if (sessionOrderRaw) {
+            try {
+              const sessionOrder = JSON.parse(sessionOrderRaw);
+              const sid = String(sessionOrder.id || sessionOrder._id || sessionOrder.orderId || '').toLowerCase();
+              const matched = firestoreOrders.find(fo => {
+                const fid = String(fo.id || fo._id || fo.orderId || '').toLowerCase();
+                return fid === sid || (sid && fid.endsWith(sid)) || (fid && sid.endsWith(fid));
+              });
+              if (matched) {
+                setActivePlacedOrder(prev => ({ ...(prev || sessionOrder), ...matched }));
+              }
+            } catch (e) {}
+          }
+        }
+      });
+    } catch (err) {
+      console.warn('Firestore subscription in customer menu notice:', err);
+    }
+
     const intervalId = setInterval(loadCustomerOrders, 2000);
 
     return () => {
       window.removeEventListener('storage', loadCustomerOrders);
       window.removeEventListener('foodypay_order_created', loadCustomerOrders);
       if (bc) bc.close();
+      if (typeof unsubscribeFirestore === 'function') unsubscribeFirestore();
       clearInterval(intervalId);
     };
-  }, []);
+  }, [effectiveMerchantId]);
 
   // PWA Web App Installation Event Listener
   useEffect(() => {

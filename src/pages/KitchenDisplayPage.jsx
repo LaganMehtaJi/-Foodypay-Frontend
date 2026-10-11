@@ -293,11 +293,15 @@ export default function KitchenDisplayPage({ onShowToast }) {
       const updated = orders.map((o) => {
         const currentId = o._id || o.id || o.orderId;
         if (currentId === orderId || String(currentId) === oIdStr) {
+          const isServedNow = newStatus === 'served' || newStatus === 'ready';
           return {
             ...o,
             status: newStatus,
             seen: true,
             kitchenSeen: true,
+            isServed: isServedNow ? true : o.isServed,
+            servedAt: isServedNow ? new Date().toISOString() : o.servedAt,
+            items: (o.items || []).map((it) => ({ ...it, isServed: isServedNow ? true : it.isServed })),
             updatedAt: new Date().toISOString(),
           };
         }
@@ -319,11 +323,11 @@ export default function KitchenDisplayPage({ onShowToast }) {
           playFoodPreparing();
         } catch (e) {}
         if (onShowToast) onShowToast(`Chef started cooking Order ${orderId}!`);
-      } else if (newStatus === 'ready') {
+      } else if (newStatus === 'served' || newStatus === 'ready') {
         try {
           playFoodReady();
         } catch (e) {}
-        if (onShowToast) onShowToast(`Order ${orderId} marked Ready to Serve!`);
+        if (onShowToast) onShowToast(`Order ${orderId} sent to Table! Fresh & ready.`);
       } else if (newStatus === 'completed') {
         try {
           playFoodReady();
@@ -337,10 +341,13 @@ export default function KitchenDisplayPage({ onShowToast }) {
 
       // Update strictly in Cloud Firestore real-time database
       try {
+        const isServedNow = newStatus === 'served' || newStatus === 'ready';
         await updateOrderInFirestore(targetId, {
           status: newStatus,
           seen: true,
           kitchenSeen: true,
+          isServed: isServedNow ? true : false,
+          servedAt: isServedNow ? new Date().toISOString() : null,
           updatedAt: new Date().toISOString(),
         });
       } catch (fsErr) {
@@ -440,10 +447,10 @@ export default function KitchenDisplayPage({ onShowToast }) {
   };
 
   const activeOrders = sortOrdersNewestFirst(
-    (orders || []).filter((o) => o && (o.sentToKitchen || o.status === 'preparing' || o.status === 'ready') && o.status !== 'completed' && o.status !== 'cancelled')
+    (orders || []).filter((o) => o && (o.sentToKitchen || o.status === 'preparing') && o.status !== 'served' && o.status !== 'ready' && o.status !== 'completed' && o.status !== 'cancelled')
   );
   const completedOrders = sortOrdersNewestFirst(
-    (orders || []).filter((o) => o && (o.status === 'completed' || o.status === 'cancelled'))
+    (orders || []).filter((o) => o && (o.status === 'served' || o.status === 'ready' || o.status === 'completed' || o.status === 'cancelled'))
   );
 
   const displayedOrders = sortOrdersNewestFirst(
@@ -451,7 +458,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
       ? activeOrders
       : kitchenTabFilter === 'completed'
       ? completedOrders
-      : (orders || []).filter((o) => o && (o.sentToKitchen || o.status === 'preparing' || o.status === 'ready' || o.status === 'completed'))
+      : (orders || []).filter((o) => o && (o.sentToKitchen || o.status === 'preparing' || o.status === 'served' || o.status === 'ready' || o.status === 'completed'))
   );
 
   if (!isKitchenAuth) {
@@ -1107,7 +1114,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
                       </button>
                     ) : isPreparing ? (
                       <button
-                        onClick={() => updateOrderStatus(orderIdStr, 'ready')}
+                        onClick={() => updateOrderStatus(orderIdStr, 'served')}
                         disabled={actionLoadingSet.has(orderIdStr)}
                         style={{
                           backgroundColor: '#10B981',
@@ -1128,16 +1135,16 @@ export default function KitchenDisplayPage({ onShowToast }) {
                         {actionLoadingSet.has(orderIdStr) ? (
                           <>
                             <RefreshCw size={14} style={{ animation: 'foodypay-spin 0.8s linear infinite' }} />
-                            <span>Updating...</span>
+                            <span>Sending...</span>
                           </>
                         ) : (
                           <>
                             <CheckCircle2 size={15} />
-                            <span>Mark Ready to Serve</span>
+                            <span>🍽️ Send to Table</span>
                           </>
                         )}
                       </button>
-                    ) : order.status === 'ready' ? (
+                    ) : (order.status === 'ready' || order.status === 'served') ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <button
                           onClick={() => updateOrderStatus(orderIdStr, 'completed')}
