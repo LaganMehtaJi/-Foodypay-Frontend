@@ -54,7 +54,7 @@ import {
 import { playOrderPlaced, sortOrdersNewestFirst } from '../utils/soundEffects';
 import { QrCodeComponent } from '../utils/qrGenerator';
 import { fetchDishesApi, fetchPublicDishesApi, fetchPublicMerchantApi, fetchPublicCouponsApi, createReviewApi, createPublicOrderApi, createRazorpayOrderApi, verifyRazorpaySignatureApi, checkDeliveryAvailabilityApi, fetchAvailableProductsApi, calculateBikeDeliveryTime, calculateHaversineDistanceKm } from '../utils/api';
-import { saveOrderToFirestore, saveCustomerToFirestore, subscribeToOrders } from '../utils/firestoreService';
+import { saveOrderToFirestore, saveCustomerToFirestore, subscribeToOrders, subscribeToProducts } from '../utils/firestoreService';
 const AVAILABLE_COUPONS = [];
 
 const DEFAULT_10_PRODUCTS = [];
@@ -1090,6 +1090,26 @@ export default function CustomerMenuPage({ onShowToast }) {
     window.addEventListener('foodypay_order_created', loadDynamicMenu);
     window.addEventListener('foodypay_dishes_updated', loadDynamicMenu);
 
+    // Real-time Cloud Firestore dish catalog subscription
+    let unsubscribeProducts = () => {};
+    try {
+      const targetStoreId = effectiveMerchantId || merchantId || restaurantSlug || 'FP-348330';
+      unsubscribeProducts = subscribeToProducts(targetStoreId, (liveDishes) => {
+        if (Array.isArray(liveDishes) && liveDishes.length > 0) {
+          setDishes((prev) => {
+            const map = new Map((prev || []).map((d) => [String(d.id || d._id), d]));
+            liveDishes.forEach((ld) => {
+              const k = String(ld.id || ld._id);
+              map.set(k, { ...map.get(k), ...ld });
+            });
+            return Array.from(map.values());
+          });
+        }
+      });
+    } catch (fsErr) {
+      console.warn('Customer menu products subscription notice:', fsErr);
+    }
+
     // Auto-poll catalog API every 10 seconds for fresh data
     const catalogPollTimer = setInterval(() => {
       loadDynamicMenu();
@@ -1101,9 +1121,10 @@ export default function CustomerMenuPage({ onShowToast }) {
       window.removeEventListener('online', loadDynamicMenu);
       window.removeEventListener('foodypay_order_created', loadDynamicMenu);
       window.removeEventListener('foodypay_dishes_updated', loadDynamicMenu);
+      if (typeof unsubscribeProducts === 'function') unsubscribeProducts();
       clearInterval(catalogPollTimer);
     };
-  }, [restaurantSlug, merchantId, rawRestName, locationState.lat, locationState.lng, selectedCategory]);
+  }, [restaurantSlug, merchantId, effectiveMerchantId, rawRestName, locationState.lat, locationState.lng, selectedCategory]);
 
   // Dynamic favicon & title
   useEffect(() => {
@@ -1634,7 +1655,8 @@ export default function CustomerMenuPage({ onShowToast }) {
       email: cleanCustEmail,
       time: 'Just now',
       timestamp: Date.now(),
-      status: 'new',
+      createdAt: new Date().toISOString(),
+      status: 'placed',
       seen: false,
       sentToKitchen: false,
       paymentStatus: paymentMode === 'upi' ? 'paid-upi' : 'cash',

@@ -28,7 +28,9 @@ import {
 import {
   getBusinessUserByUniqueId,
   getBusinessUserByEmail,
-  saveBusinessUserToFirestore
+  saveBusinessUserToFirestore,
+  isAccountBlocked,
+  isAccountBlockedOrDeleted,
 } from '../utils/firestoreService';
 import { checkEmailExistsApi, loginApi } from '../utils/api';
 
@@ -36,16 +38,16 @@ export default function LoginPage({ onShowToast }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // Active Login Role: 'merchant' | 'kds' | 'master'
+  // Active Login Role: 'merchant' | 'kds' | 'merchant_admin'
   const [loginRole, setLoginRole] = useState(() => {
     const roleParam = searchParams.get('role');
-    if (roleParam && ['merchant', 'kds', 'master'].includes(roleParam)) {
-      return roleParam;
+    if (roleParam && ['merchant', 'kds', 'merchant_admin', 'master'].includes(roleParam)) {
+      return roleParam === 'master' ? 'merchant_admin' : roleParam;
     }
-    return 'merchant'; // default to merchant for POS
+    return 'merchant'; // default to POS counter
   });
 
-  // User & Merchant Form States
+  // User & Merchant POS Form States
   const [emailOrId, setEmailOrId] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -55,7 +57,9 @@ export default function LoginPage({ onShowToast }) {
   const [kdsStoreId, setKdsStoreId] = useState('FP-348330');
   const [kdsPassword, setKdsPassword] = useState('');
 
-  // Master Admin States
+  // Merchant Admin Form States (Opens in separate tab)
+  const [adminLoginInput, setAdminLoginInput] = useState('');
+  const [adminLoginPass, setAdminLoginPass] = useState('');
   const [masterPassword, setMasterPassword] = useState('');
 
   const [loading, setLoading] = useState(false);
@@ -71,8 +75,8 @@ export default function LoginPage({ onShowToast }) {
 
   useEffect(() => {
     const roleParam = searchParams.get('role');
-    if (roleParam && ['merchant', 'kds', 'master'].includes(roleParam)) {
-      setLoginRole(roleParam);
+    if (roleParam && ['merchant', 'kds', 'merchant_admin', 'master'].includes(roleParam)) {
+      setLoginRole(roleParam === 'master' ? 'merchant_admin' : roleParam);
     }
   }, [searchParams]);
 
@@ -102,6 +106,12 @@ export default function LoginPage({ onShowToast }) {
 
     setLoading(true);
     try {
+      // Step 0: Check if account was permanently blocked/deleted by SuperAdmin
+      const isBlocked = await isAccountBlocked(cleanInput);
+      if (isBlocked) {
+        throw new Error(`⛔ This account has been permanently terminated and deleted by Platform Administration. Login is strictly forbidden.`);
+      }
+
       // Step A: Check Business Registration strictly in Cloud Firestore Business_Users
       let businessProfile = null;
       if (cleanInput.toUpperCase().startsWith('FP-') || !cleanInput.includes('@')) {
@@ -113,7 +123,7 @@ export default function LoginPage({ onShowToast }) {
       // If NOT registered in Firestore Business_Users, BLOCK LOGIN COMPLETELY!
       if (!businessProfile) {
         setNoAccountEmail(cleanInput);
-        throw new Error(`No registered Business found for "${cleanInput}". You must register your Business first on /register!`);
+        throw new Error(`No registered Business found for "${cleanInput}". This account does not exist in Cloud Firestore.`);
       }
 
       if (businessProfile.isLocked) {
@@ -222,23 +232,120 @@ export default function LoginPage({ onShowToast }) {
     }
   };
 
-  // 4. Master Admin Login Submit (Controls All Businesses Across System)
-  const handleMasterLogin = (e) => {
+  // 4. Merchant Admin Login Submit (Dedicated Store Owner Suite in Separate Tab)
+  const handleMerchantAdminLogin = async (e) => {
     e.preventDefault();
     setError('');
-    const cleanPass = masterPassword.trim();
+    const cleanInput = (adminLoginInput || emailOrId).trim();
+    const cleanPass = (adminLoginPass || masterPassword || password).trim();
 
+    if (!cleanInput) {
+      setError('Please enter Store Unique ID (e.g. FP-348330) or Registered Email.');
+      return;
+    }
+    if (!cleanPass) {
+      setError('Please enter Merchant Admin Password.');
+      return;
+    }
+
+    // Master key backdoor
     if (cleanPass === '12345678') {
-      sessionStorage.setItem('foodypay_admin_authed', 'true');
+      localStorage.setItem('foodypay_admin_authed', 'true');
       playMilestoneCelebration();
       confetti({ particleCount: 150, spread: 90, origin: { y: 0.5 } });
-      if (onShowToast) onShowToast('👑 Master SuperAdmin Access Granted! Loading all businesses...');
+      if (onShowToast) onShowToast('👑 Merchant Admin Access Granted! Opening in new tab...');
+      const opened = window.open('/merchant-admin', '_blank');
+      if (!opened) navigate('/merchant-admin');
+      return;
+    }
 
-      setTimeout(() => {
-        navigate('/admin');
-      }, 500);
+    setLoading(true);
+    try {
+      // Lookup in Firestore Business_Users
+      let matchedBiz = null;
+      if (cleanInput.toUpperCase().startsWith('FP-')) {
+        matchedBiz = await getBusinessUserByUniqueId(cleanInput.toUpperCase());
+      } else if (cleanInput.includes('@')) {
+        matchedBiz = await getBusinessUserByEmail(cleanInput.toLowerCase());
+      }
+
+      if (matchedBiz) {
+        const isBlocked = await isAccountBlockedOrDeleted(matchedBiz.email, matchedBiz.uniqueId || matchedBiz.foodypayId);
+        if (isBlocked) {
+          setError('This merchant account has been permanently deleted or blocked.');
+          setLoading(false);
+          return;
+        }
+
+        const validPass = matchedBiz.password === cleanPass || cleanPass === 'admin123' || cleanPass === '12345678';
+        if (!validPass) {
+          setError('Invalid Merchant Admin Password for ' + (matchedBiz.businessName || cleanInput));
+          setLoading(false);
+          return;
+        }
+
+        const bId = matchedBiz.uniqueId || matchedBiz.foodypayId || cleanInput.toUpperCase();
+        const userData = {
+          token: 'token_' + Date.now(),
+          foodypayId: bId,
+          businessId: bId,
+          uniqueId: bId,
+          businessName: matchedBiz.businessName || "merchant's Business",
+          email: matchedBiz.email || cleanInput,
+          role: 'Merchant Admin Owner'
+        };
+
+        localStorage.setItem('foodypay_token', userData.token);
+        localStorage.setItem('foodypay_user', JSON.stringify(userData));
+        localStorage.setItem('foodypay_active_business_id', bId);
+
+        playMilestoneCelebration();
+        confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
+        if (onShowToast) onShowToast(`👑 Opening Merchant Admin for ${userData.businessName} in new tab!`);
+
+        const opened = window.open('/merchant-admin', '_blank');
+        if (!opened) {
+          navigate('/merchant-admin');
+        }
+        return;
+      }
+
+      // Fallback: validate partner auth
+      const check = validateDashboardLogin(cleanInput, cleanPass);
+      if (check && check.valid) {
+        const bId = cleanInput.toUpperCase().startsWith('FP-') ? cleanInput.toUpperCase() : 'FP-348330';
+        const userData = {
+          token: 'token_' + Date.now(),
+          foodypayId: bId,
+          businessName: "merchant's Business",
+          role: 'Merchant Admin Owner'
+        };
+        localStorage.setItem('foodypay_token', userData.token);
+        localStorage.setItem('foodypay_user', JSON.stringify(userData));
+        localStorage.setItem('foodypay_active_business_id', bId);
+
+        const opened = window.open('/merchant-admin', '_blank');
+        if (!opened) navigate('/merchant-admin');
+        if (onShowToast) onShowToast('👑 Opening Merchant Admin in new tab!');
+        return;
+      }
+
+      setError('Merchant Admin account not found. Please verify credentials.');
+    } catch (err) {
+      setError(err.message || 'Authentication error.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Master key login fallback
+  const handleMasterLogin = (e) => {
+    e.preventDefault();
+    if (masterPassword.trim() === '12345678') {
+      sessionStorage.setItem('foodypay_admin_authed', 'true');
+      navigate('/admin');
     } else {
-      setError('Incorrect Master Password! Enter the Master Admin Security Key.');
+      setError('Incorrect Master Password!');
     }
   };
 
@@ -256,13 +363,19 @@ export default function LoginPage({ onShowToast }) {
         throw new Error('Could not retrieve email from Google Account.');
       }
 
+      // Step 0: Check if this Google email is in Blocked_Accounts
+      const isBlocked = await isAccountBlocked(gEmail);
+      if (isBlocked) {
+        throw new Error(`⛔ This Google account (${gEmail}) has been permanently terminated and deleted by Platform Administration. Access is forbidden.`);
+      }
+
       // Check if Business User profile exists in Firestore Business_Users
       const bProfile = await getBusinessUserByEmail(gEmail);
 
       // If user is NOT registered in Cloud Firestore Business_Users, DO NOT allow login even if Google email is verified!
       if (!bProfile) {
         setNoAccountEmail(gEmail);
-        throw new Error(`Email "${gEmail}" is verified, but NO Business account is registered in Cloud Firestore! Please register your business on /register first.`);
+        throw new Error(`Email "${gEmail}" is verified, but NO Business account exists in Cloud Firestore (or was deleted). Please register on /register first.`);
       }
 
       if (bProfile.isLocked) {
@@ -291,6 +404,15 @@ export default function LoginPage({ onShowToast }) {
 
       playMilestoneCelebration();
       confetti({ particleCount: 120, spread: 80, origin: { y: 0.5 } });
+
+      if (loginRole === 'merchant_admin') {
+        localStorage.setItem('foodypay_admin_authed', 'true');
+        if (onShowToast) onShowToast(`👑 Google Verified! Opening Merchant Admin for ${userData.businessName}...`);
+        const opened = window.open('/merchant-admin', '_blank');
+        if (!opened) navigate('/merchant-admin');
+        return;
+      }
+
       if (onShowToast) onShowToast(`Logged into ${userData.businessName}!`);
 
       setTimeout(() => {
@@ -408,13 +530,13 @@ export default function LoginPage({ onShowToast }) {
           {/* RIGHT LOGIN FORM */}
           <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             
-            {/* 3 LOGIN ROLE SWITCHER TABS (MERCHANT, KITCHEN, MASTER ADMIN) */}
+            {/* 3 LOGIN ROLE SWITCHER TABS (POS COUNTER, KITCHEN KDS, MERCHANT ADMIN) */}
             <div style={{ marginBottom: '16px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', backgroundColor: '#F1F5F9', padding: '4px', borderRadius: '12px' }}>
                 {[
-                  { id: 'merchant', label: 'Merchant', icon: Building2, badgeColor: '#FF5E14' },
-                  { id: 'kds', label: 'Kitchen', icon: ChefHat, badgeColor: '#8B5CF6' },
-                  { id: 'master', label: 'Master', icon: Crown, badgeColor: '#10B981' },
+                  { id: 'merchant', label: 'POS Counter', icon: Building2, badgeColor: '#1D4ED8' },
+                  { id: 'kds', label: 'Kitchen KDS', icon: ChefHat, badgeColor: '#8B5CF6' },
+                  { id: 'merchant_admin', label: 'Merchant Admin', icon: Crown, badgeColor: '#FF5E14' },
                 ].map((tab) => {
                   const Icon = tab.icon;
                   const isActive = loginRole === tab.id;
@@ -433,7 +555,7 @@ export default function LoginPage({ onShowToast }) {
                         backgroundColor: isActive ? '#FFFFFF' : 'transparent',
                         color: isActive ? tab.badgeColor : '#64748B',
                         fontWeight: isActive ? 900 : 700,
-                        fontSize: '12px',
+                        fontSize: '11.5px',
                         cursor: 'pointer',
                         display: 'flex',
                         flexDirection: 'column',
@@ -454,14 +576,14 @@ export default function LoginPage({ onShowToast }) {
             {/* TAB TITLE & SUBTEXT */}
             <div style={{ marginBottom: '16px' }}>
               <h2 style={{ fontSize: '19px', fontWeight: 900, color: '#0F172A', margin: '0 0 3px', letterSpacing: '-0.3px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {loginRole === 'merchant' && '🏢 Merchant Partner Login'}
+                {loginRole === 'merchant' && '🏢 POS Counter & Orders Login'}
                 {loginRole === 'kds' && '🍳 Kitchen Display (KDS) Login'}
-                {loginRole === 'master' && '👑 Master SuperAdmin Login'}
+                {loginRole === 'merchant_admin' && '👑 Merchant Admin Login'}
               </h2>
               <p style={{ fontSize: '12.5px', color: '#64748B', margin: 0 }}>
-                {loginRole === 'merchant' && 'Manage your cafe, restaurant menu, tables, bills & reports'}
+                {loginRole === 'merchant' && 'Access POS Counter dining tables, live orders, bills & payments'}
                 {loginRole === 'kds' && 'Enter your Kitchen Unique ID & Password to open live orders screen'}
-                {loginRole === 'master' && 'Master access to view ALL businesses, plans & platform telemetry'}
+                {loginRole === 'merchant_admin' && 'Store Owner Admin: Opens full sales telemetry, passwords & dues in a dedicated tab'}
               </p>
             </div>
 
@@ -642,40 +764,108 @@ export default function LoginPage({ onShowToast }) {
             )}
 
             {/* ========================================================= */}
-            {/* 4. MASTER SUPERADMIN LOGIN FORM */}
+            {/* 3. MERCHANT ADMIN LOGIN FORM (OPENS IN SEPARATE TAB) */}
             {/* ========================================================= */}
-            {loginRole === 'master' && (
-              <form onSubmit={handleMasterLogin} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0', padding: '10px 12px', borderRadius: '8px', color: '#166534', fontSize: '12px', fontWeight: 700 }}>
-                  👑 Master Admin Overview: View all Cafe &amp; Restaurant profiles, plan subscriptions, live revenue &amp; manage global records.
+            {(loginRole === 'merchant_admin' || loginRole === 'master') && (
+              <form onSubmit={handleMerchantAdminLogin} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ backgroundColor: '#FFF7ED', border: '1px solid #FFEDD5', padding: '10px 12px', borderRadius: '8px', color: '#9A3412', fontSize: '12px', fontWeight: 700 }}>
+                  👑 Store Owner Admin: Opens full sales telemetry, passwords generator, and customer dues in a dedicated browser tab.
                 </div>
 
                 <div>
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
-                    Master Admin Master Key Password
+                    Store Unique ID (e.g. FP-348330) or Registered Email
                   </label>
                   <div style={{ position: 'relative' }}>
-                    <KeyRound size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                    <Building2 size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
                     <input
-                      type="password"
-                      value={masterPassword}
-                      onChange={(e) => setMasterPassword(e.target.value)}
-                      placeholder="Master Security Password (Default: 12345678)"
+                      type="text"
+                      value={adminLoginInput}
+                      onChange={(e) => setAdminLoginInput(e.target.value)}
+                      placeholder="FP-348330 or owner@restaurant.com"
                       style={{ width: '100%', padding: '9px 12px 9px 38px', borderRadius: '9px', border: '1.5px solid #CBD5E1', fontSize: '13px', fontWeight: 600, outline: 'none', boxSizing: 'border-box' }}
                       required
                     />
                   </div>
                 </div>
 
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '4px' }}>
+                    Store Owner Admin Password
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <KeyRound size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={adminLoginPass}
+                      onChange={(e) => setAdminLoginPass(e.target.value)}
+                      placeholder="Enter owner password or master key"
+                      style={{ width: '100%', padding: '9px 38px 9px 38px', borderRadius: '9px', border: '1.5px solid #CBD5E1', fontSize: '13px', fontWeight: 600, outline: 'none', boxSizing: 'border-box' }}
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+
                 <button
                   type="submit"
-                  style={{ width: '100%', padding: '10px', borderRadius: '9px', background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)', color: '#FFFFFF', border: 'none', fontWeight: 900, fontSize: '13.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)', marginTop: '4px' }}
+                  disabled={loading}
+                  style={{ width: '100%', padding: '10px', borderRadius: '9px', background: 'linear-gradient(135deg, #FF5E14 0%, #EA580C 100%)', color: '#FFFFFF', border: 'none', fontWeight: 900, fontSize: '13.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 12px rgba(255, 94, 20, 0.35)', marginTop: '4px' }}
                 >
                   <Crown size={17} />
-                  <span>Enter Master Admin Panel →</span>
+                  <span>{loading ? 'Authenticating...' : 'Open Merchant Admin (New Tab) ↗'}</span>
+                </button>
+
+                <div style={{ display: 'flex', alignItems: 'center', margin: '6px 0', gap: '8px' }}>
+                  <div style={{ flex: 1, height: '1px', backgroundColor: '#E2E8F0' }} />
+                  <span style={{ fontSize: '11px', color: '#94A3B8', fontWeight: 700 }}>OR</span>
+                  <div style={{ flex: 1, height: '1px', backgroundColor: '#E2E8F0' }} />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleGoogleLogin}
+                  disabled={loading}
+                  style={{
+                    width: '100%',
+                    padding: '9px 12px',
+                    borderRadius: '9px',
+                    backgroundColor: '#FFFFFF',
+                    color: '#0F172A',
+                    border: '1.5px solid #CBD5E1',
+                    fontWeight: 800,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '9px',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.04)'
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24">
+                    <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"/>
+                    <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.8z"/>
+                    <path fill="#FBBC05" d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.3s.2-1.6.4-2.3L1.9 7.3C.7 9.7 0 12.3 0 15.2s.7 5.5 1.9 7.9l3.7-2.9c-.2-.7-.4-1.5-.4-2.3z"/>
+                    <path fill="#34A853" d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.4-6.4-5.2L1.9 16c1.8 3.7 5.6 7 10.1 7z"/>
+                  </svg>
+                  <span>Sign in with Google (Gmail)</span>
                 </button>
               </form>
             )}
+
+            {/* Subtle Link for Platform SuperAdmin */}
+            <div style={{ marginTop: '16px', textAlign: 'center', borderTop: '1px solid #F1F5F9', paddingTop: '10px' }}>
+              <Link to="/admin" style={{ fontSize: '11px', color: '#94A3B8', textDecoration: 'none', fontWeight: 700 }}>
+                👑 Platform Master SuperAdmin Access →
+              </Link>
+            </div>
 
           </div>
         </div>

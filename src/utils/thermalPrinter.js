@@ -288,22 +288,43 @@ export function printThermalKot(order, storeInfo = {}) {
   }, 250);
 }
 
+function formatReceiptDateTime(dateInput) {
+  try {
+    const d = dateInput ? new Date(dateInput) : new Date();
+    if (isNaN(d.getTime())) return '12/10/2026, 3:51 AM';
+
+    const day = d.getDate().toString().padStart(2, '0');
+    const month = (d.getMonth() + 1).toString().padStart(2, '0');
+    const year = d.getFullYear();
+
+    let hours = d.getHours();
+    const mins = d.getMinutes().toString().padStart(2, '0');
+    const period = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+
+    return `${day}/${month}/${year}, ${hours}:${mins} ${period}`;
+  } catch (e) {
+    return '12/10/2026, 3:51 AM';
+  }
+}
+
 /**
  * Print standard Customer Bill / Final Receipt
- * Formatted with restaurant branding, items, taxes, totals, and payment status
+ * Formatted cleanly with restaurant name, contact, metadata, items, grand total, and payment status
  */
 export function printThermalReceipt(order, storeInfo = {}) {
   if (!order) return;
 
-  const restName = storeInfo.restName || storeInfo.businessName || order.restaurantName || 'Restaurant';
-  const restAddress = storeInfo.address || '';
-  const restPhone = storeInfo.phone || '';
-  const gstNo = storeInfo.gstNumber || storeInfo.gstin || '';
-  const fssai = storeInfo.fssai || '';
-  const tableName = order.table || order.tableNo || 'Dine-In';
-  const orderType = order.type || 'Dine In';
-  const orderId = order.orderId || order.id || '';
-  const dateTimeStr = formatPrintDate(order.createdAt || order.date);
+  const restName = storeInfo.restName || storeInfo.businessName || order.restaurantName || 'FoodyPay';
+  const restPhone = storeInfo.phone || storeInfo.contactPhone || order.storePhone || storeInfo.mobile || '+91 7496888449';
+  const tableName = String(order.table || order.tableNo || order.tableName || 'Cafe Table 1').replace(/tabel/gi, 'Table');
+  const orderType = order.type || order.orderType || 'Dine-In';
+  const dateTimeStr = formatReceiptDateTime(order.createdAt || order.date);
+  
+  const customerName = order.customer || order.customerName || order.custName || '';
+  const customerPhone = order.phone || order.customerPhone || order.custPhone || '';
+
   const items = Array.isArray(order.items) ? order.items : [];
   const totalItemCount = items.reduce((sum, item) => sum + Number(item.qty || item.quantity || 1), 0);
   
@@ -311,7 +332,8 @@ export function printThermalReceipt(order, storeInfo = {}) {
   const discount = Number(order.discount || 0);
   const tax = Number(order.tax || order.gst || 0);
   const grandTotal = Number(order.total || (subtotal - discount + tax) || 0);
-  const paymentMode = order.paymentMode || order.paymentMethod || (order.isPaid ? 'Paid' : 'Pending');
+  
+  const isPaid = Boolean(order.isPaid || order.status === 'completed' || order.status === 'paid' || (order.paymentMode && order.paymentMode.toLowerCase() !== 'unpaid' && order.paymentMode.toLowerCase() !== 'khata'));
 
   const printFrame = document.createElement('iframe');
   printFrame.style.position = 'fixed';
@@ -322,16 +344,16 @@ export function printThermalReceipt(order, storeInfo = {}) {
   printFrame.style.border = 'none';
   document.body.appendChild(printFrame);
 
-  const itemsHtml = items.map((it, idx) => {
-    const name = it.name || it.title || 'Item';
-    const qty = it.qty || it.quantity || 1;
-    const price = Number(it.price || 0);
-    const lineTotal = price * qty;
+  const itemsHtml = items.map((it) => {
+    const name = String(it.name || it.title || 'Item').toUpperCase();
+    const qty = Number(it.qty || it.quantity || 1);
+    const unitPrice = Number(it.price || 0);
+    const lineTotal = (unitPrice * qty).toFixed(2);
     return `
       <div class="item-row">
-        <div class="item-name">${idx + 1}. ${name}</div>
-        <div class="item-qty">${qty}</div>
-        <div class="item-price">₹${lineTotal}</div>
+        <div class="col-item">${name}</div>
+        <div class="col-qty">${qty}</div>
+        <div class="col-price">₹${lineTotal}</div>
       </div>
     `;
   }).join('');
@@ -343,7 +365,7 @@ export function printThermalReceipt(order, storeInfo = {}) {
     <html>
       <head>
         <meta charset="utf-8" />
-        <title>Receipt #${orderId}</title>
+        <title>Receipt - ${tableName}</title>
         <style>
           @page {
             size: auto;
@@ -355,199 +377,228 @@ export function printThermalReceipt(order, storeInfo = {}) {
             padding: 0;
           }
           body {
-            font-family: 'Courier New', Courier, monospace, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             font-size: 13px;
-            font-weight: 700;
-            line-height: 1.25;
             color: #000000;
             background: #FFFFFF;
             width: 100%;
             max-width: 76mm;
-            padding: 6px 8px;
+            padding: 10px 12px;
             margin: 0 auto;
+            line-height: 1.35;
           }
           .text-center {
             text-align: center;
           }
-          .rest-title {
-            font-size: 18px;
-            font-weight: 900;
-            letter-spacing: 0.5px;
-            margin-bottom: 2px;
+          .store-header {
+            text-align: center;
+            margin-bottom: 6px;
           }
-          .rest-sub {
-            font-size: 11.5px;
+          .store-name {
+            font-size: 19px;
+            font-weight: 800;
+            color: #0F172A;
+            letter-spacing: -0.2px;
+          }
+          .store-phone {
+            font-size: 12px;
             font-weight: 600;
-            margin: 1px 0;
+            color: #334155;
+            margin-top: 2px;
           }
-          .bill-title {
+          .thick-divider {
+            border-top: 2px solid #000000;
+            margin: 8px 0;
+          }
+          .light-divider {
+            border-top: 1px solid #CBD5E1;
+            margin: 6px 0;
+          }
+          .receipt-title {
+            text-align: center;
             font-size: 14px;
-            font-weight: 900;
-            letter-spacing: 1px;
-            margin: 4px 0 2px 0;
-          }
-          .solid-divider {
-            border-top: 1.5px solid #000000;
-            margin: 4px 0;
-          }
-          .dashed-divider {
-            border-top: 1px dashed #000000;
-            margin: 5px 0;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            color: #0F172A;
+            margin: 4px 0 6px 0;
           }
           .meta-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 12px;
-            font-weight: 700;
-            margin: 2px 0;
+            margin: 3.5px 0;
+            font-size: 12.5px;
           }
-          .col-headers {
+          .meta-label {
+            color: #64748B;
+            font-weight: 600;
+          }
+          .meta-value {
+            color: #0F172A;
+            font-weight: 600;
+            text-align: right;
+          }
+          .meta-value-bold {
+            color: #000000;
+            font-weight: 800;
+          }
+          .items-header {
             display: flex;
             justify-content: space-between;
-            font-size: 12.5px;
-            font-weight: 900;
+            align-items: center;
+            font-size: 13px;
+            font-weight: 800;
+            color: #0F172A;
             padding: 2px 0;
+          }
+          .col-item {
+            flex: 1;
+            text-align: left;
+            word-break: break-word;
+          }
+          .col-qty {
+            flex: 0 0 50px;
+            text-align: right;
+            padding-right: 12px;
+            font-weight: 700;
+          }
+          .col-price {
+            flex: 0 0 70px;
+            text-align: right;
+            font-weight: 800;
           }
           .item-row {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            margin: 4px 0;
-            font-size: 12.5px;
+            margin: 6px 0;
+            font-size: 13px;
             font-weight: 700;
-          }
-          .item-name {
-            flex: 1;
-            padding-right: 6px;
-            word-break: break-word;
-          }
-          .item-qty {
-            flex: 0 0 24px;
-            text-align: center;
-            font-weight: 800;
-          }
-          .item-price {
-            flex: 0 0 45px;
-            text-align: right;
-            font-weight: 900;
-          }
-          .calc-row {
-            display: flex;
-            justify-content: space-between;
-            font-size: 12.5px;
-            font-weight: 700;
-            margin: 3px 0;
+            color: #0F172A;
           }
           .grand-total-row {
             display: flex;
             justify-content: space-between;
+            align-items: center;
             font-size: 16px;
             font-weight: 900;
-            margin: 4px 0;
+            color: #0F172A;
+            margin: 6px 0 8px 0;
           }
-          .pay-status-row {
-            display: flex;
-            justify-content: space-between;
-            font-size: 12px;
-            font-weight: 800;
-            margin: 3px 0;
-          }
-          .footer-msg {
+          .status-pill {
+            width: 100%;
+            padding: 7px 0;
+            border-radius: 6px;
             text-align: center;
-            font-size: 12px;
+            font-size: 13px;
             font-weight: 800;
+            letter-spacing: 0.3px;
+            margin: 8px 0;
+          }
+          .status-paid {
+            background: #ECFDF5;
+            color: #059669;
+            border: 1px solid #A7F3D0;
+          }
+          .status-unpaid {
+            background: #FFFBEB;
+            color: #D97706;
+            border: 1px solid #FDE68A;
+          }
+          .footer-block {
+            text-align: center;
             margin-top: 8px;
           }
-          .footer-branding {
-            text-align: center;
+          .footer-thanks {
+            font-size: 13.5px;
+            font-weight: 800;
+            color: #0F172A;
+          }
+          .footer-visit {
+            font-size: 12px;
+            font-weight: 600;
+            color: #475569;
+            margin-top: 2px;
+          }
+          .footer-powered {
             font-size: 10.5px;
             font-weight: 600;
-            margin-top: 4px;
-            letter-spacing: 0.3px;
+            color: #64748B;
+            margin-top: 6px;
           }
         </style>
       </head>
       <body>
-        <div class="text-center">
-          <div class="rest-title">${restName}</div>
-          ${restAddress ? `<div class="rest-sub">${restAddress}</div>` : ''}
-          ${restPhone ? `<div class="rest-sub">Ph: ${restPhone}</div>` : ''}
-          ${gstNo ? `<div class="rest-sub">GSTIN: ${gstNo}</div>` : ''}
-          ${fssai ? `<div class="rest-sub">FSSAI: ${fssai}</div>` : ''}
-          <div class="bill-title">TAX INVOICE</div>
+        <div class="store-header">
+          <div class="store-name">${restName}</div>
+          <div class="store-phone">Ph: ${restPhone}</div>
         </div>
 
-        <div class="solid-divider"></div>
+        <div class="thick-divider"></div>
+
+        <div class="receipt-title">BILL / RECEIPT</div>
 
         <div class="meta-row">
-          <span>Table: <strong>${tableName}</strong></span>
-          <span>${orderType}</span>
+          <span class="meta-label">Order Type</span>
+          <span class="meta-value meta-value-bold">${orderType}</span>
         </div>
         <div class="meta-row">
-          <span>Order #${orderId}</span>
-          <span>${dateTimeStr}</span>
+          <span class="meta-label">Table</span>
+          <span class="meta-value meta-value-bold">${tableName}</span>
         </div>
-        ${order.customer ? `<div class="meta-row"><span>Customer: ${order.customer}</span><span>${order.phone || ''}</span></div>` : ''}
+        <div class="meta-row">
+          <span class="meta-label">Date &amp; Time</span>
+          <span class="meta-value">${dateTimeStr}</span>
+        </div>
+        ${customerName ? `
+          <div class="meta-row">
+            <span class="meta-label">Customer</span>
+            <span class="meta-value">${customerName}</span>
+          </div>
+        ` : ''}
+        ${customerPhone ? `
+          <div class="meta-row">
+            <span class="meta-label">Phone</span>
+            <span class="meta-value">${customerPhone}</span>
+          </div>
+        ` : ''}
 
-        <div class="solid-divider"></div>
+        <div class="thick-divider"></div>
 
-        <div class="col-headers">
-          <span style="flex: 1;">ITEM</span>
-          <span style="flex: 0 0 24px; text-align: center;">QTY</span>
-          <span style="flex: 0 0 45px; text-align: right;">PRICE</span>
+        <div class="items-header">
+          <span class="col-item">ITEM</span>
+          <span class="col-qty">QTY</span>
+          <span class="col-price">PRICE</span>
         </div>
 
-        <div class="dashed-divider"></div>
+        <div class="light-divider"></div>
 
-        <div class="items-container">
+        <div class="items-list">
           ${itemsHtml}
         </div>
 
-        <div class="dashed-divider"></div>
+        <div class="thick-divider"></div>
 
-        <div class="calc-row">
-          <span>Items Qty:</span>
-          <span>${totalItemCount}</span>
+        <div class="meta-row">
+          <span class="meta-label">Total Items</span>
+          <span class="meta-value meta-value-bold">${totalItemCount}</span>
         </div>
-        ${discount > 0 ? `
-          <div class="calc-row">
-            <span>Discount:</span>
-            <span>- ₹${discount}</span>
-          </div>
-        ` : ''}
-        ${tax > 0 ? `
-          <div class="calc-row">
-            <span>GST / Taxes:</span>
-            <span>+ ₹${tax}</span>
-          </div>
-        ` : ''}
-
-        <div class="solid-divider"></div>
 
         <div class="grand-total-row">
-          <span>GRAND TOTAL:</span>
-          <span>₹${grandTotal}</span>
+          <span>GRAND TOTAL</span>
+          <span>₹${grandTotal.toFixed(2)}</span>
         </div>
 
-        <div class="dashed-divider"></div>
-
-        <div class="pay-status-row">
-          <span>Payment Mode:</span>
-          <span>${paymentMode.toUpperCase()}</span>
-        </div>
-        <div class="pay-status-row">
-          <span>Status:</span>
-          <span>${order.isPaid ? 'PAID' : (order.status === 'completed' ? 'SETTLED' : 'UNPAID / KHATA')}</span>
+        <div class="status-pill ${isPaid ? 'status-paid' : 'status-unpaid'}">
+          ${isPaid ? '✓ PAID / SETTLED' : '⏳ UNPAID / PENDING'}
         </div>
 
-        <div class="dashed-divider"></div>
+        <div class="light-divider"></div>
 
-        <div class="footer-msg">
-          *** Thank You! Visit Again ***
-        </div>
-        <div class="footer-branding">
-          -- Powered by FoodyPay --
+        <div class="footer-block">
+          <div class="footer-thanks">Thank You!</div>
+          <div class="footer-visit">Visit Again</div>
+          <div class="footer-powered">Powered by FoodyPay</div>
         </div>
       </body>
     </html>
@@ -564,3 +615,4 @@ export function printThermalReceipt(order, storeInfo = {}) {
     }, 1500);
   }, 250);
 }
+

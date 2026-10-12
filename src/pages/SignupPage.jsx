@@ -33,6 +33,7 @@ import {
 import {
   saveBusinessUserToFirestore,
   calculatePlanDates,
+  isAccountBlocked,
 } from '../utils/firestoreService';
 
 export default function SignupPage({ onShowToast }) {
@@ -263,6 +264,14 @@ export default function SignupPage({ onShowToast }) {
         const gName = gUser.displayName || name.trim() || '';
         const gEmail = (gUser.email || email.trim() || '').toLowerCase();
 
+        // Step 0: Check if this email was terminated/deleted in Blocked_Accounts
+        const isBlocked = await isAccountBlocked(gEmail);
+        if (isBlocked) {
+          setError(`⛔ This account (${gEmail}) has been permanently terminated and deleted by Platform Administration. Access is strictly forbidden.`);
+          setLoading(false);
+          return;
+        }
+
         // Check if an account ALREADY EXISTS with this email
         let accountExists = false;
         try {
@@ -388,6 +397,13 @@ export default function SignupPage({ onShowToast }) {
     const cleanPassword = password.trim();
     const cleanBusinessName = businessName.trim();
     const cleanContactNo = contactNo.trim();
+
+    // Check if email was terminated/blocked
+    const isBlocked = await isAccountBlocked(cleanEmail);
+    if (isBlocked) {
+      setError(`⛔ This account (${cleanEmail}) has been permanently terminated and deleted by Platform Administration. Re-registration is strictly forbidden.`);
+      return;
+    }
 
     if (!cleanName) {
       setError('Please enter your Full Name.');

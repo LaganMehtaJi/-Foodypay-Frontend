@@ -64,6 +64,7 @@ import {
   subscribeToBusinessUsers,
   updateBusinessUserInFirestore,
   deleteBusinessUserFromFirestore,
+  purgeEntireBusinessData,
   calculatePlanDates,
 } from '../utils/firestoreService';
 
@@ -905,13 +906,11 @@ export default function AdminDebugPage({ onShowToast }) {
     const targetUniqueId = deleteModalUser.uniqueId || deleteModalUser.foodypayId || targetUserId;
     const targetEmail = deleteModalUser.email;
 
-    // Delete from Firestore Business_Users
+    // Purge EVERYTHING in Cloud Firestore: Profile, Dishes, Products, Tables, Orders, Dues, Coupons & add to Blocked_Accounts
     try {
-      if (targetUniqueId) {
-        await deleteBusinessUserFromFirestore(targetUniqueId);
-      }
+      await purgeEntireBusinessData(targetUniqueId, targetEmail);
     } catch (e) {
-      console.warn('Firestore delete notice:', e);
+      console.warn('Firestore purge notice:', e);
     }
 
     try {
@@ -927,7 +926,7 @@ export default function AdminDebugPage({ onShowToast }) {
     setRegisteredUsers((prev) => prev.filter((u) => u._id !== targetUserId && u.uniqueId !== targetUniqueId && u.email !== targetEmail));
 
     if (onShowToast) {
-      onShowToast(`🗑️ Business account (${deleteModalUser.businessName || targetEmail}) deleted from Firestore!`);
+      onShowToast(`🗑️ Business account (${deleteModalUser.businessName || targetEmail}) and ALL its products, tables & orders permanently deleted from Firestore!`);
     }
 
     setIsDeleting(false);

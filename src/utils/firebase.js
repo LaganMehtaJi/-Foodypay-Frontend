@@ -45,6 +45,7 @@ const firestoreDb = getFirestore(app);
 
 export const FIRESTORE_COLLECTIONS = {
   BUSINESS_USERS: 'Business_Users',
+  BLOCKED_ACCOUNTS: 'Blocked_Accounts',
   USERS: 'users',
   ORDERS: 'orders',
   DISHES: 'dishes',

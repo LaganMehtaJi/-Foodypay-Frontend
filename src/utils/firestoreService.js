@@ -46,33 +46,47 @@ const sanitizeDoc = (obj) => {
 export function subscribeToOrders(businessIdOrFilter, onUpdate, onError) {
   try {
     const ordersRef = collection(firestoreDb, FIRESTORE_COLLECTIONS.ORDERS);
-    let q;
-    if (businessIdOrFilter && businessIdOrFilter !== 'all' && businessIdOrFilter !== 'master') {
-      const bid = String(businessIdOrFilter).trim().toUpperCase();
-      // Strict restaurant isolation: match exact businessId / merchantFilter only
-      q = query(
-        ordersRef,
-        where('merchantFilter', '==', bid),
-        limit(250)
-      );
-    } else {
-      // Master view sees all
-      q = query(ordersRef, limit(300));
-    }
+    const bid = (businessIdOrFilter && businessIdOrFilter !== 'all' && businessIdOrFilter !== 'master')
+      ? String(businessIdOrFilter).trim().toUpperCase()
+      : null;
+
+    // Read recent orders and strictly match current businessId
+    const q = query(ordersRef, limit(350));
 
     return onSnapshot(
       q,
       (snapshot) => {
         const ordersList = [];
         snapshot.forEach((docSnap) => {
-          ordersList.push({
-            id: docSnap.id,
-            _id: docSnap.id,
-            ...docSnap.data(),
-          });
+          const data = docSnap.data();
+          const docId = docSnap.id;
+          const orderObj = {
+            ...data,
+            firestoreId: docId,
+            _id: data._id || docId,
+            id: data.id || docId,
+          };
+
+          if (!bid) {
+            ordersList.push(orderObj);
+          } else {
+            // Strict restaurant isolation: match exact businessId across all fields
+            const docBid = String(
+              data.merchantFilter ||
+              data.businessId ||
+              data.foodypayId ||
+              data.merchantId ||
+              data.user ||
+              ''
+            ).trim().toUpperCase();
+
+            if (docBid === bid) {
+              ordersList.push(orderObj);
+            }
+          }
         });
 
-        // Sort descending by createdAt or timestamp
+        // Sort descending by createdAt or date
         ordersList.sort((a, b) => {
           const tA = new Date(a.createdAt || a.date || 0).getTime();
           const tB = new Date(b.createdAt || b.date || 0).getTime();
@@ -127,9 +141,18 @@ export async function saveOrderToFirestore(orderData) {
 /**
  * Update order status, seen flags, or fields in Cloud Firestore
  */
-export async function updateOrderInFirestore(orderId, updateFields) {
+export async function updateOrderInFirestore(businessIdOrOrderId, maybeOrderIdOrFields, maybeFields) {
   try {
-    if (!orderId) return;
+    let orderId;
+    let updateFields;
+    if (maybeFields !== undefined) {
+      orderId = maybeOrderIdOrFields;
+      updateFields = maybeFields || {};
+    } else {
+      orderId = businessIdOrOrderId;
+      updateFields = maybeOrderIdOrFields || {};
+    }
+    if (!orderId) return null;
     const docRef = doc(firestoreDb, FIRESTORE_COLLECTIONS.ORDERS, String(orderId));
     const cleanUpdate = sanitizeDoc({
       ...updateFields,
@@ -140,8 +163,10 @@ export async function updateOrderInFirestore(orderId, updateFields) {
   } catch (err) {
     // If doc didn't exist yet, create with setDoc merge
     try {
+      const orderId = maybeFields !== undefined ? maybeOrderIdOrFields : businessIdOrOrderId;
+      const updateFields = maybeFields !== undefined ? maybeFields : maybeOrderIdOrFields;
       const docRef = doc(firestoreDb, FIRESTORE_COLLECTIONS.ORDERS, String(orderId));
-      await setDoc(docRef, sanitizeDoc(updateFields), { merge: true });
+      await setDoc(docRef, sanitizeDoc(updateFields || {}), { merge: true });
       return { success: true };
     } catch (e) {
       console.warn('updateOrderInFirestore warning:', e.message);
@@ -269,19 +294,25 @@ export async function settleCustomerDueInFirestore(dueId, settleDetails = {}) {
 export function subscribeToTables(businessId, onUpdate, onError) {
   try {
     const tablesRef = collection(firestoreDb, FIRESTORE_COLLECTIONS.TABLES);
-    let q;
-    if (businessId && businessId !== 'all' && businessId !== 'master') {
-      const bId = String(businessId).trim().toUpperCase();
-      q = query(tablesRef, where('businessId', '==', bId), limit(200));
-    } else {
-      q = query(tablesRef, limit(200));
-    }
+    const bId = (businessId && businessId !== 'all' && businessId !== 'master')
+      ? String(businessId).trim().toUpperCase()
+      : null;
+    const q = query(tablesRef, limit(250));
+
     return onSnapshot(
       q,
       (snapshot) => {
         const tables = [];
         snapshot.forEach((snap) => {
-          tables.push({ id: snap.id, _id: snap.id, ...snap.data() });
+          const t = { id: snap.id, _id: snap.id, ...snap.data() };
+          if (!bId) {
+            tables.push(t);
+          } else {
+            const match = String(t.businessId || t.merchantId || t.foodypayId || t.merchantFilter || '').trim().toUpperCase();
+            if (match === bId) {
+              tables.push(t);
+            }
+          }
         });
         if (typeof onUpdate === 'function') onUpdate(tables);
       },
@@ -297,14 +328,24 @@ export function subscribeToTables(businessId, onUpdate, onError) {
 }
 
 /**
- * Save Table to Cloud Firestore
+ * Save Table to Cloud Firestore (accepts polymorphic arguments)
  */
-export async function saveTableToFirestore(tableData) {
+export async function saveTableToFirestore(businessIdOrData, maybeData) {
   try {
-    const tableId = String(tableData._id || tableData.id || `table_${Date.now()}`);
-    const bId = String(tableData.businessId || tableData.foodypayId || tableData.merchantId || '').trim().toUpperCase();
+    const tableData = maybeData !== undefined ? maybeData : businessIdOrData;
+    const passedBid = maybeData !== undefined ? businessIdOrData : null;
+    const tableId = String(tableData?._id || tableData?.id || `table_${Date.now()}`);
+    const bId = String(passedBid || tableData?.businessId || tableData?.foodypayId || tableData?.merchantId || '').trim().toUpperCase();
     const docRef = doc(firestoreDb, FIRESTORE_COLLECTIONS.TABLES, tableId);
-    await setDoc(docRef, sanitizeDoc({ ...tableData, id: tableId, _id: tableId, businessId: bId }), { merge: true });
+    await setDoc(docRef, sanitizeDoc({
+      ...tableData,
+      id: tableId,
+      _id: tableId,
+      businessId: bId,
+      merchantId: bId,
+      foodypayId: bId,
+      merchantFilter: bId,
+    }), { merge: true });
     return { success: true, id: tableId };
   } catch (err) {
     console.warn('saveTableToFirestore warning:', err.message);
@@ -541,6 +582,248 @@ export async function deleteBusinessUserFromFirestore(uniqueId) {
   }
 }
 
+/**
+ * Permanently block an account (email & uniqueId) so it can NEVER log in or re-register
+ */
+export async function recordBlockedAccount(email, uniqueId, reason = 'Terminated and permanently deleted by Master SuperAdmin') {
+  try {
+    const cleanEmail = email ? String(email).trim().toLowerCase() : '';
+    const cleanId = uniqueId ? String(uniqueId).trim().toUpperCase() : '';
+
+    const payload = sanitizeDoc({
+      email: cleanEmail,
+      uniqueId: cleanId,
+      reason,
+      blockedAt: new Date().toISOString(),
+      permanent: true,
+    });
+
+    if (cleanEmail) {
+      const emailDocId = cleanEmail.replace(/[^a-zA-Z0-9_-]/g, '_');
+      await setDoc(doc(firestoreDb, FIRESTORE_COLLECTIONS.BLOCKED_ACCOUNTS, `email_${emailDocId}`), payload, { merge: true });
+    }
+    if (cleanId) {
+      await setDoc(doc(firestoreDb, FIRESTORE_COLLECTIONS.BLOCKED_ACCOUNTS, `id_${cleanId}`), payload, { merge: true });
+    }
+    return { success: true };
+  } catch (err) {
+    console.warn('recordBlockedAccount warning:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Check if an email or Unique ID is in Blocked_Accounts
+ */
+export async function isAccountBlocked(emailOrId) {
+  if (!emailOrId) return false;
+  try {
+    const clean = String(emailOrId).trim().toLowerCase();
+    const cleanUpper = clean.toUpperCase();
+
+    // 1. Direct doc lookup by email
+    const emailDocId = clean.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const docEmailRef = doc(firestoreDb, FIRESTORE_COLLECTIONS.BLOCKED_ACCOUNTS, `email_${emailDocId}`);
+    const emailSnap = await getDoc(docEmailRef);
+    if (emailSnap.exists()) return true;
+
+    // 2. Direct doc lookup by id
+    const docIdRef = doc(firestoreDb, FIRESTORE_COLLECTIONS.BLOCKED_ACCOUNTS, `id_${cleanUpper}`);
+    const idSnap = await getDoc(docIdRef);
+    if (idSnap.exists()) return true;
+
+    // 3. Fallback query
+    const colRef = collection(firestoreDb, FIRESTORE_COLLECTIONS.BLOCKED_ACCOUNTS);
+    const q1 = query(colRef, where('email', '==', clean), limit(1));
+    const s1 = await getDocs(q1);
+    if (!s1.empty) return true;
+
+    const q2 = query(colRef, where('uniqueId', '==', cleanUpper), limit(1));
+    const s2 = await getDocs(q2);
+    if (!s2.empty) return true;
+
+    return false;
+  } catch (err) {
+    console.warn('isAccountBlocked check warning:', err.message);
+    return false;
+  }
+}
+
+/**
+ * Check if an account is either permanently blocked OR completely absent from Business_Users
+ */
+export async function isAccountBlockedOrDeleted(email, uniqueId) {
+  try {
+    // 1. Check if explicitly in Blocked_Accounts
+    if (email && (await isAccountBlocked(email))) return true;
+    if (uniqueId && (await isAccountBlocked(uniqueId))) return true;
+
+    // 2. Check if it exists in Business_Users
+    let found = null;
+    if (uniqueId) {
+      found = await getBusinessUserByUniqueId(uniqueId);
+    }
+    if (!found && email) {
+      found = await getBusinessUserByEmail(email);
+    }
+
+    // If completely absent from Business_Users, it was deleted!
+    if (!found) {
+      return true;
+    }
+
+    if (found.isLocked && String(found.lockReason || '').toLowerCase().includes('delete')) {
+      return true;
+    }
+
+    return false;
+  } catch (err) {
+    console.warn('isAccountBlockedOrDeleted warning:', err.message);
+    return false;
+  }
+}
+
+/**
+ * Helper to delete all documents matching a query in Firestore
+ */
+async function deleteQueryDocs(q) {
+  try {
+    const snap = await getDocs(q);
+    const promises = [];
+    snap.forEach((d) => {
+      promises.push(deleteDoc(d.ref));
+    });
+    await Promise.all(promises);
+    return snap.size;
+  } catch (e) {
+    console.warn('deleteQueryDocs warning:', e.message);
+    return 0;
+  }
+}
+
+/**
+ * PURGE ENTIRE BUSINESS DATA:
+ * Deletes Business Profile, Dishes, Products, Tables, Orders, Dues, Coupons
+ * and adds to Blocked_Accounts so it can NEVER log in or verify via Google again.
+ */
+export async function purgeEntireBusinessData(uniqueId, email) {
+  const cleanId = uniqueId ? String(uniqueId).trim().toUpperCase() : '';
+  const cleanEmail = email ? String(email).trim().toLowerCase() : '';
+
+  try {
+    // 1. Record in Blocked_Accounts immediately
+    await recordBlockedAccount(cleanEmail, cleanId, 'Permanently Terminated & Deleted by Master SuperAdmin');
+
+    // 2. Delete from Business_Users by ID
+    if (cleanId) {
+      try {
+        await deleteDoc(doc(firestoreDb, FIRESTORE_COLLECTIONS.BUSINESS_USERS, cleanId));
+      } catch (e) {}
+    }
+
+    // 3. Delete from Business_Users by Email
+    if (cleanEmail) {
+      try {
+        const busCol = collection(firestoreDb, FIRESTORE_COLLECTIONS.BUSINESS_USERS);
+        await deleteQueryDocs(query(busCol, where('email', '==', cleanEmail)));
+      } catch (e) {}
+    }
+
+    // 4. Delete from USERS collection by Email
+    if (cleanEmail) {
+      try {
+        const usersCol = collection(firestoreDb, FIRESTORE_COLLECTIONS.USERS);
+        await deleteQueryDocs(query(usersCol, where('email', '==', cleanEmail)));
+      } catch (e) {}
+    }
+
+    // 5. Delete all Dishes & Products linked to this business
+    if (cleanId) {
+      try {
+        const dishesCol = collection(firestoreDb, FIRESTORE_COLLECTIONS.DISHES);
+        await deleteQueryDocs(query(dishesCol, where('businessId', '==', cleanId)));
+        await deleteQueryDocs(query(dishesCol, where('foodypayId', '==', cleanId)));
+        await deleteQueryDocs(query(dishesCol, where('merchantId', '==', cleanId)));
+      } catch (e) {}
+      try {
+        const prodCol = collection(firestoreDb, FIRESTORE_COLLECTIONS.PRODUCTS);
+        await deleteQueryDocs(query(prodCol, where('businessId', '==', cleanId)));
+      } catch (e) {}
+    }
+
+    // 6. Delete all Dining Tables linked to this business
+    if (cleanId) {
+      try {
+        const tablesCol = collection(firestoreDb, FIRESTORE_COLLECTIONS.TABLES);
+        await deleteQueryDocs(query(tablesCol, where('businessId', '==', cleanId)));
+        await deleteQueryDocs(query(tablesCol, where('merchantId', '==', cleanId)));
+        await deleteQueryDocs(query(tablesCol, where('foodypayId', '==', cleanId)));
+      } catch (e) {}
+    }
+
+    // 7. Delete all Orders linked to this business
+    if (cleanId) {
+      try {
+        const ordersCol = collection(firestoreDb, FIRESTORE_COLLECTIONS.ORDERS);
+        await deleteQueryDocs(query(ordersCol, where('businessId', '==', cleanId)));
+        await deleteQueryDocs(query(ordersCol, where('foodypayId', '==', cleanId)));
+        await deleteQueryDocs(query(ordersCol, where('merchantId', '==', cleanId)));
+      } catch (e) {}
+    }
+
+    // 8. Delete all Customer Dues linked to this business
+    if (cleanId) {
+      try {
+        const duesCol = collection(firestoreDb, FIRESTORE_COLLECTIONS.DUES);
+        await deleteQueryDocs(query(duesCol, where('businessId', '==', cleanId)));
+      } catch (e) {}
+    }
+
+    // 9. Delete all Coupons linked to this business
+    if (cleanId) {
+      try {
+        const coupCol = collection(firestoreDb, FIRESTORE_COLLECTIONS.COUPONS);
+        await deleteQueryDocs(query(coupCol, where('businessId', '==', cleanId)));
+      } catch (e) {}
+    }
+
+    // 10. Clean up client localStorage if this active browser was running this user
+    try {
+      const activeUserRaw = localStorage.getItem('foodypay_user');
+      const activeBizId = localStorage.getItem('foodypay_active_business_id');
+      let shouldClear = false;
+
+      if (activeBizId && activeBizId.toUpperCase() === cleanId) {
+        shouldClear = true;
+      }
+      if (activeUserRaw) {
+        const parsed = JSON.parse(activeUserRaw);
+        if (
+          (parsed.email && parsed.email.toLowerCase() === cleanEmail) ||
+          (parsed.uniqueId && parsed.uniqueId.toUpperCase() === cleanId) ||
+          (parsed.foodypayId && parsed.foodypayId.toUpperCase() === cleanId)
+        ) {
+          shouldClear = true;
+        }
+      }
+
+      if (shouldClear) {
+        localStorage.removeItem('foodypay_token');
+        localStorage.removeItem('foodypay_user');
+        localStorage.removeItem('foodypay_active_business_id');
+        localStorage.removeItem('foodypay_crm_orders_v3');
+        localStorage.removeItem('foodypay_kitchen_logged_in');
+        window.dispatchEvent(new Event('storage'));
+      }
+    } catch (e) {}
+
+    return { success: true };
+  } catch (err) {
+    console.error('purgeEntireBusinessData critical error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 // ============================================================================
 // PRODUCTS / DISHES PER RESTAURANT (MULTI-TENANT BY businessId)
 // ============================================================================
@@ -548,10 +831,12 @@ export async function deleteBusinessUserFromFirestore(uniqueId) {
 /**
  * Save Dish / Product into Firestore linked with Unique businessId
  */
-export async function saveProductToFirestore(businessId, productData) {
+export async function saveProductToFirestore(businessIdOrData, maybeData) {
   try {
-    const bId = String(businessId || productData.businessId || productData.foodypayId || 'FP-348330').trim().toUpperCase();
-    const prodId = String(productData.id || productData._id || `prod_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`);
+    const productData = maybeData !== undefined ? maybeData : businessIdOrData;
+    const passedBid = maybeData !== undefined ? businessIdOrData : null;
+    const bId = String(passedBid || productData?.businessId || productData?.foodypayId || productData?.merchantId || 'FP-348330').trim().toUpperCase();
+    const prodId = String(productData?.id || productData?._id || `prod_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`);
     const docRef = doc(firestoreDb, FIRESTORE_COLLECTIONS.DISHES, prodId);
 
     const payload = sanitizeDoc({
@@ -561,8 +846,9 @@ export async function saveProductToFirestore(businessId, productData) {
       businessId: bId,
       merchantId: bId,
       foodypayId: bId,
+      merchantFilter: bId,
       updatedAt: new Date().toISOString(),
-      createdAt: productData.createdAt || new Date().toISOString(),
+      createdAt: productData?.createdAt || new Date().toISOString(),
     });
 
     await setDoc(docRef, payload, { merge: true });
@@ -579,21 +865,26 @@ export async function saveProductToFirestore(businessId, productData) {
 export function subscribeToProducts(businessId, onUpdate, onError) {
   try {
     const dishesRef = collection(firestoreDb, FIRESTORE_COLLECTIONS.DISHES);
-    let q;
-    if (businessId && businessId !== 'all' && businessId !== 'master') {
-      const bId = String(businessId).trim().toUpperCase();
-      // Strict restaurant isolation: show only dishes created by this businessId
-      q = query(dishesRef, where('businessId', '==', bId), limit(250));
-    } else {
-      q = query(dishesRef, limit(250));
-    }
+    const bId = (businessId && businessId !== 'all' && businessId !== 'master')
+      ? String(businessId).trim().toUpperCase()
+      : null;
+    const q = query(dishesRef, limit(350));
 
     return onSnapshot(
       q,
       (snapshot) => {
         const dishes = [];
         snapshot.forEach((snap) => {
-          dishes.push({ id: snap.id, _id: snap.id, ...snap.data() });
+          const d = { id: snap.id, _id: snap.id, ...snap.data() };
+          if (!bId) {
+            dishes.push(d);
+          } else {
+            const dBid = String(d.businessId || d.merchantId || d.foodypayId || d.merchantFilter || d.storeId || '').trim().toUpperCase();
+            // Match current business or allow global/store dishes
+            if (!dBid || dBid === bId || dBid === 'ALL' || dBid === 'MASTER') {
+              dishes.push(d);
+            }
+          }
         });
         if (typeof onUpdate === 'function') onUpdate(dishes);
       },

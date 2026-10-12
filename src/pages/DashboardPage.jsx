@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import {
   Home,
@@ -139,6 +139,7 @@ import {
   updateTableStatusInFirestore,
   saveBusinessUserToFirestore,
   getBusinessUserByUniqueId,
+  isAccountBlockedOrDeleted,
 } from '../utils/firestoreService';
 import { printThermalKot, printThermalReceipt } from '../utils/thermalPrinter';
 import './Dashboard.css';
@@ -185,7 +186,25 @@ export default function DashboardPage({ onShowToast }) {
   const navigate = useNavigate();
 
   // Navigation tab
-  const [activeTab, setActiveTab] = useState('home_orders');
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const urlTab = new URLSearchParams(window.location.search).get('tab');
+      if (urlTab && urlTab !== 'merchant_admin') return urlTab;
+    } catch (e) {}
+    return 'home_orders';
+  });
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam === 'merchant_admin') {
+      // Merchant Admin runs in its dedicated tab, not mixed in POS dashboard
+      window.open('/merchant-admin', '_blank');
+      setActiveTab((prev) => (prev === 'home_orders' ? prev : 'home_orders'));
+    } else if (tabParam) {
+      setActiveTab((prev) => (prev === tabParam ? prev : tabParam));
+    }
+  }, [searchParams]);
   const [catalogSubmenuOpen, setCatalogSubmenuOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [logoImgFailed, setLogoImgFailed] = useState(false);
@@ -211,11 +230,48 @@ export default function DashboardPage({ onShowToast }) {
 
   const token = localStorage.getItem('foodypay_token');
 
-  // Auth Redirect: If no token, redirect to /login
+  // Auth Redirect & Live Verification: If user is deleted or terminated in Firestore, log out immediately
   useEffect(() => {
     if (!token) {
       navigate('/login');
+      return;
     }
+
+    const checkLiveAccountStatus = async () => {
+      try {
+        const uRaw = localStorage.getItem('foodypay_user');
+        const bId = localStorage.getItem('foodypay_active_business_id');
+        let userEmail = '';
+        let userUniqueId = bId || '';
+
+        if (uRaw) {
+          const parsed = JSON.parse(uRaw);
+          userEmail = parsed.email || '';
+          userUniqueId = parsed.uniqueId || parsed.foodypayId || userUniqueId;
+        }
+
+        if (userEmail || userUniqueId) {
+          const isDead = await isAccountBlockedOrDeleted(userEmail, userUniqueId);
+          if (isDead) {
+            console.warn('Current account was deleted/terminated in Firestore. Logging out now.');
+            localStorage.removeItem('foodypay_token');
+            localStorage.removeItem('foodypay_user');
+            localStorage.removeItem('foodypay_active_business_id');
+            localStorage.removeItem('foodypay_crm_orders_v3');
+            localStorage.removeItem('foodypay_kitchen_logged_in');
+            window.dispatchEvent(new Event('storage'));
+            alert('⚠️ Your Business Account has been deleted/terminated by Master Administration. You have been logged out.');
+            window.location.href = '/login';
+          }
+        }
+      } catch (e) {
+        console.warn('Account live verification check warning:', e);
+      }
+    };
+
+    checkLiveAccountStatus();
+    const interval = setInterval(checkLiveAccountStatus, 8000);
+    return () => clearInterval(interval);
   }, [token, navigate]);
 
   // Logout Handler
@@ -255,10 +311,17 @@ export default function DashboardPage({ onShowToast }) {
   });
 
   useEffect(() => {
-    const handleStorageChange = () => {
+    const handleStorageChange = (e) => {
+      if (e && e.key && e.key !== 'foodypay_user') return;
       try {
-        const u = localStorage.getItem('foodypay_user');
-        if (u) setCurrentUser(JSON.parse(u));
+        const raw = localStorage.getItem('foodypay_user');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          setCurrentUser((prev) => {
+            if (JSON.stringify(prev) === raw) return prev;
+            return parsed;
+          });
+        }
       } catch (e) {}
     };
     window.addEventListener('storage', handleStorageChange);
@@ -284,13 +347,21 @@ export default function DashboardPage({ onShowToast }) {
     } catch(e) {}
 
     const activeStoredBid = localStorage.getItem('foodypay_active_business_id') || '';
-    const resolvedFpId = savedControls.foodypayId || activeStoredBid || 'FP-348330';
-
+    let userBid = '';
+    let savedUserObj = null;
     try {
       const savedUser = localStorage.getItem('foodypay_user');
       if (savedUser) {
-        const u = JSON.parse(savedUser);
-        const userBid = u.foodypayId || u.uniqueId || u.businessId || activeStoredBid || 'FP-348330';
+        savedUserObj = JSON.parse(savedUser);
+        userBid = savedUserObj.foodypayId || savedUserObj.uniqueId || savedUserObj.businessId || '';
+      }
+    } catch (e) {}
+
+    const resolvedFpId = (activeStoredBid || userBid || savedControls.foodypayId || 'FP-348330').toUpperCase();
+
+    try {
+      if (savedUserObj) {
+        const u = savedUserObj;
         return {
           storeStatus: savedControls.storeStatus !== undefined ? savedControls.storeStatus : true,
           deliveryStatus: savedControls.deliveryStatus !== undefined ? savedControls.deliveryStatus : true,
@@ -312,7 +383,7 @@ export default function DashboardPage({ onShowToast }) {
           lockSettingsPanel: false,
           kitchenAutoDispatchSeconds: savedControls.kitchenAutoDispatchSeconds !== undefined ? Number(savedControls.kitchenAutoDispatchSeconds) : 30,
           ...savedControls,
-          foodypayId: savedControls.foodypayId || userBid,
+          foodypayId: resolvedFpId,
         };
       }
     } catch (e) {}
@@ -341,20 +412,33 @@ export default function DashboardPage({ onShowToast }) {
     };
   });
 
+  // Active Business ID authoritative across entire Dashboard
+  const activeBusinessId = (
+    localStorage.getItem('foodypay_active_business_id') ||
+    currentUser?.foodypayId ||
+    currentUser?.uniqueId ||
+    currentUser?.businessId ||
+    storeControls?.foodypayId ||
+    'FP-348330'
+  ).trim().toUpperCase();
+
   useEffect(() => {
     try {
       localStorage.setItem('foodypay_store_controls', JSON.stringify(storeControls));
-      window.dispatchEvent(new Event('storage'));
     } catch (e) {}
   }, [storeControls]);
 
   useEffect(() => {
-    const syncPartnerStoreLocks = () => {
+    const syncPartnerStoreLocks = (e) => {
+      if (e && e.key && e.key !== 'foodypay_store_controls') return;
       try {
         const rawCtrl = localStorage.getItem('foodypay_store_controls');
         if (rawCtrl) {
           const parsed = JSON.parse(rawCtrl);
-          setStoreControls((prev) => ({ ...prev, ...parsed }));
+          setStoreControls((prev) => {
+            if (JSON.stringify(prev) === rawCtrl) return prev;
+            return { ...prev, ...parsed };
+          });
         }
       } catch (e) {}
     };
@@ -384,7 +468,7 @@ export default function DashboardPage({ onShowToast }) {
   const [credSaving, setCredSaving] = useState(false);
   const [copiedField, setCopiedField] = useState(null);
 
-  // Sync latest business credentials from Firestore Business_Users
+  // Sync latest business credentials & profile from Firestore Business_Users
   useEffect(() => {
     async function loadBizProfile() {
       const activeBid = adminUniqueId || localStorage.getItem('foodypay_active_business_id');
@@ -394,6 +478,30 @@ export default function DashboardPage({ onShowToast }) {
         if (bp) {
           if (bp.password) setAdminPartnerPassword(bp.password);
           if (bp.kitchenPassword) setAdminKitchenPassword(bp.kitchenPassword);
+          setStoreControls((prev) => {
+            const newFpId = bp.uniqueId || bp.businessId || activeBid;
+            const newRestName = bp.businessName || prev.restName;
+            const newPhone = bp.contactNo || bp.phone || prev.phone;
+            const newAddress = bp.address || prev.address;
+            const newUpiId = bp.upiId || prev.upiId;
+            if (
+              prev.foodypayId === newFpId &&
+              prev.restName === newRestName &&
+              prev.phone === newPhone &&
+              prev.address === newAddress &&
+              prev.upiId === newUpiId
+            ) {
+              return prev;
+            }
+            return {
+              ...prev,
+              foodypayId: newFpId,
+              restName: newRestName,
+              phone: newPhone,
+              address: newAddress,
+              upiId: newUpiId,
+            };
+          });
         }
       } catch (e) {}
     }
@@ -632,17 +740,19 @@ export default function DashboardPage({ onShowToast }) {
   useEffect(() => {
     if (coupons && coupons.length > 0) {
       try {
-        const storeFpId = storeControls.foodypayId || currentUser.foodypayId || 'FP-985569';
+        const storeFpId = storeControls.foodypayId || currentUser?.foodypayId || 'FP-985569';
         const taggedCoupons = coupons.map((c) => ({
           ...c,
           foodypayId: c.foodypayId || c.merchantId || storeFpId,
           merchantId: c.merchantId || c.foodypayId || storeFpId,
         }));
-        localStorage.setItem('foodypay_crm_coupons_v1', JSON.stringify(taggedCoupons));
-        window.dispatchEvent(new Event('storage'));
+        const newStr = JSON.stringify(taggedCoupons);
+        if (localStorage.getItem('foodypay_crm_coupons_v1') !== newStr) {
+          localStorage.setItem('foodypay_crm_coupons_v1', newStr);
+        }
       } catch (e) {}
     }
-  }, [coupons, storeControls.foodypayId, currentUser.foodypayId]);
+  }, [coupons, storeControls?.foodypayId, currentUser?.foodypayId]);
 
   const [isAddGroupModalOpen, setIsAddGroupModalOpen] = useState(false);
   const [activeGroupDetail, setActiveGroupDetail] = useState(null);
@@ -851,11 +961,16 @@ export default function DashboardPage({ onShowToast }) {
   const [upgradeModalFeature, setUpgradeModalFeature] = useState(null);
 
   useEffect(() => {
-    const syncUserData = () => {
+    const syncUserData = (e) => {
+      if (e && e.key && e.key !== 'foodypay_user') return;
       try {
         const u = localStorage.getItem('foodypay_user');
         if (u) {
-          setCurrentUser(JSON.parse(u));
+          const parsed = JSON.parse(u);
+          setCurrentUser((prev) => {
+            if (JSON.stringify(prev) === u) return prev;
+            return parsed;
+          });
         }
       } catch (e) {}
     };
@@ -1727,15 +1842,16 @@ export default function DashboardPage({ onShowToast }) {
     let unsubscribeFirestoreDishes = () => {};
     let unsubscribeFirestoreTables = () => {};
     try {
-      const activeBusinessId =
+      const activeBusinessId = (
         localStorage.getItem('foodypay_active_business_id') ||
         currentUser?.foodypayId ||
         currentUser?.uniqueId ||
-        currentUser?._id ||
+        currentUser?.businessId ||
         storeControls.foodypayId ||
-        'FP-348330';
+        'FP-348330'
+      ).trim().toUpperCase();
 
-      // Purge stale local storage orders cache on mount
+      // Purge stale local storage orders cache on mount so ONLY real Firestore data is used
       try {
         localStorage.removeItem('foodypay_crm_orders_v3');
       } catch (e) {}
@@ -1748,7 +1864,10 @@ export default function DashboardPage({ onShowToast }) {
           seen: Boolean(o.seen || seenSet.has(String(o._id || o.id || o.orderId))),
         }));
         setOrders(formatted);
+        setLoadingData(false);
         formatted.forEach((order) => notifyIfNewOrder(order));
+      }, () => {
+        setLoadingData(false);
       });
 
       // Strict real-time dish catalog subscription per businessId
@@ -1786,7 +1905,7 @@ export default function DashboardPage({ onShowToast }) {
     } catch (e) {}
 
     const handleStorageEvent = (e) => {
-      if (!e || !e.key || e.key === 'foodypay_crm_orders_v3') {
+      if (e && e.key && e.key === 'foodypay_crm_orders_v3') {
         handleNewOrderEvent();
       }
     };
@@ -2113,9 +2232,11 @@ export default function DashboardPage({ onShowToast }) {
 
   useEffect(() => {
     try {
-      localStorage.setItem('foodypay_crm_dishes_v3', JSON.stringify(dishes));
-      window.dispatchEvent(new CustomEvent('foodypay_dishes_updated', { detail: dishes }));
-      window.dispatchEvent(new Event('storage'));
+      const dishesStr = JSON.stringify(dishes);
+      if (localStorage.getItem('foodypay_crm_dishes_v3') !== dishesStr) {
+        localStorage.setItem('foodypay_crm_dishes_v3', dishesStr);
+        window.dispatchEvent(new CustomEvent('foodypay_dishes_updated', { detail: dishes }));
+      }
     } catch {}
   }, [dishes]);
 
@@ -2175,6 +2296,7 @@ export default function DashboardPage({ onShowToast }) {
 
   // Order Details Modal state (view light / completed / cancelled card details)
   const [viewingOrderDetails, setViewingOrderDetails] = useState(null);
+  const [orderSlipPreviewTab, setOrderSlipPreviewTab] = useState('receipt'); // 'receipt' | 'kot'
 
   // Customer Account Profile & Due (Khata) Management State
   const [activeCustomerProfile, setActiveCustomerProfile] = useState(null);
@@ -2389,77 +2511,123 @@ export default function DashboardPage({ onShowToast }) {
     showUpiQrModal,
   ]);
 
+  // Helper to extract reliable order timestamp in milliseconds
+  const getSafeOrderTime = (ord) => {
+    if (!ord) return Date.now();
+    if (typeof ord.timestamp === 'number' && ord.timestamp > 0) return ord.timestamp;
+    if (ord.createdAt) {
+      if (typeof ord.createdAt.toDate === 'function') return ord.createdAt.toDate().getTime();
+      if (typeof ord.createdAt === 'object' && ord.createdAt.seconds) return ord.createdAt.seconds * 1000;
+      const t = new Date(ord.createdAt).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    if (ord.updatedAt) {
+      const t = new Date(ord.updatedAt).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    if (ord.date) {
+      const t = new Date(ord.date).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    if (ord._id && String(ord._id).startsWith('ord_')) {
+      const parsed = parseInt(String(ord._id).replace('ord_', ''), 10);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+    return 0;
+  };
+
+  // Keep ordersRef in sync with latest orders state to avoid stale closure in setInterval
+  const ordersRef = useRef(orders);
+  useEffect(() => {
+    ordersRef.current = orders;
+  }, [orders]);
+
   // Automatic Dispatch to Kitchen after configured grace period (Default: 30 seconds)
   useEffect(() => {
     const dispatchTimer = setInterval(() => {
-      const graceSeconds = Number(storeControls?.kitchenAutoDispatchSeconds) !== undefined
-        ? Number(storeControls.kitchenAutoDispatchSeconds)
-        : 30;
-
-      if (graceSeconds <= 0) return;
+      const rawGrace = storeControls?.kitchenAutoDispatchSeconds;
+      const numGrace = Number(rawGrace);
+      const graceSeconds = (!isNaN(numGrace) && numGrace >= 0) ? numGrace : 30;
 
       const now = Date.now();
-      let hasUpdates = false;
+      const currentOrders = ordersRef.current || [];
+      const newlyDispatched = [];
 
-      const updated = (orders || []).map((o) => {
-        const isEligible = !o.sentToKitchen &&
-          (o.status === 'placed' || o.status === 'new' || o.status === 'running') &&
-          !o.tableCleared &&
-          o.status !== 'completed' &&
-          o.status !== 'cancelled' &&
-          o.status !== 'served';
+      const updated = currentOrders.map((o) => {
+        if (!o) return o;
+        const isSent = Boolean(o.sentToKitchen && o.sentToKitchen !== 'false');
+        if (isSent) return o;
 
-        if (!isEligible) return o;
+        const normStatus = String(o.status || 'placed').toLowerCase();
+        const isEligibleStatus =
+          normStatus === 'placed' ||
+          normStatus === 'new' ||
+          normStatus === 'running' ||
+          normStatus === 'pending';
 
-        const orderCreatedTime = o.timestamp || (o.createdAt ? new Date(o.createdAt).getTime() : 0);
-        if (orderCreatedTime > 0 && (now - orderCreatedTime) >= (graceSeconds * 1000)) {
-          hasUpdates = true;
-          const orderId = o._id || o.id;
+        if (!isEligibleStatus || o.tableCleared || normStatus === 'completed' || normStatus === 'cancelled' || normStatus === 'served') {
+          return o;
+        }
 
-          try {
-            updateOrderInFirestore(orderId, {
-              status: 'preparing',
-              sentToKitchen: true,
-              kitchenSentAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            });
-          } catch (e) {}
+        const orderCreatedTime = getSafeOrderTime(o);
+        const elapsedSecs = orderCreatedTime > 0 ? (now - orderCreatedTime) / 1000 : graceSeconds;
+        const shouldDispatch = elapsedSecs >= graceSeconds;
 
-          try {
-            const bc = new BroadcastChannel('foodypay_live_orders_channel');
-            bc.postMessage({
-              type: 'NEW_KOT',
-              orderId,
-              table: o.table,
-              items: o.items || [],
-              newStatus: 'preparing'
-            });
-            bc.postMessage({ type: 'ORDER_UPDATED', orderId, newStatus: 'preparing' });
-            bc.close();
-          } catch (e) {}
+        if (shouldDispatch) {
+          const targetOrderId = o.firestoreId || o._id || o.id;
+          newlyDispatched.push({ orderId: targetOrderId, table: o.table, order: o });
+
+          // Direct live update in Cloud Firestore
+          updateOrderInFirestore(targetOrderId, {
+            status: 'preparing',
+            sentToKitchen: true,
+            kitchenSentAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          }).catch((err) => console.warn('[AutoDispatch] Firestore update notice:', err));
 
           return {
             ...o,
             status: 'preparing',
             sentToKitchen: true,
             kitchenSentAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
           };
         }
         return o;
       });
 
-      if (hasUpdates) {
+      if (newlyDispatched.length > 0) {
         setOrders(updated);
         try {
           localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updated));
           window.dispatchEvent(new Event('foodypay_order_created'));
           window.dispatchEvent(new Event('storage'));
         } catch (e) {}
+
+        try {
+          const bc = new BroadcastChannel('foodypay_live_orders_channel');
+          newlyDispatched.forEach(({ orderId, table, order }) => {
+            bc.postMessage({
+              type: 'NEW_KOT',
+              orderId,
+              table,
+              items: order.items || [],
+              newStatus: 'preparing'
+            });
+            bc.postMessage({ type: 'ORDER_UPDATED', orderId, newStatus: 'preparing' });
+          });
+          bc.close();
+        } catch (e) {}
+
+        triggerSound(playOrderPlaced);
+        newlyDispatched.forEach(({ table, orderId }) => {
+          addToast(`🍳 30s Grace Timer: Order ${orderId} (${table || 'Counter'}) sent to Kitchen KDS!`, <ChefHat size={18} color="#FF5E14" />);
+        });
       }
     }, 1000);
 
     return () => clearInterval(dispatchTimer);
-  }, [orders, storeControls.kitchenAutoDispatchSeconds]);
+  }, [storeControls?.kitchenAutoDispatchSeconds]);
 
   // Instant Manual Dispatch to Kitchen button handler
   const handleSendOrderToKitchenNow = (order) => {
@@ -2677,7 +2845,7 @@ export default function DashboardPage({ onShowToast }) {
 
       const existingOrder = editingOrderId ? (orders || []).find((o) => o._id === editingOrderId || o.id === editingOrderId) : null;
 
-      let orderStatus = 'running';
+      let orderStatus = 'placed';
       let isSentToKitchen = false;
       let hasPendingKot = false;
 
@@ -2686,12 +2854,12 @@ export default function DashboardPage({ onShowToast }) {
         isSentToKitchen = true;
         hasPendingKot = true;
       } else if (existingOrder) {
-        orderStatus = existingOrder.status || 'running';
+        orderStatus = existingOrder.status || 'placed';
         isSentToKitchen = Boolean(existingOrder.sentToKitchen);
         hasPendingKot = Boolean(existingOrder.hasPendingKot);
       } else {
-        // Fresh order saved with "Order Placed"
-        orderStatus = 'running';
+        // Fresh order placed — shows "Order Placed (30s)" countdown on table before auto-dispatching to kitchen
+        orderStatus = 'placed';
         isSentToKitchen = false;
         hasPendingKot = false;
       }
@@ -2701,9 +2869,9 @@ export default function DashboardPage({ onShowToast }) {
         table: manualOrderType === 'Dine-In' ? manualTable : manualOrderType === 'Takeaway' ? 'Counter 1' : 'Home Delivery',
         customer: manualCustomer.trim() || 'Walk-in Guest',
         phone: manualPhone.trim() || '',
-        paymentStatus: manualPaymentMode.includes('UPI') ? 'paid-upi' : (manualPaymentMode.includes('Due') ? 'due' : 'cash'),
-        isPaid: !manualPaymentMode.includes('Due'),
-        paymentLabel: manualPaymentMode,
+        paymentStatus: 'pending',
+        isPaid: false,
+        paymentLabel: manualPaymentMode || 'Cash on Counter',
         items: formattedItems,
         note: manualCoupon ? `Applied Coupon: ${manualCoupon}` : editingOrderId ? 'Order items updated from counter' : 'Manual Order Created from Counter',
         subtotal: manualSubtotal,
@@ -2714,27 +2882,24 @@ export default function DashboardPage({ onShowToast }) {
         sentToKitchen: isSentToKitchen,
         hasPendingKot: hasPendingKot,
         billPrinted: false, // Reset bill printed status whenever items change or KOT is fired
+        businessId: activeBusinessId || currentUser?.foodypayId || currentUser?.businessId || '',
+        merchantId: activeBusinessId || currentUser?.foodypayId || currentUser?.businessId || '',
+        foodypayId: activeBusinessId || currentUser?.foodypayId || currentUser?.businessId || '',
+        merchantFilter: activeBusinessId || currentUser?.foodypayId || currentUser?.businessId || '',
       };
 
       if (editingOrderId) {
         // Edit existing order
-        let updatedList = [];
-        if (token) {
-          try {
-            const updated = await updateOrderApi(token, editingOrderId, newOrderPayload);
-            updatedList = orders.map((o) => (o._id === editingOrderId || o.id === editingOrderId ? { ...o, ...newOrderPayload, ...updated } : o));
-            setOrders(updatedList);
-          } catch (err) {
-            updatedList = orders.map((o) => (o._id === editingOrderId || o.id === editingOrderId ? { ...o, ...newOrderPayload } : o));
-            setOrders(updatedList);
-          }
-        } else {
-          updatedList = orders.map((o) => (o.id === editingOrderId || o._id === editingOrderId ? { ...o, ...newOrderPayload } : o));
-          setOrders(updatedList);
-        }
+        const updatedList = orders.map((o) =>
+          (o._id === editingOrderId || o.id === editingOrderId) ? { ...o, ...newOrderPayload } : o
+        );
+        setOrders(updatedList);
 
         try {
           localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updatedList));
+          // PRIMARY: Update directly in Firestore
+          await updateOrderInFirestore(editingOrderId, newOrderPayload);
+
           window.dispatchEvent(new Event('foodypay_order_created'));
           window.dispatchEvent(new Event('storage'));
           const bc = new BroadcastChannel('foodypay_live_orders_channel');
@@ -2748,7 +2913,13 @@ export default function DashboardPage({ onShowToast }) {
           }
           bc.postMessage({ type: 'ORDER_UPDATED' });
           bc.close();
-        } catch (e) {}
+        } catch (e) {
+          console.warn('[DashboardPage] Firestore update notice:', e);
+        }
+
+        if (token) {
+          updateOrderApi(token, editingOrderId, newOrderPayload).catch(() => {});
+        }
 
         if (sendKot) {
           triggerSound(playOrderPlaced);
@@ -2757,52 +2928,58 @@ export default function DashboardPage({ onShowToast }) {
           addToast(`✓ Order updated & saved for Table ${newOrderPayload.table}!`, <Check size={18} />);
         }
       } else {
-        // Create new order
+        // Create new order directly in Cloud Firestore (SERF DB Firebase)
         const nextId = `#FP-${1080 + orders.length + 1}`;
-        let createdFinalOrder = null;
-        if (token) {
-          try {
-            const createdOrder = await createOrderApi(token, newOrderPayload);
-            createdFinalOrder = { ...createdOrder, seen: true, status: orderStatus, sentToKitchen: isSentToKitchen, hasPendingKot };
-            const updatedList = [createdFinalOrder, ...orders];
-            setOrders(updatedList);
-            try {
-              localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updatedList));
-            } catch (e) {}
-            const updatedCustomers = await fetchCustomersApi(token);
-            setCustomers(updatedCustomers || []);
-            const stats = await fetchOrderStatsApi(token);
-            if (stats) setTodayStats(stats);
-          } catch (err) {
-            console.warn('API error creating order:', err);
+        const newOrderId = 'ord_' + Date.now();
+        const newOrder = {
+          ...newOrderPayload,
+          id: nextId,
+          _id: newOrderId,
+          time: 'Just now',
+          timestamp: Date.now(),
+          status: orderStatus,
+          sentToKitchen: isSentToKitchen,
+          hasPendingKot,
+          tableCleared: false,
+          seen: true,
+        };
+
+        const updatedList = [newOrder, ...orders];
+        setOrders(updatedList);
+
+        // PRIMARY: Save immediately to Cloud Firestore
+        try {
+          await saveOrderToFirestore(newOrder);
+        } catch (fsErr) {
+          console.warn('[DashboardPage] Firestore save failed for manual order:', fsErr);
+        }
+
+        // If Dine-In table, mark table occupied in Firestore
+        if (newOrderPayload.table && newOrderPayload.type === 'Dine-In') {
+          const targetTable = (tables || []).find((t) => {
+            const tName = String(t.name || '').trim().toLowerCase();
+            const oTable = String(newOrderPayload.table).trim().toLowerCase();
+            return tName === oTable || tName.replace(/[^a-z0-9]/g, '') === oTable.replace(/[^a-z0-9]/g, '');
+          });
+          if (targetTable) {
+            updateTableStatusInFirestore(targetTable._id || targetTable.id, 'occupied').catch(() => {});
           }
         }
-        if (!createdFinalOrder) {
-          const newOrder = {
-            ...newOrderPayload,
-            id: nextId,
-            _id: 'ord_' + Date.now(),
-            time: 'Just now',
-            timestamp: Date.now(),
-            status: orderStatus,
-            seen: true,
-          };
-          createdFinalOrder = newOrder;
-          const updatedList = [newOrder, ...orders];
-          setOrders(updatedList);
-          try {
-            localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updatedList));
-          } catch (e) {}
+
+        // Non-blocking sync to legacy API if token available
+        if (token) {
+          createOrderApi(token, newOrder).catch(() => {});
         }
 
         try {
+          localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updatedList));
           window.dispatchEvent(new Event('foodypay_order_created'));
           window.dispatchEvent(new Event('storage'));
           const bc = new BroadcastChannel('foodypay_live_orders_channel');
           if (sendKot) {
             bc.postMessage({
               type: 'NEW_KOT',
-              orderId: createdFinalOrder._id || createdFinalOrder.id,
+              orderId: newOrder._id || newOrder.id,
               table: newOrderPayload.table,
               items: formattedItems,
             });
@@ -2823,6 +3000,9 @@ export default function DashboardPage({ onShowToast }) {
 
       setIsManualOrderOpen(false);
       setEditingOrderId(null);
+    } catch (submitErr) {
+      console.error('[DashboardPage] Error submitting manual order:', submitErr);
+      addToast(`Order Notice: ${submitErr.message || 'Operation processed'}`, <AlertTriangle size={18} color="#EA580C" />);
     } finally {
       setIsSubmittingManualOrder(false);
     }
@@ -4955,33 +5135,6 @@ export default function DashboardPage({ onShowToast }) {
         </div>
 
         <nav className="crm-sidebar-menu">
-          {/* Merchant Admin Control Suite */}
-          <button
-            type="button"
-            title="Merchant Admin (Store Master Controls & Analytics)"
-            className={`crm-menu-link ${activeTab === 'merchant_admin' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('merchant_admin');
-              setMobileMenuOpen(false);
-            }}
-            style={{
-              background: activeTab === 'merchant_admin' ? 'linear-gradient(135deg, #FF5E14 0%, #EA580C 100%)' : '#FFF7ED',
-              color: activeTab === 'merchant_admin' ? '#FFFFFF' : '#C2410C',
-              border: '1.5px solid #FFEDD5',
-              borderRadius: '12px',
-              margin: '4px 6px 10px 6px',
-              fontWeight: 800,
-              boxShadow: activeTab === 'merchant_admin' ? '0 4px 12px rgba(234,88,12,0.3)' : 'none',
-            }}
-          >
-            <div className="crm-menu-link-left">
-              <span className="crm-menu-icon">
-                <Crown size={20} color={activeTab === 'merchant_admin' ? '#FFFFFF' : '#EA580C'} />
-              </span>
-              <span>Merchant Admin</span>
-            </div>
-          </button>
-
           {/* 1. Home / Orders */}
           <button
             type="button"
@@ -5371,29 +5524,6 @@ export default function DashboardPage({ onShowToast }) {
           </div>
 
           <div className="crm-header-right" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            {/* Merchant Admin Header Button */}
-            <button
-              type="button"
-              onClick={() => setActiveTab('merchant_admin')}
-              style={{
-                background: activeTab === 'merchant_admin' ? 'linear-gradient(135deg, #FF5E14 0%, #EA580C 100%)' : '#FFF7ED',
-                color: activeTab === 'merchant_admin' ? '#FFFFFF' : '#C2410C',
-                border: '1.5px solid #FFEDD5',
-                padding: '7px 14px',
-                borderRadius: '8px',
-                fontSize: '12.5px',
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                boxShadow: '0 2px 6px rgba(255,94,20,0.15)',
-              }}
-              title="Open Merchant Admin Dashboard"
-            >
-              <Crown size={15} />
-              <span>Merchant Admin</span>
-            </button>
             {/* 1. Add Table Button */}
             <button
               type="button"
@@ -5489,6 +5619,29 @@ export default function DashboardPage({ onShowToast }) {
             >
               <Plus size={15} />
               <span>+ New POS Order</span>
+            </button>
+
+            {/* Merchant Admin in Separate Tab */}
+            <button
+              type="button"
+              onClick={() => window.open('/merchant-admin', '_blank')}
+              style={{
+                background: '#FFF0EB',
+                color: '#FF5E14',
+                border: '1.5px solid #FFDCD0',
+                padding: '7px 12px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+              }}
+              title="Open Merchant Admin Suite in a separate tab"
+            >
+              <Crown size={15} color="#FF5E14" />
+              <span>Admin Tab ↗</span>
             </button>
 
             {/* Sound Mute/Unmute */}
@@ -5901,15 +6054,19 @@ export default function DashboardPage({ onShowToast }) {
                               const ord = getRunningOrderForTable(tbl.name);
                               if (!ord) {
                                 availableCount += 1;
-                              } else if (ord.status === 'paid' || (ord.isPaid && !ord.tableCleared)) {
+                              } else if (ord.status === 'paid' || (ord.status === 'completed' && ord.isPaid && !ord.tableCleared)) {
                                 paidCount += 1;
-                              } else if (ord.billPrinted || ord.status === 'printed') {
+                              } else if (ord.billPrinted || ord.status === 'printed' || ord.status === 'bill-ready') {
                                 billReadyCount += 1;
-                              } else if (ord.status === 'served' || ord.status === 'eating') {
+                              } else if (ord.status === 'ready' || ord.status === 'served') {
                                 eatingCount += 1;
-                              } else {
-                                // Status is placed, new, preparing, or cooking -> Waiting for food
+                              } else if (ord.status === 'preparing' || ord.status === 'in-kitchen' || ord.status === 'kitchen' || (ord.sentToKitchen && ord.status !== 'completed' && ord.status !== 'cancelled')) {
                                 waitingCount += 1;
+                              } else if (!ord.sentToKitchen) {
+                                // Order placed but not dispatched yet — countdown
+                                waitingCount += 1;
+                              } else {
+                                eatingCount += 1;
                               }
                             });
 
@@ -5961,8 +6118,14 @@ export default function DashboardPage({ onShowToast }) {
                           if (!ord) return false;
                           if (tableStatusFilter === 'paid') return ord.status === 'paid' || (ord.isPaid && !ord.tableCleared);
                           if (tableStatusFilter === 'bill_ready') return ord.billPrinted || ord.status === 'printed';
-                          if (tableStatusFilter === 'eating') return ord.status === 'served' || ord.status === 'eating';
-                          if (tableStatusFilter === 'waiting') return ord.status !== 'served' && ord.status !== 'eating' && ord.status !== 'paid' && !ord.billPrinted;
+                          if (tableStatusFilter === 'eating') return ord.status === 'ready' || ord.status === 'served';
+                          if (tableStatusFilter === 'waiting') {
+                            // Waiting = order placed (countdown) OR in-kitchen cooking
+                            if (ord.status === 'paid' || ord.isPaid) return false;
+                            if (ord.billPrinted || ord.status === 'printed') return false;
+                            if (ord.status === 'ready' || ord.status === 'served') return false;
+                            return true;
+                          }
                           return true;
                         });
 
@@ -6023,29 +6186,42 @@ export default function DashboardPage({ onShowToast }) {
                                   }
                                 }
 
-                                // Determine Table Status: Placed (30s) -> Waiting for food (Cooking) -> Eating (Served)
+                                // ============================================================
+                                // TABLE STATUS FLOW:
+                                // Empty -> Order Placed (countdown) -> Waiting for food (kitchen) -> Eating -> Bill -> Paid -> Empty
+                                // ============================================================
                                 let statusKey = 'available';
                                 let statusLabel = 'Available';
                                 let remainingGraceSecs = 0;
                                 if (isOccupied) {
-                                  if (runningOrder.status === 'paid' || (runningOrder.isPaid && !runningOrder.tableCleared)) {
+                                  if (runningOrder.status === 'paid' || (runningOrder.status === 'completed' && runningOrder.isPaid && !runningOrder.tableCleared)) {
+                                    // Step 5: Payment done, waiting to vacate
                                     statusKey = 'paid';
                                     statusLabel = 'Paid';
-                                  } else if (runningOrder.billPrinted || runningOrder.status === 'printed') {
+                                  } else if (runningOrder.billPrinted || runningOrder.status === 'printed' || runningOrder.status === 'bill-ready') {
+                                    // Step 4b: Bill printed, awaiting payment
                                     statusKey = 'bill-ready';
                                     statusLabel = 'Bill ready';
-                                  } else if (!runningOrder.sentToKitchen && (runningOrder.status === 'placed' || runningOrder.status === 'new')) {
-                                    const graceSecs = Number(storeControls?.kitchenAutoDispatchSeconds) !== undefined ? Number(storeControls.kitchenAutoDispatchSeconds) : 30;
-                                    const orderTime = runningOrder.timestamp || (runningOrder.createdAt ? new Date(runningOrder.createdAt).getTime() : Date.now());
-                                    const elapsed = Math.floor((Date.now() - orderTime) / 1000);
-                                    remainingGraceSecs = Math.max(0, graceSecs - elapsed);
-                                    statusKey = 'waiting';
-                                    statusLabel = remainingGraceSecs > 0 ? `Waiting for food (${remainingGraceSecs}s)` : 'Waiting for food';
-                                  } else if (runningOrder.status === 'preparing' || runningOrder.status === 'in-kitchen' || runningOrder.status === 'kitchen') {
+                                  } else if (runningOrder.status === 'ready' || runningOrder.status === 'served') {
+                                    // Step 3: Kitchen marked food as ready -> Eating
+                                    statusKey = 'eating';
+                                    statusLabel = 'Eating';
+                                  } else if (runningOrder.status === 'preparing' || runningOrder.status === 'in-kitchen' || runningOrder.status === 'kitchen' || (runningOrder.sentToKitchen && runningOrder.status !== 'completed' && runningOrder.status !== 'cancelled')) {
+                                    // Step 2: Order sent to kitchen, cooking in progress
                                     statusKey = 'waiting';
                                     statusLabel = 'Waiting for food';
+                                  } else if (!runningOrder.sentToKitchen) {
+                                    // Step 1: Order just placed, countdown before auto-dispatch to kitchen
+                                    const rawGrace = storeControls?.kitchenAutoDispatchSeconds;
+                                    const numGrace = Number(rawGrace);
+                                    const graceSecs = (!isNaN(numGrace) && numGrace >= 0) ? numGrace : 30;
+                                    const orderTime = getSafeOrderTime(runningOrder);
+                                    const elapsed = orderTime > 0 ? Math.floor((Date.now() - orderTime) / 1000) : 0;
+                                    remainingGraceSecs = Math.max(0, graceSecs - elapsed);
+                                    statusKey = 'waiting';
+                                    statusLabel = remainingGraceSecs > 0 ? `Order Placed (${remainingGraceSecs}s)` : 'Sending to Kitchen...';
                                   } else {
-                                    // Food served to table -> Eating state
+                                    // Fallback: active table, eating
                                     statusKey = 'eating';
                                     statusLabel = 'Eating';
                                   }
@@ -6191,6 +6367,18 @@ export default function DashboardPage({ onShowToast }) {
                                         <div className="pos-card-actions">
                                           <button
                                             type="button"
+                                            className="btn-card-bill"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handlePrintTableBill(runningOrder);
+                                              handleOpenBillSettlement(runningOrder);
+                                            }}
+                                            title="View / Reprint Bill Receipt"
+                                          >
+                                            🧾 Bill
+                                          </button>
+                                          <button
+                                            type="button"
                                             className="btn-card-vacate"
                                             onClick={(e) => {
                                               e.stopPropagation();
@@ -6309,11 +6497,12 @@ export default function DashboardPage({ onShowToast }) {
                   Boolean(order.address) ||
                   String(order.table || '').toLowerCase().includes('delivery');
 
+                const isTakeaway = order.type === 'Takeaway' || order.type === 'Pickup' || order.orderType === 'takeaway' || order.orderType === 'pickup';
                 const activeWorkflowSteps = [
-                  statusStepLabels?.step1 || (isDeliveryOrder ? 'Placed' : 'Placed'),
-                  statusStepLabels?.step2 || (isDeliveryOrder ? 'Kitchen' : 'Kitchen'),
-                  statusStepLabels?.step3 || (isDeliveryOrder ? 'Out for Delivery' : 'Ready'),
-                  statusStepLabels?.step4 || (isDeliveryOrder ? 'Delivered' : 'Served'),
+                  statusStepLabels?.step1 || 'Placed',
+                  statusStepLabels?.step2 || 'Kitchen',
+                  statusStepLabels?.step3 || (isTakeaway ? 'Bill / Ready' : (isDeliveryOrder ? 'Out for Delivery' : 'Ready')),
+                  statusStepLabels?.step4 || (isTakeaway ? 'Handover' : (isDeliveryOrder ? 'Delivered' : 'Served')),
                 ];
 
                 const stepIndex =
@@ -9360,9 +9549,39 @@ export default function DashboardPage({ onShowToast }) {
         )}
 
         {/* ==========================================================================
-            VIEW: MERCHANT ADMIN (STORE OWNER MASTER CONTROLS & CREDENTIALS SUITE)
+            VIEW: MERCHANT ADMIN (STORE OWNER CONTROLS - SEPARATE TAB)
             ========================================================================== */}
         {activeTab === 'merchant_admin' && (
+          <div className="crm-merchant-admin-page animate-fade-in" key={activeTab} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 24px', textAlign: 'center', background: '#FFFFFF', borderRadius: '20px', border: '1.5px solid #E2E8F0', margin: '20px auto', maxWidth: '640px', boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
+            <div style={{ width: '64px', height: '64px', borderRadius: '18px', background: 'linear-gradient(135deg, #FF5E14 0%, #EA580C 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px', boxShadow: '0 6px 18px rgba(255, 94, 20, 0.35)' }}>
+              <Crown size={32} color="#FFFFFF" />
+            </div>
+            <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0F172A', margin: '0 0 8px' }}>
+              Merchant Admin Runs in a Dedicated Tab
+            </h2>
+            <p style={{ fontSize: '14px', color: '#64748B', maxWidth: '480px', lineHeight: 1.5, margin: '0 0 24px' }}>
+              To keep your POS dining tables and orders clutter-free, Store Owner Administration (Sales Telemetry, Passwords &amp; Dues) opens in its own separate browser tab.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
+              <button
+                type="button"
+                onClick={() => window.open('/merchant-admin', '_blank')}
+                style={{ background: 'linear-gradient(135deg, #FF5E14 0%, #EA580C 100%)', color: '#FFFFFF', border: 'none', padding: '12px 24px', borderRadius: '10px', fontSize: '14px', fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', boxShadow: '0 4px 14px rgba(255, 94, 20, 0.3)' }}
+              >
+                <span>Launch Merchant Admin Tab ↗</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('home_orders')}
+                style={{ background: '#F1F5F9', border: '1.5px solid #CBD5E1', color: '#0F172A', padding: '12px 20px', borderRadius: '10px', fontSize: '14px', fontWeight: 800, cursor: 'pointer' }}
+              >
+                Back to POS Orders &amp; Tables
+              </button>
+            </div>
+          </div>
+        )}
+
+        {false && activeTab === 'merchant_admin' && (
           <div className="crm-merchant-admin-page animate-fade-in" key={activeTab} style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
             
             {/* 1. HERO HEADER CARD */}
@@ -13742,100 +13961,292 @@ export default function DashboardPage({ onShowToast }) {
             </div>
 
             <div className="crm-modal-body" style={{ padding: '16px', background: '#F1F5F9', maxHeight: '75vh', overflowY: 'auto' }}>
-              {/* Paper Thermal Slip Container */}
-              <div
-                style={{
-                  background: '#FFFFFF',
-                  padding: '20px 18px',
-                  borderRadius: '10px',
-                  boxShadow: '0 4px 14px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05)',
-                  fontFamily: "'Courier New', Courier, monospace",
-                  color: '#000000',
-                  lineHeight: '1.3',
-                  fontSize: '13px',
-                  fontWeight: 700,
-                  border: '1px solid #E2E8F0',
-                  margin: '0 auto',
-                  maxWidth: '340px'
-                }}
-              >
-                {/* Header: Store Name on top */}
-                <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-                  <div style={{ fontSize: '20px', fontWeight: 900, letterSpacing: '-0.3px', color: '#0F172A' }}>
-                    {storeControls.restName || currentUser?.businessName || 'FoodyPay'}
-                  </div>
-                  <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.8px', color: '#334155', marginTop: '2px' }}>
-                    KITCHEN ORDER TICKET
-                  </div>
-                </div>
-
-                <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
-
-                {/* Table & Meta Info Split Grid */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', margin: '4px 0' }}>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>
-                      ORDER TYPE
-                    </div>
-                    <div style={{ fontSize: '14.5px', fontWeight: 900, color: '#000000', marginBottom: '2px' }}>
-                      {(viewingOrderDetails.type || 'Dine-In').toUpperCase()}
-                    </div>
-                    <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#000000' }}>
-                      {viewingOrderDetails.table || 'Table 1'}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>
-                      DATE &amp; TIME
-                    </div>
-                    <div style={{ fontSize: '14px', fontWeight: 900, color: '#000000', marginBottom: '2px' }}>
-                      {viewingOrderDetails.createdAt ? new Date(viewingOrderDetails.createdAt).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')}
-                    </div>
-                    <div style={{ fontSize: '13px', fontWeight: 800, color: '#000000' }}>
-                      {viewingOrderDetails.createdAt ? new Date(viewingOrderDetails.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
-
-                {/* Columns Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 900, letterSpacing: '0.5px', padding: '2px 0' }}>
-                  <span>ITEM</span>
-                  <span>QTY</span>
-                </div>
-
-                <div style={{ borderTop: '1px solid #CBD5E1', margin: '6px 0' }} />
-
-                {/* Items List */}
-                <div style={{ margin: '6px 0' }}>
-                  {(viewingOrderDetails.items || []).map((it, idx) => (
-                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', margin: '6px 0', fontSize: '14px', fontWeight: 900 }}>
-                      <div style={{ flex: 1, paddingRight: '8px', wordBreak: 'break-word' }}>
-                        {String(it.name || 'Item').toUpperCase()}
-                      </div>
-                      <div style={{ flex: '0 0 45px', textAlign: 'right', fontWeight: 900, whiteSpace: 'nowrap' }}>
-                        &times; {it.qty || 1}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
-
-                {/* Totals Calculation */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13.5px', fontWeight: 900, padding: '2px 0' }}>
-                  <span>TOTAL ITEMS</span>
-                  <span>{(viewingOrderDetails.items || []).reduce((s, i) => s + Number(i.qty || 1), 0)}</span>
-                </div>
-
-                <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
-
-                {/* Footer Branding */}
-                <div style={{ textAlign: 'center', fontSize: '11.5px', fontWeight: 600, color: '#475569', marginTop: '8px' }}>
-                  Powered by FoodyPay
-                </div>
+              {/* Slip Format Switcher Tabs */}
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', background: '#E2E8F0', padding: '3px', borderRadius: '8px', maxWidth: '340px', margin: '0 auto 14px auto' }}>
+                <button
+                  type="button"
+                  onClick={() => setOrderSlipPreviewTab('receipt')}
+                  style={{
+                    flex: 1,
+                    padding: '7px 12px',
+                    fontSize: '12.5px',
+                    fontWeight: 800,
+                    borderRadius: '6px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: orderSlipPreviewTab === 'receipt' ? '#FFFFFF' : 'transparent',
+                    color: orderSlipPreviewTab === 'receipt' ? '#0F172A' : '#64748B',
+                    boxShadow: orderSlipPreviewTab === 'receipt' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <FileText size={15} color={orderSlipPreviewTab === 'receipt' ? '#0284C7' : '#64748B'} />
+                  <span>Bill / Receipt</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrderSlipPreviewTab('kot')}
+                  style={{
+                    flex: 1,
+                    padding: '7px 12px',
+                    fontSize: '12.5px',
+                    fontWeight: 800,
+                    borderRadius: '6px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: orderSlipPreviewTab === 'kot' ? '#FFFFFF' : 'transparent',
+                    color: orderSlipPreviewTab === 'kot' ? '#0F172A' : '#64748B',
+                    boxShadow: orderSlipPreviewTab === 'kot' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <ChefHat size={15} color={orderSlipPreviewTab === 'kot' ? '#EA580C' : '#64748B'} />
+                  <span>Kitchen KOT</span>
+                </button>
               </div>
+
+              {orderSlipPreviewTab === 'receipt' ? (
+                /* Customer Bill / Receipt matching uploaded reference design */
+                <div
+                  style={{
+                    background: '#FFFFFF',
+                    padding: '22px 20px',
+                    borderRadius: '10px',
+                    boxShadow: '0 4px 14px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05)',
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+                    color: '#000000',
+                    lineHeight: '1.35',
+                    fontSize: '13px',
+                    border: '1px solid #E2E8F0',
+                    margin: '0 auto',
+                    maxWidth: '340px'
+                  }}
+                >
+                  {/* Store Name on top & Phone */}
+                  <div style={{ textAlign: 'center', marginBottom: '6px' }}>
+                    <div style={{ fontSize: '19px', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.2px' }}>
+                      {storeControls.restName || currentUser?.businessName || viewingOrderDetails.restaurantName || 'FoodyPay'}
+                    </div>
+                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#334155', marginTop: '2px' }}>
+                      Ph: {storeControls.phone || currentUser?.phone || viewingOrderDetails.storePhone || '+91 7496888449'}
+                    </div>
+                  </div>
+
+                  <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
+
+                  {/* Title */}
+                  <div style={{ textAlign: 'center', fontSize: '14px', fontWeight: 800, letterSpacing: '0.5px', color: '#0F172A', margin: '4px 0 6px 0' }}>
+                    BILL / RECEIPT
+                  </div>
+
+                  {/* Metadata Rows */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '3.5px 0', fontSize: '12.5px' }}>
+                    <span style={{ color: '#64748B', fontWeight: 600 }}>Order Type</span>
+                    <span style={{ color: '#000000', fontWeight: 800 }}>{viewingOrderDetails.type || 'Dine-In'}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '3.5px 0', fontSize: '12.5px' }}>
+                    <span style={{ color: '#64748B', fontWeight: 600 }}>Table</span>
+                    <span style={{ color: '#000000', fontWeight: 800 }}>{String(viewingOrderDetails.table || 'Cafe Table 1').replace(/tabel/gi, 'Table')}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '3.5px 0', fontSize: '12.5px' }}>
+                    <span style={{ color: '#64748B', fontWeight: 600 }}>Date &amp; Time</span>
+                    <span style={{ color: '#0F172A', fontWeight: 600 }}>
+                      {viewingOrderDetails.createdAt ? `${new Date(viewingOrderDetails.createdAt).toLocaleDateString('en-GB')}, ${new Date(viewingOrderDetails.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}` : new Date().toLocaleDateString('en-GB')}
+                    </span>
+                  </div>
+                  {(viewingOrderDetails.customer || viewingOrderDetails.customerName) && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '3.5px 0', fontSize: '12.5px' }}>
+                      <span style={{ color: '#64748B', fontWeight: 600 }}>Customer</span>
+                      <span style={{ color: '#0F172A', fontWeight: 600 }}>{viewingOrderDetails.customer || viewingOrderDetails.customerName}</span>
+                    </div>
+                  )}
+                  {(viewingOrderDetails.phone || viewingOrderDetails.customerPhone) && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '3.5px 0', fontSize: '12.5px' }}>
+                      <span style={{ color: '#64748B', fontWeight: 600 }}>Phone</span>
+                      <span style={{ color: '#0F172A', fontWeight: 600 }}>{viewingOrderDetails.phone || viewingOrderDetails.customerPhone}</span>
+                    </div>
+                  )}
+
+                  <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
+
+                  {/* Column Headers */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', fontWeight: 800, color: '#0F172A', padding: '2px 0' }}>
+                    <span style={{ flex: 1, textAlign: 'left' }}>ITEM</span>
+                    <span style={{ flex: '0 0 50px', textAlign: 'right', paddingRight: '12px' }}>QTY</span>
+                    <span style={{ flex: '0 0 70px', textAlign: 'right' }}>PRICE</span>
+                  </div>
+
+                  <div style={{ borderTop: '1px solid #CBD5E1', margin: '6px 0' }} />
+
+                  {/* Items List */}
+                  <div style={{ margin: '6px 0' }}>
+                    {(viewingOrderDetails.items || []).map((it, idx) => {
+                      const qty = Number(it.qty || it.quantity || 1);
+                      const unitPrice = Number(it.price || 0);
+                      const lineTotal = (unitPrice * qty).toFixed(2);
+                      return (
+                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', margin: '6px 0', fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>
+                          <div style={{ flex: 1, textAlign: 'left', wordBreak: 'break-word', textTransform: 'uppercase', paddingRight: '4px' }}>
+                            {String(it.name || 'Item').toUpperCase()}
+                          </div>
+                          <div style={{ flex: '0 0 50px', textAlign: 'right', paddingRight: '12px', fontWeight: 700 }}>
+                            {qty}
+                          </div>
+                          <div style={{ flex: '0 0 70px', textAlign: 'right', fontWeight: 800 }}>
+                            ₹{lineTotal}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
+
+                  {/* Total Items */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '3.5px 0', fontSize: '12.5px' }}>
+                    <span style={{ color: '#64748B', fontWeight: 600 }}>Total Items</span>
+                    <span style={{ color: '#000000', fontWeight: 800 }}>
+                      {(viewingOrderDetails.items || []).reduce((s, i) => s + Number(i.qty || 1), 0)}
+                    </span>
+                  </div>
+
+                  {/* Grand Total */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '16px', fontWeight: 900, color: '#0F172A', margin: '6px 0 8px 0' }}>
+                    <span>GRAND TOTAL</span>
+                    <span>₹{Number(viewingOrderDetails.total || 0).toFixed(2)}</span>
+                  </div>
+
+                  {/* Status Pill Badge */}
+                  <div
+                    style={{
+                      width: '100%',
+                      padding: '7px 0',
+                      borderRadius: '6px',
+                      textAlign: 'center',
+                      fontSize: '13px',
+                      fontWeight: 800,
+                      letterSpacing: '0.3px',
+                      margin: '8px 0',
+                      background: Boolean(viewingOrderDetails.isPaid || viewingOrderDetails.status === 'completed' || viewingOrderDetails.status === 'paid' || (viewingOrderDetails.paymentMode && viewingOrderDetails.paymentMode.toLowerCase() !== 'unpaid' && viewingOrderDetails.paymentMode.toLowerCase() !== 'khata')) ? '#ECFDF5' : '#FFFBEB',
+                      color: Boolean(viewingOrderDetails.isPaid || viewingOrderDetails.status === 'completed' || viewingOrderDetails.status === 'paid' || (viewingOrderDetails.paymentMode && viewingOrderDetails.paymentMode.toLowerCase() !== 'unpaid' && viewingOrderDetails.paymentMode.toLowerCase() !== 'khata')) ? '#059669' : '#D97706',
+                      border: Boolean(viewingOrderDetails.isPaid || viewingOrderDetails.status === 'completed' || viewingOrderDetails.status === 'paid' || (viewingOrderDetails.paymentMode && viewingOrderDetails.paymentMode.toLowerCase() !== 'unpaid' && viewingOrderDetails.paymentMode.toLowerCase() !== 'khata')) ? '1px solid #A7F3D0' : '1px solid #FDE68A',
+                    }}
+                  >
+                    {Boolean(viewingOrderDetails.isPaid || viewingOrderDetails.status === 'completed' || viewingOrderDetails.status === 'paid' || (viewingOrderDetails.paymentMode && viewingOrderDetails.paymentMode.toLowerCase() !== 'unpaid' && viewingOrderDetails.paymentMode.toLowerCase() !== 'khata')) ? '✓ PAID / SETTLED' : '⏳ UNPAID / PENDING'}
+                  </div>
+
+                  <div style={{ borderTop: '1px solid #CBD5E1', margin: '6px 0' }} />
+
+                  {/* Footer */}
+                  <div style={{ textAlign: 'center', marginTop: '8px' }}>
+                    <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#0F172A' }}>Thank You!</div>
+                    <div style={{ fontSize: '12px', fontWeight: 600, color: '#475569', marginTop: '2px' }}>Visit Again</div>
+                    <div style={{ fontSize: '10.5px', fontWeight: 600, color: '#64748B', marginTop: '6px' }}>Powered by FoodyPay</div>
+                  </div>
+                </div>
+              ) : (
+                /* Kitchen KOT Slip */
+                <div
+                  style={{
+                    background: '#FFFFFF',
+                    padding: '20px 18px',
+                    borderRadius: '10px',
+                    boxShadow: '0 4px 14px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05)',
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+                    color: '#000000',
+                    lineHeight: '1.35',
+                    fontSize: '13px',
+                    border: '1px solid #E2E8F0',
+                    margin: '0 auto',
+                    maxWidth: '340px'
+                  }}
+                >
+                  {/* Header: Store Name on top */}
+                  <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '20px', fontWeight: 900, letterSpacing: '-0.3px', color: '#0F172A' }}>
+                      {storeControls.restName || currentUser?.businessName || 'FoodyPay'}
+                    </div>
+                    <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.8px', color: '#334155', marginTop: '2px' }}>
+                      KITCHEN ORDER TICKET
+                    </div>
+                  </div>
+
+                  <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
+
+                  {/* Table & Meta Info Split Grid */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', margin: '4px 0' }}>
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>
+                        ORDER TYPE
+                      </div>
+                      <div style={{ fontSize: '14.5px', fontWeight: 900, color: '#000000', marginBottom: '2px' }}>
+                        {(viewingOrderDetails.type || 'Dine-In').toUpperCase()}
+                      </div>
+                      <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#000000' }}>
+                        {viewingOrderDetails.table || 'Table 1'}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>
+                        DATE &amp; TIME
+                      </div>
+                      <div style={{ fontSize: '14px', fontWeight: 900, color: '#000000', marginBottom: '2px' }}>
+                        {viewingOrderDetails.createdAt ? new Date(viewingOrderDetails.createdAt).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')}
+                      </div>
+                      <div style={{ fontSize: '13px', fontWeight: 800, color: '#000000' }}>
+                        {viewingOrderDetails.createdAt ? new Date(viewingOrderDetails.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
+
+                  {/* Columns Header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 900, letterSpacing: '0.5px', padding: '2px 0' }}>
+                    <span>ITEM</span>
+                    <span>QTY</span>
+                  </div>
+
+                  <div style={{ borderTop: '1px solid #CBD5E1', margin: '6px 0' }} />
+
+                  {/* Items List */}
+                  <div style={{ margin: '6px 0' }}>
+                    {(viewingOrderDetails.items || []).map((it, idx) => (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', margin: '6px 0', fontSize: '14px', fontWeight: 900 }}>
+                        <div style={{ flex: 1, paddingRight: '8px', wordBreak: 'break-word' }}>
+                          {String(it.name || 'Item').toUpperCase()}
+                        </div>
+                        <div style={{ flex: '0 0 45px', textAlign: 'right', fontWeight: 900, whiteSpace: 'nowrap' }}>
+                          &times; {it.qty || 1}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
+
+                  {/* Totals Calculation */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13.5px', fontWeight: 900, padding: '2px 0' }}>
+                    <span>TOTAL ITEMS</span>
+                    <span>{(viewingOrderDetails.items || []).reduce((s, i) => s + Number(i.qty || 1), 0)}</span>
+                  </div>
+
+                  <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
+
+                  {/* Footer Branding */}
+                  <div style={{ textAlign: 'center', fontSize: '11.5px', fontWeight: 600, color: '#475569', marginTop: '8px' }}>
+                    Powered by FoodyPay
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="crm-modal-footer" style={{ padding: '12px 18px', borderTop: '1px solid #E2E8F0', background: '#FFFFFF', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>

@@ -13,6 +13,7 @@ import CrmPortalPage from './pages/CrmPortalPage';
 import LegalPolicyPage from './pages/LegalPolicyPage';
 import PartnerLoginPage from './pages/PartnerLoginPage';
 import PartnerPortalPage from './pages/PartnerPortalPage';
+import MerchantAdminPage from './pages/MerchantAdminPage';
 import Toast from './components/Toast';
 import LiveOrderTicker from './components/LiveOrderTicker';
 import './App.css';
@@ -110,6 +111,14 @@ const AppContent = ({ showToast }) => {
         <Route
           path="/dashboard"
           element={<DashboardPage />}
+        />
+        <Route
+          path="/merchant-admin"
+          element={<MerchantAdminPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/merchantadmin"
+          element={<MerchantAdminPage onShowToast={showToast} />}
         />
         <Route
           path="/Admin"
