@@ -9,10 +9,8 @@ import {
   EyeOff,
   ArrowRight,
   Sparkles,
-  KeyRound,
   CheckCircle2,
   AlertCircle,
-  Building2,
   Users
 } from 'lucide-react';
 import { playMilestoneCelebration } from '../utils/soundEffects';

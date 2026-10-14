@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import HomePage from './pages/HomePage';
 import DashboardPage from './pages/DashboardPage';
 import CreateWebsitePage from './pages/CreateWebsitePage';
@@ -14,8 +14,10 @@ import LegalPolicyPage from './pages/LegalPolicyPage';
 import PartnerLoginPage from './pages/PartnerLoginPage';
 import PartnerPortalPage from './pages/PartnerPortalPage';
 import MerchantAdminPage from './pages/MerchantAdminPage';
+import SetupPage from './pages/SetupPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import Toast from './components/Toast';
-import LiveOrderTicker from './components/LiveOrderTicker';
+
 import './App.css';
 
 const AppContent = ({ showToast }) => {
@@ -30,7 +32,13 @@ const AppContent = ({ showToast }) => {
       <Routes>
         <Route
           path="/"
-          element={<CustomerMenuPage onShowToast={showToast} />}
+          element={
+            localStorage.getItem('foodypay_pin_auth') === 'true' ? (
+              <DashboardPage onShowToast={showToast} />
+            ) : (
+              <LoginPage onShowToast={showToast} />
+            )
+          }
         />
         <Route
           path="/saas-landing"
@@ -135,6 +143,26 @@ const AppContent = ({ showToast }) => {
         <Route
           path="/admin-debug"
           element={<AdminDebugPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/setup"
+          element={<SetupPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/Setup"
+          element={<SetupPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/forgot-password"
+          element={<ForgotPasswordPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/forgotpassword"
+          element={<ForgotPasswordPage onShowToast={showToast} />}
+        />
+        <Route
+          path="/reset-password"
+          element={<ForgotPasswordPage onShowToast={showToast} />}
         />
 
         <Route

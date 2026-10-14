@@ -22,13 +22,11 @@ import {
   googleAuthApi,
   firebaseAuthApi,
   checkEmailExistsApi,
-  createRazorpayOrderApi,
   verifyRazorpaySignatureApi,
 } from '../utils/api';
 import {
   registerWithFirebaseEmail,
-  loginWithFirebaseGoogle,
-  sendFirebaseEmailVerification
+  loginWithFirebaseGoogle
 } from '../utils/firebase';
 import {
   saveBusinessUserToFirestore,
@@ -186,7 +184,7 @@ export default function SignupPage({ onShowToast }) {
         setLoading(false);
       });
       rzpInstance.open();
-    } catch (rzpErr) {
+    } catch  {
       setError('Error opening Razorpay payment window.');
       setLoading(false);
     }
@@ -215,10 +213,10 @@ export default function SignupPage({ onShowToast }) {
     // Multi-tier Fallback Strategy for Registration:
     try {
       res = await firebaseAuthApi(googlePayload);
-    } catch (err1) {
+    } catch  {
       try {
         res = await googleAuthApi(googlePayload);
-      } catch (err2) {
+      } catch  {
         const formData = new FormData();
         formData.append('name', targetName);
         formData.append('email', targetEmail);
@@ -279,7 +277,7 @@ export default function SignupPage({ onShowToast }) {
           if (checkRes && checkRes.exists) {
             accountExists = true;
           }
-        } catch (checkErr) {
+        } catch  {
           accountExists = false;
         }
 
@@ -298,13 +296,13 @@ export default function SignupPage({ onShowToast }) {
           let loginRes = null;
           try {
             loginRes = await firebaseAuthApi(googlePayload);
-          } catch (err1) {
+          } catch  {
             try {
               loginRes = await googleAuthApi(googlePayload);
-            } catch (err2) {
+            } catch  {
               try {
                 loginRes = await loginApi(gEmail, 'GoogleAuthPass_' + gUser.uid.slice(-8));
-              } catch (err3) {
+              } catch  {
                 // Ignore fallback error
               }
             }
@@ -378,7 +376,7 @@ export default function SignupPage({ onShowToast }) {
       setManualEmailVerified(true);
       setSuccessMsg(` Gmail Verified: ${email.trim()}. Enter your Restaurant Name & WhatsApp details below.`);
       if (onShowToast) onShowToast(' Email verified! Unlock remaining form fields below.');
-    } catch (err) {
+    } catch  {
       setManualEmailVerified(true);
       setSuccessMsg(` Gmail Verified: ${email.trim()}. Enter your Restaurant Name & WhatsApp details below.`);
     } finally {

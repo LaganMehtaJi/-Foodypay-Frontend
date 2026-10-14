@@ -8,20 +8,16 @@ import {
   Volume2,
   VolumeX,
   CheckCircle2,
-  AlertCircle,
   ArrowLeft,
   RefreshCw,
   ChefHat,
-  DollarSign,
   QrCode,
-  Check,
   X,
-  ShoppingBag,
   ExternalLink,
   Navigation
 } from 'lucide-react';
 import { playFoodPreparing, playFoodReady } from '../utils/soundEffects';
-import { fetchOrdersApi, fetchPublicOrdersApi, updateOrderStatusApi } from '../utils/api';
+import { fetchPublicOrdersApi, updateOrderStatusApi } from '../utils/api';
 import { subscribeToOrders } from '../utils/firestoreService';
 
 export default function DeliveryPartnerPage({ onShowToast }) {
@@ -52,7 +48,7 @@ export default function DeliveryPartnerPage({ onShowToast }) {
     // Purge stale local storage orders cache if any exists
     try {
       localStorage.removeItem('foodypay_crm_orders_v3');
-    } catch (e) {}
+    } catch  {}
 
     // Live real-time Firestore sync
     let unsubscribeFs = () => {};
@@ -62,7 +58,7 @@ export default function DeliveryPartnerPage({ onShowToast }) {
         const orderList = Array.isArray(liveOrders) ? liveOrders : [];
         setOrders(orderList);
       });
-    } catch (e) {}
+    } catch  {}
 
     return () => {
       if (typeof unsubscribeFs === 'function') unsubscribeFs();
@@ -109,8 +105,8 @@ export default function DeliveryPartnerPage({ onShowToast }) {
         const bc = new BroadcastChannel('foodypay_live_orders_channel');
         bc.postMessage({ type: 'STATUS_UPDATED', orderId, newStatus });
         bc.close();
-      } catch (e) {}
-    } catch (e) {}
+      } catch  {}
+    } catch  {}
 
     const token = localStorage.getItem('foodypay_token');
     const targetOrder = orders.find(
@@ -121,7 +117,7 @@ export default function DeliveryPartnerPage({ onShowToast }) {
     if (token && dbId && String(dbId).length === 24) {
       try {
         await updateOrderStatusApi(token, dbId, newStatus);
-      } catch (e) {}
+      } catch  {}
     }
 
     if (soundEnabled) {
@@ -131,7 +127,7 @@ export default function DeliveryPartnerPage({ onShowToast }) {
         } else {
           playFoodPreparing();
         }
-      } catch (e) {}
+      } catch  {}
     }
 
     if (onShowToast) {

@@ -6,12 +6,10 @@ import {
   ShoppingBag,
   CreditCard,
   Lock,
-  Unlock,
   KeyRound,
   RefreshCw,
   Save,
   CheckCircle2,
-  AlertCircle,
   QrCode,
   Megaphone,
   Settings,
@@ -29,7 +27,6 @@ import {
   Utensils,
   Package,
   Users,
-  Percent,
   BarChart3
 } from 'lucide-react';
 import {
@@ -40,7 +37,7 @@ import {
   generateUnique6DigitId,
   triggerAdminSyncBroadcast
 } from '../utils/partnerAuth';
-import { fetchOrdersApi, fetchOrderStatsApi } from '../utils/api';
+import { fetchOrdersApi } from '../utils/api';
 import { subscribeToOrders } from '../utils/firestoreService';
 
 export default function PartnerPortalPage({ onShowToast }) {
@@ -100,7 +97,7 @@ export default function PartnerPortalPage({ onShowToast }) {
           setLoadingOrders(false);
         }
       });
-    } catch (e) {}
+    } catch  {}
 
     const loadTelemetry = async () => {
       setLoadingOrders(true);

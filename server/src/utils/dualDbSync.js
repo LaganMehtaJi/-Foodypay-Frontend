@@ -1,12 +1,10 @@
 import mongoose from 'mongoose';
-import { db, isFirestoreReady } from '../config/firebase.js';
+import { isFirestoreReady } from '../config/firebase.js';
 
 // MongoDB Models for resilient background backup & fallback
 import Order from '../models/orderModel.js';
 import Dish from '../models/dishModel.js';
-import Customer from '../models/customerModel.js';
 import Coupon from '../models/couponModel.js';
-import Table from '../models/tableModel.js';
 import Setting from '../models/settingModel.js';
 import User from '../models/userModel.js';
 
@@ -48,7 +46,7 @@ export async function backupOrderToMongo(orderData) {
     Object.keys(updatePayload).forEach(k => updatePayload[k] === undefined && delete updatePayload[k]);
 
     return await Order.findOneAndUpdate(filter, { $set: updatePayload }, { upsert: true, new: true }).catch(() => null);
-  } catch (err) {
+  } catch  {
     // Non-blocking background backup error
     return null;
   }
@@ -85,7 +83,7 @@ export async function backupDishToMongo(dishData) {
     };
 
     return await Dish.findOneAndUpdate(filter, { $set: payload }, { upsert: true, new: true }).catch(() => null);
-  } catch (err) {
+  } catch  {
     return null;
   }
 }
@@ -120,7 +118,7 @@ export async function backupUserToMongo(userData) {
     };
 
     return await User.findOneAndUpdate(filter, { $set: payload }, { upsert: true, new: true }).catch(() => null);
-  } catch (err) {
+  } catch  {
     return null;
   }
 }

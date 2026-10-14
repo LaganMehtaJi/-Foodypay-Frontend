@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { playMilestoneCelebration } from '../utils/soundEffects';
-import { loginApi, googleAuthApi, firebaseAuthApi, checkEmailExistsApi } from '../utils/api';
+
 import { loginWithFirebaseEmail, loginWithFirebaseGoogle, sendFirebasePasswordReset } from '../utils/firebase';
 import { getBusinessUserByEmail } from '../utils/firestoreService';
 
@@ -75,7 +75,7 @@ export default function LoginModal({ isOpen, onClose, onShowToast, onSwitchToSig
       try {
         const fbRes = await loginWithFirebaseEmail(cleanEmail, cleanPassword);
         if (fbRes?.token) token = fbRes.token;
-      } catch (fbErr) {
+      } catch  {
         if (fsBiz.password && fsBiz.password === cleanPassword) {
           // Direct password match
         } else {

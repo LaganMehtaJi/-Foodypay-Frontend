@@ -31,7 +31,7 @@ export function getOrderTimestamp(o) {
       const hex = o._id.substring(0, 8);
       const ts = parseInt(hex, 16) * 1000;
       if (!isNaN(ts) && ts > 0) return ts;
-    } catch (e) {}
+    } catch  {}
   }
   if (typeof o.id === 'number') return o.id;
   return 0;
@@ -131,7 +131,7 @@ function getWavChimeUrl() {
     const blob = new Blob([buffer], { type: 'audio/wav' });
     cachedWavUrl = URL.createObjectURL(blob);
     return cachedWavUrl;
-  } catch (e) {
+  } catch  {
     return null;
   }
 }
@@ -147,7 +147,7 @@ function playFallbackOrderChime() {
         playPromise.catch(() => {});
       }
     }
-  } catch (e) {}
+  } catch  {}
 }
 
 // ----------------------------------------------------------------------------
@@ -185,7 +185,7 @@ export function playOrderPlaced(force = false) {
     gain1.connect(ctx.destination);
     osc1.start(now);
     osc1.stop(now + 0.65);
-  } catch (err) {
+  } catch  {
     playFallbackOrderChime();
   }
 }
@@ -234,7 +234,7 @@ export function playCallWaiter(force = false) {
     gain2.connect(ctx.destination);
     osc2.start(now + 0.15);
     osc2.stop(now + 0.7);
-  } catch (e) {}
+  } catch  {}
 }
 
 // ----------------------------------------------------------------------------
@@ -262,7 +262,7 @@ export function playFoodPreparing() {
     gain.connect(ctx.destination);
     osc.start(now);
     osc.stop(now + 0.4);
-  } catch (e) {}
+  } catch  {}
 }
 
 // ----------------------------------------------------------------------------
@@ -290,7 +290,7 @@ export function playFoodReady() {
     gain.connect(ctx.destination);
     osc.start(now);
     osc.stop(now + 0.8);
-  } catch (e) {}
+  } catch  {}
 }
 
 // ----------------------------------------------------------------------------
@@ -319,7 +319,7 @@ export function playBillCreatedAndTear() {
       osc.start(now + t);
       osc.stop(now + t + 0.02);
     });
-  } catch (e) {}
+  } catch  {}
 }
 
 // ----------------------------------------------------------------------------
@@ -347,7 +347,7 @@ export function startContinuousAlarm() {
     try {
       getAudioContext();
       playCallWaiter();
-    } catch (e) {}
+    } catch  {}
   };
   triggerAlarm();
   alarmTimer = setInterval(triggerAlarm, 3500); // 3.5s calm interval (no rapid noise)
@@ -371,7 +371,7 @@ export function startKitchenAlarm() {
     try {
       getAudioContext();
       playOrderPlaced(true);
-    } catch (e) {}
+    } catch  {}
   };
   triggerKitchen();
   kitchenAlarmTimer = setInterval(triggerKitchen, 3500);
@@ -392,3 +392,41 @@ export function testSoundNotification() {
   playOrderPlaced(true);
   return true;
 }
+
+// ----------------------------------------------------------------------------
+// 11. Table Service & Waiter Call Chime (Pleasant 2-Tone Bell)
+// ----------------------------------------------------------------------------
+export function playWaiterCallSound() {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    // First Bell Tone (880Hz - A5)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(880, now);
+    gain1.gain.setValueAtTime(0.4, now);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.6);
+
+    // Second Bell Tone (1318.5Hz - E6)
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(1318.5, now + 0.18);
+    gain2.gain.setValueAtTime(0.45, now + 0.18);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.85);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.18);
+    osc2.stop(now + 0.85);
+  } catch (e) {
+    console.warn('Waiter chime fallback:', e);
+  }
+}
+

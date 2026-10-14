@@ -3,18 +3,15 @@ import { useParams, Link } from 'react-router-dom';
 import {
   ChefHat,
   Clock,
-  Volume2,
   VolumeX,
   Bell,
   CheckCircle2,
   Flame,
-  Utensils,
   Plus,
   RefreshCw,
   ArrowLeft,
   X,
   AlertCircle,
-  ShoppingBag,
   Check,
   Play,
   RotateCcw,
@@ -22,10 +19,11 @@ import {
   ShieldCheck,
   KeyRound,
   Lock,
+  Unlock,
   Printer
 } from 'lucide-react';
 import { playFoodPreparing, playFoodReady, startKitchenAlarm, stopKitchenAlarm, sortOrdersNewestFirst } from '../utils/soundEffects';
-import { fetchOrdersApi, fetchPublicOrdersApi, updateOrderStatusApi, markKitchenSeenApi } from '../utils/api';
+import { fetchPublicOrdersApi, updateOrderStatusApi, markKitchenSeenApi } from '../utils/api';
 import { subscribeToOrders, getBusinessUserByUniqueId, updateOrderInFirestore } from '../utils/firestoreService';
 import { validateKitchenLogin, getPartnerCredentials } from '../utils/partnerAuth';
 import { printThermalKot } from '../utils/thermalPrinter';
@@ -49,13 +47,25 @@ export default function KitchenDisplayPage({ onShowToast }) {
       try {
         const u = localStorage.getItem('foodypay_user');
         if (u) return JSON.parse(u).foodypayId || JSON.parse(u).uniqueId;
-      } catch (e) {}
+      } catch  {}
       return 'FP-348330';
     })() ||
     'FP-348330';
 
-  // State
-  const [orders, setOrders] = useState([]);
+  // State - Initialized from localStorage for 100% offline local fallback
+  const [orders, setOrders] = useState(() => {
+    try {
+      const raw = localStorage.getItem('foodypay_crm_orders_v3') || localStorage.getItem('snackrack_local_sales');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const validOrders = parsed.filter((o) => o && o.id !== 'ord-live-tbl1' && o.id !== 'ord-live-tbl2');
+          return sortOrdersNewestFirst(validOrders);
+        }
+      }
+    } catch  {}
+    return [];
+  });
   const [kitchenTabFilter, setKitchenTabFilter] = useState('active'); // 'active' | 'completed' | 'all'
   const [currentTime, setCurrentTime] = useState('');
   const [isCounterOrderModalOpen, setIsCounterOrderModalOpen] = useState(false);
@@ -66,10 +76,28 @@ export default function KitchenDisplayPage({ onShowToast }) {
   const [isKitchenAuth, setIsKitchenAuth] = useState(() => {
     try {
       return localStorage.getItem('foodypay_kitchen_logged_in') === 'true';
-    } catch (e) {
+    } catch  {
       return false;
     }
   });
+
+  // Kitchen Display Lock Control (Controlled via Dashboard Settings)
+  // Default: false (UNLOCKED by default as requested by user)
+  const [isKdsLocked, setIsKdsLocked] = useState(() => {
+    try {
+      const direct = localStorage.getItem('foodypay_kds_locked');
+      if (direct !== null) return direct === 'true';
+      const rawCtrl = localStorage.getItem('foodypay_store_controls');
+      if (rawCtrl) {
+        const parsed = JSON.parse(rawCtrl);
+        if (parsed.isKdsLocked !== undefined) return Boolean(parsed.isKdsLocked);
+      }
+    } catch  {
+      return false;
+    }
+    return false;
+  });
+
   const [kInput, setKInput] = useState(() => merchantId || 'FP-348330');
   const [kPass, setKPass] = useState('');
   const [kError, setKError] = useState('');
@@ -103,7 +131,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
       } else {
         setKError('Invalid Kitchen Password. Use password set in Merchant Admin or SnackRack400.');
       }
-    } catch (err) {
+    } catch  {
       setKError('Failed to verify Kitchen Password.');
     }
   };
@@ -113,7 +141,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
     try {
       const saved = localStorage.getItem('foodypay_kds_enabled');
       return saved === null ? true : JSON.parse(saved);
-    } catch (e) {
+    } catch  {
       return true;
     }
   });
@@ -123,10 +151,43 @@ export default function KitchenDisplayPage({ onShowToast }) {
       try {
         const saved = localStorage.getItem('foodypay_kds_enabled');
         if (saved !== null) setIsKdsEnabled(JSON.parse(saved));
-      } catch (e) {}
+        const savedLock = localStorage.getItem('foodypay_kds_locked');
+        if (savedLock !== null) {
+          setIsKdsLocked(savedLock === 'true');
+        } else {
+          const rawCtrl = localStorage.getItem('foodypay_store_controls');
+          if (rawCtrl) {
+            const parsed = JSON.parse(rawCtrl);
+            if (parsed.isKdsLocked !== undefined) setIsKdsLocked(Boolean(parsed.isKdsLocked));
+          }
+        }
+      } catch  {}
     };
     window.addEventListener('storage', checkKds);
-    return () => window.removeEventListener('storage', checkKds);
+    window.addEventListener('foodypay_store_controls_updated', checkKds);
+
+    let bc = null;
+    try {
+      bc = new BroadcastChannel('foodypay_live_orders_channel');
+      bc.onmessage = (msg) => {
+        if (msg && msg.data) {
+          if (msg.data.type === 'KDS_LOCK_TOGGLED') {
+            setIsKdsLocked(Boolean(msg.data.isLocked));
+          }
+          if (msg.data.type === 'STORE_CONTROLS_UPDATED' && msg.data.key === 'isKdsLocked') {
+            setIsKdsLocked(Boolean(msg.data.value));
+          }
+        }
+      };
+    } catch  {}
+
+    return () => {
+      window.removeEventListener('storage', checkKds);
+      window.removeEventListener('foodypay_store_controls_updated', checkKds);
+      if (bc) {
+        try { bc.close(); } catch  {}
+      }
+    };
   }, []);
 
   // Per-item cooking status map: { `${orderId}_${itemIdx}`: 'idle' | 'cooking' | 'done' }
@@ -134,7 +195,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
     try {
       const saved = localStorage.getItem('foodypay_kitchen_items_cooking');
       return saved ? JSON.parse(saved) : {};
-    } catch (e) {
+    } catch  {
       return {};
     }
   });
@@ -145,7 +206,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
       try {
         const raw = localStorage.getItem('foodypay_kds_seen_orders');
         return raw ? new Set(JSON.parse(raw)) : new Set();
-      } catch (e) {
+      } catch  {
         return new Set();
       }
     })();
@@ -177,30 +238,41 @@ export default function KitchenDisplayPage({ onShowToast }) {
     note: 'Serve HOT',
   });
 
-  // Real-time Cloud Firestore is the exclusive live data source (No dummy MongoDB seed fallback)
+  // Local fallback + Real-time Cloud Firestore hybrid loader (Works 100% Offline)
   const loadOrders = () => {
-    // Orders are kept 100% in sync in real time via Firestore subscribeToOrders!
+    try {
+      const raw = localStorage.getItem('foodypay_crm_orders_v3') || localStorage.getItem('snackrack_local_sales');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const validOrders = parsed.filter((o) => o && o.id !== 'ord-live-tbl1' && o.id !== 'ord-live-tbl2');
+          setOrders(sortOrdersNewestFirst(validOrders));
+        }
+      }
+    } catch  {}
   };
 
   useEffect(() => {
-    // Purge stale local storage orders cache if any exists
-    try {
-      localStorage.removeItem('foodypay_crm_orders_v3');
-    } catch (e) {}
-
     // Live real-time Firestore sync for Kitchen KDS
     let unsubscribeFs = () => {};
     try {
       const activeBiz = effectiveMerchantId || merchantId || localStorage.getItem('foodypay_active_business_id') || 'FP-348330';
       unsubscribeFs = subscribeToOrders(activeBiz, (liveOrders) => {
-        const orderList = Array.isArray(liveOrders) ? liveOrders : [];
-        setOrders(sortOrdersNewestFirst(orderList));
+        if (Array.isArray(liveOrders) && liveOrders.length > 0) {
+          setOrders(sortOrdersNewestFirst(liveOrders));
+          try {
+            localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(liveOrders));
+          } catch  {}
+        }
       });
-    } catch (e) {}
+    } catch  {}
 
     const handleStorage = (e) => {
       if (!e || e.key === 'foodypay_crm_orders_v3') {
         loadOrders();
+      }
+      if (e && e.key === 'foodypay_kds_locked') {
+        setIsKdsLocked(e.newValue === 'true');
       }
     };
 
@@ -220,10 +292,14 @@ export default function KitchenDisplayPage({ onShowToast }) {
             handleAdminSync();
             return;
           }
+          if (msg.data.type === 'KDS_LOCK_TOGGLED') {
+            setIsKdsLocked(Boolean(msg.data.isLocked));
+            return;
+          }
           loadOrders();
         }
       };
-    } catch (e) {}
+    } catch  {}
 
     window.addEventListener('storage', handleStorage);
     window.addEventListener('foodypay_order_created', loadOrders);
@@ -260,13 +336,13 @@ export default function KitchenDisplayPage({ onShowToast }) {
       const updated = { ...prev, [key]: next };
       try {
         localStorage.setItem('foodypay_kitchen_items_cooking', JSON.stringify(updated));
-      } catch (e) {}
+      } catch  {}
       return updated;
     });
 
     try {
       playFoodPreparing();
-    } catch (e) {}
+    } catch  {}
   };
 
   // Order Status Updates with Debouncing & Non-Interactability state during API calls
@@ -287,7 +363,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
       const dashSet = rawDash ? new Set(JSON.parse(rawDash)) : new Set();
       dashSet.add(oIdStr);
       localStorage.setItem('foodypay_seen_order_ids', JSON.stringify(Array.from(dashSet)));
-    } catch (e) {}
+    } catch  {}
 
     setActionLoadingSet((prev) => new Set(prev).add(oIdStr));
 
@@ -318,22 +394,22 @@ export default function KitchenDisplayPage({ onShowToast }) {
         const bc = new BroadcastChannel('foodypay_live_orders_channel');
         bc.postMessage({ type: 'ORDER_UPDATED', orderId, newStatus, orders: updated });
         bc.close();
-      } catch (e) {}
+      } catch  {}
 
       if (newStatus === 'preparing') {
         try {
           playFoodPreparing();
-        } catch (e) {}
+        } catch  {}
         if (onShowToast) onShowToast(`Chef started cooking Order ${orderId}!`);
       } else if (newStatus === 'served' || newStatus === 'ready') {
         try {
           playFoodReady();
-        } catch (e) {}
+        } catch  {}
         if (onShowToast) onShowToast(`Order ${orderId} sent to Table! Fresh & ready.`);
       } else if (newStatus === 'completed') {
         try {
           playFoodReady();
-        } catch (e) {}
+        } catch  {}
         if (onShowToast) onShowToast(`Order ${orderId} marked Completed & Served!`);
       }
 
@@ -359,7 +435,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
       if (token) {
         try {
           await updateOrderStatusApi(token, targetId, newStatus);
-        } catch (apiErr) {}
+        } catch  {}
       }
     } catch (err) {
       console.error('Error updating status:', err);
@@ -382,7 +458,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
       const seenSet = raw ? new Set(JSON.parse(raw)) : new Set();
       seenSet.add(oIdStr);
       localStorage.setItem('foodypay_kds_seen_orders', JSON.stringify(Array.from(seenSet)));
-    } catch (e) {}
+    } catch  {}
 
     setOrders((prev) =>
       prev.map((o) => {
@@ -398,14 +474,14 @@ export default function KitchenDisplayPage({ onShowToast }) {
       const targetObj = orders.find((o) => (o._id || o.id || o.orderId) === orderId || String(o._id || o.id || o.orderId) === oIdStr);
       const targetId = (targetObj && (targetObj._id || targetObj.id)) || orderId;
       await updateOrderInFirestore(targetId, { kitchenSeen: true });
-    } catch (e) {}
+    } catch  {}
 
     try {
       const token = localStorage.getItem('foodypay_token');
       const targetObj = orders.find((o) => (o._id || o.id || o.orderId) === orderId || String(o._id || o.id || o.orderId) === oIdStr);
       const targetId = (targetObj && targetObj._id) || orderId;
       if (token) await markKitchenSeenApi(token, targetId);
-    } catch (e) {}
+    } catch  {}
   };
 
   // Add Counter POS Order directly to kitchen
@@ -442,7 +518,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
     try {
       localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updated));
       window.dispatchEvent(new Event('foodypay_order_created'));
-    } catch (e) {}
+    } catch  {}
 
     setIsCounterOrderModalOpen(false);
     if (onShowToast) onShowToast(`Created Counter Order ${newId}!`);
@@ -463,7 +539,8 @@ export default function KitchenDisplayPage({ onShowToast }) {
       : (orders || []).filter((o) => o && (o.sentToKitchen || o.status === 'preparing' || o.status === 'served' || o.status === 'ready' || o.status === 'completed'))
   );
 
-  if (!isKitchenAuth) {
+  // Only display login lock screen if Store Owner has enabled KDS Lock in Settings
+  if (isKdsLocked && !isKitchenAuth) {
     const creds = getPartnerCredentials();
     return (
       <div style={{ minHeight: '100vh', backgroundColor: '#F8FAFC', display: 'flex', flexDirection: 'column', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
@@ -850,7 +927,27 @@ export default function KitchenDisplayPage({ onShowToast }) {
           </div>
 
           {/* Right Clock & Add Ticket Action */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {/* Lock / Unlock State Pill (Controlled from Store Dashboard Settings) */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                fontSize: '11.5px',
+                fontWeight: 800,
+                padding: '5px 10px',
+                borderRadius: '8px',
+                backgroundColor: isKdsLocked ? '#FEF2F2' : '#F0FDF4',
+                color: isKdsLocked ? '#DC2626' : '#16A34A',
+                border: isKdsLocked ? '1px solid #FECACA' : '1px solid #BBF7D0',
+              }}
+              title={isKdsLocked ? 'Kitchen Screen is PIN Protected (Controlled in Dashboard Settings)' : 'Kitchen Screen is Unlocked for Direct Access (Controlled in Dashboard Settings)'}
+            >
+              {isKdsLocked ? <Lock size={13} /> : <Unlock size={13} />}
+              <span>{isKdsLocked ? 'PIN Protected' : 'Screen Unlocked'}</span>
+            </div>
+
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#0F172A', fontSize: '13.5px', fontWeight: 800, backgroundColor: '#F8FAFC', padding: '6px 12px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
               <Clock size={16} color="#FF5E14" />
               <span>{currentTime}</span>
@@ -906,7 +1003,7 @@ export default function KitchenDisplayPage({ onShowToast }) {
                 try {
                   const raw = localStorage.getItem('foodypay_kds_seen_orders');
                   return raw ? new Set(JSON.parse(raw)) : new Set();
-                } catch (e) {
+                } catch  {
                   return new Set();
                 }
               })();

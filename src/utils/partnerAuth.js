@@ -76,7 +76,7 @@ export const saveStoreRestrictions = (newRestrictions) => {
       try {
         const raw = localStorage.getItem('foodypay_store_controls');
         return raw ? JSON.parse(raw) : {};
-      } catch (e) { return {}; }
+      } catch  { return {}; }
     })();
 
     const updatedControls = {
@@ -110,12 +110,12 @@ export const triggerAdminSyncBroadcast = () => {
     const bc = new BroadcastChannel('foodypay_live_orders_channel');
     bc.postMessage({ type: 'ADMIN_SETTINGS_UPDATED', timestamp: Date.now() });
     bc.close();
-  } catch (e) {}
+  } catch  {}
   try {
     window.dispatchEvent(new CustomEvent('foodypay_admin_settings_updated', { detail: { timestamp: Date.now() } }));
     window.dispatchEvent(new Event('foodypay_store_controls_updated'));
     window.dispatchEvent(new Event('storage'));
-  } catch (e) {}
+  } catch  {}
 };
 
 export const generateUnique6DigitId = () => {

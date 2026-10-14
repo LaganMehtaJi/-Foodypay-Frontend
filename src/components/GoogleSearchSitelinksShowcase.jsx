@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Search, ChevronRight, Globe, ShieldCheck, ExternalLink } from 'lucide-react';
+import { Search, ChevronRight, ShieldCheck } from 'lucide-react';
 
 export default function GoogleSearchSitelinksShowcase() {
   return (

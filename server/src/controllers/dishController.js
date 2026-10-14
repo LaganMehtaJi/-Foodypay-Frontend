@@ -118,7 +118,7 @@ export const createDish = async (req, res, next) => {
     try {
       if (sizes) parsedSizes = typeof sizes === 'string' ? JSON.parse(sizes) : sizes;
       if (customizations) parsedCustomizations = typeof customizations === 'string' ? JSON.parse(customizations) : customizations;
-    } catch (e) {}
+    } catch  {}
 
     const bId = (req.user?.foodypayId || req.user?._id || '').toString().trim().toUpperCase();
     const dishId = `prod_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -205,12 +205,12 @@ export const updateDish = async (req, res, next) => {
     if (req.body.sizes) {
       try {
         dish.sizes = typeof req.body.sizes === 'string' ? JSON.parse(req.body.sizes) : req.body.sizes;
-      } catch (e) {}
+      } catch  {}
     }
     if (req.body.customizations) {
       try {
         dish.customizations = typeof req.body.customizations === 'string' ? JSON.parse(req.body.customizations) : req.body.customizations;
-      } catch (e) {}
+      } catch  {}
     }
 
     await dish.save();
@@ -228,7 +228,7 @@ export const updateDish = async (req, res, next) => {
           inStock: dish.inStock,
           updatedAt: new Date().toISOString(),
         }, { merge: true });
-      } catch (e) {}
+      } catch  {}
     }
 
     res.json({
@@ -263,7 +263,7 @@ export const toggleDishStock = async (req, res, next) => {
           inStock: dish.inStock,
           updatedAt: new Date().toISOString(),
         });
-      } catch (e) {}
+      } catch  {}
     }
 
     res.json({
@@ -301,7 +301,7 @@ export const deleteDish = async (req, res, next) => {
     if (isFirestoreReady()) {
       try {
         await db.collection('dishes').doc(req.params.id.toString()).delete();
-      } catch (e) {}
+      } catch  {}
     }
 
     res.json({

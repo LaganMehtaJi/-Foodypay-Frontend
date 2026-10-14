@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Store, ShieldCheck, ArrowRight, Truck, Laptop, Utensils, CheckCircle, Sparkles } from 'lucide-react';
+import { ShieldCheck, Truck, Utensils, Sparkles } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import PricingCalculator from '../components/PricingCalculator';

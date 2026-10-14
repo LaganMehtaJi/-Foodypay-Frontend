@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import confetti from 'canvas-confetti';
-import { playMilestoneCelebration } from '../utils/soundEffects';
+
+
 
 const STORAGE_KEY = 'foodypay_live_orders_count';
 const DEFAULT_START_COUNT = 1428500;
@@ -13,7 +13,7 @@ export default function HighVelocityBanner({ onOpenSignup }) {
         const parsed = parseInt(saved, 10);
         if (!isNaN(parsed) && parsed > 0) return parsed;
       }
-    } catch (e) {}
+    } catch  {}
     return DEFAULT_START_COUNT;
   });
 
@@ -40,7 +40,7 @@ export default function HighVelocityBanner({ onOpenSignup }) {
         const next = prev + delta;
         try {
           localStorage.setItem(STORAGE_KEY, next.toString());
-        } catch (e) {}
+        } catch  {}
 
         const prevMilestone = Math.floor(prev / 5000);
         const nextMilestone = Math.floor(next / 5000);
@@ -67,7 +67,7 @@ export default function HighVelocityBanner({ onOpenSignup }) {
     setOrderCount(newTotal);
     try {
       localStorage.setItem(STORAGE_KEY, newTotal.toString());
-    } catch (e) {}
+    } catch  {}
     triggerCelebration(newTotal, newTotal);
   };
 

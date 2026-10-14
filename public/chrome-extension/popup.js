@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
       }
-    } catch (e) {}
+    } catch  {}
 
     openDashboardBtn.addEventListener('click', () => {
       chrome.tabs.create({ url: dashboardUrl });

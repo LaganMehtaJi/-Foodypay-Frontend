@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   Crown,
   Store,
@@ -15,20 +15,20 @@ import {
   Calendar,
   Users,
   CheckCircle2,
-  Utensils,
   Plus,
   ArrowRight,
-  ExternalLink,
   LogOut,
-  RefreshCw,
   Edit3,
-  Trash2,
   ShieldCheck,
-  Building2,
   ChefHat,
-  Monitor
+  Monitor,
+  CloudDownload,
+  CloudUpload,
+  HardDrive
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import TaxConfigurationSection from '../components/TaxConfigurationSection';
+import MultiPrinterModal from '../components/MultiPrinterModal';
 import {
   subscribeToOrders,
   subscribeToTables,
@@ -40,7 +40,9 @@ import {
   deleteTableFromFirestore,
   saveProductToFirestore,
   deleteProductFromFirestore,
-  isAccountBlockedOrDeleted
+  fetchProductsFromFirestore,
+  pushLocalCatalogToFirestore,
+  getCatalogSyncMetadata
 } from '../utils/firestoreService';
 
 export default function MerchantAdminPage({ onShowToast }) {
@@ -50,7 +52,7 @@ export default function MerchantAdminPage({ onShowToast }) {
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('foodypay_user') || '{}');
-    } catch (e) {
+    } catch  {
       return {};
     }
   });
@@ -60,14 +62,23 @@ export default function MerchantAdminPage({ onShowToast }) {
 
   // Verify auth - if not logged in, redirect to login
   useEffect(() => {
-    if (!token && !localStorage.getItem('foodypay_admin_authed')) {
-      navigate('/login?role=merchant_admin');
+    if (!token && !localStorage.getItem('foodypay_admin_authed') && !localStorage.getItem('foodypay_pin_auth')) {
+      navigate('/login');
     }
   }, [token, navigate]);
 
   // Real-time Firestore Datasets
   const [orders, setOrders] = useState([]);
-  const [tables, setTables] = useState([]);
+  const [tables, setTables] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_crm_tables_v3') || localStorage.getItem('foodypay_crm_tables_v1') || localStorage.getItem('snackrack_local_tables');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch  {}
+    return [];
+  });
   const [dishes, setDishes] = useState([]);
   const [bizProfile, setBizProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -84,6 +95,7 @@ export default function MerchantAdminPage({ onShowToast }) {
   const [showKitchenPass, setShowKitchenPass] = useState(false);
   const [credSaving, setCredSaving] = useState(false);
   const [copiedField, setCopiedField] = useState(null);
+  const [showPrinterModal, setShowPrinterModal] = useState(false);
 
   // Table Add Modal
   const [showAddTableModal, setShowAddTableModal] = useState(false);
@@ -97,6 +109,17 @@ export default function MerchantAdminPage({ onShowToast }) {
   const [newDishPrice, setNewDishPrice] = useState('');
   const [newDishCategory, setNewDishCategory] = useState('Main Course');
   const [newDishVeg, setNewDishVeg] = useState(true);
+
+  // Catalog Cloud Sync & Local Storage State
+  const [catalogSyncMeta, setCatalogSyncMeta] = useState(() => getCatalogSyncMetadata());
+  const [syncingCloud, setSyncingCloud] = useState(false);
+  const [pushingCloud, setPushingCloud] = useState(false);
+
+  useEffect(() => {
+    const handleSyncMeta = () => setCatalogSyncMeta(getCatalogSyncMetadata());
+    window.addEventListener('foodypay_catalog_synced', handleSyncMeta);
+    return () => window.removeEventListener('foodypay_catalog_synced', handleSyncMeta);
+  }, []);
 
   // Subscribe to real-time Orders
   useEffect(() => {
@@ -150,21 +173,7 @@ export default function MerchantAdminPage({ onShowToast }) {
     loadBiz();
   }, [activeBusinessId]);
 
-  // Periodic Account Liveness Check (Terminated account check)
-  useEffect(() => {
-    const checkAccount = async () => {
-      const isBlocked = await isAccountBlockedOrDeleted(currentUser?.email, activeBusinessId);
-      if (isBlocked) {
-        localStorage.clear();
-        sessionStorage.clear();
-        alert('Your FoodyPay merchant account has been terminated or deleted by Master Admin.');
-        window.location.href = '/login';
-      }
-    };
-    checkAccount();
-    const interval = setInterval(checkAccount, 12000);
-    return () => clearInterval(interval);
-  }, [currentUser?.email, activeBusinessId]);
+  // Periodic Account Liveness Check disabled for offline mode
 
   // ==========================================================================
   // SALES TELEMETRY COMPUTATION
@@ -368,6 +377,63 @@ export default function MerchantAdminPage({ onShowToast }) {
       if (onShowToast) onShowToast(`✓ Product "${productObj.name}" added to menu catalog!`);
     } catch (err) {
       alert('Failed to add product: ' + err.message);
+    }
+  };
+
+  // Manual Fetch Products from Firebase Cloud
+  const handleFetchFromFirebase = async () => {
+    setSyncingCloud(true);
+    try {
+      const res = await fetchProductsFromFirestore(activeBusinessId);
+      if (res.success) {
+        setCatalogSyncMeta(getCatalogSyncMetadata());
+        if (onShowToast) {
+          onShowToast(`✓ Fetched ${res.count} products from Firebase and saved locally!`);
+        } else {
+          alert(`✓ Fetched ${res.count} products from Firebase and saved locally!`);
+        }
+        confetti({ particleCount: 50, spread: 60 });
+      } else {
+        alert('Failed to fetch from Firebase: ' + (res.error || 'Unknown error'));
+      }
+    } catch (e) {
+      alert('Error fetching from Firebase: ' + e.message);
+    } finally {
+      setSyncingCloud(false);
+    }
+  };
+
+  // Push Local Catalog to Firebase Cloud
+  const handlePushToFirebase = async () => {
+    setPushingCloud(true);
+    try {
+      const res = await pushLocalCatalogToFirestore(activeBusinessId);
+      if (res.success) {
+        setCatalogSyncMeta(getCatalogSyncMetadata());
+        if (onShowToast) {
+          onShowToast(`✓ Uploaded ${res.count} local products up to Firebase cloud!`);
+        } else {
+          alert(`✓ Uploaded ${res.count} local products up to Firebase cloud!`);
+        }
+      } else {
+        alert('Failed to push to Firebase: ' + (res.error || 'Unknown error'));
+      }
+    } catch (e) {
+      alert('Error pushing to Firebase: ' + e.message);
+    } finally {
+      setPushingCloud(false);
+    }
+  };
+
+  // Toggle inStock for a dish (updates local instantly and saves to cloud)
+  const handleToggleDishStock = async (dish) => {
+    const updatedStatus = dish.inStock === false ? true : false;
+    await saveProductToFirestore(activeBusinessId, {
+      ...dish,
+      inStock: updatedStatus
+    });
+    if (onShowToast) {
+      onShowToast(`"${dish.name}" marked ${updatedStatus ? 'In Stock' : 'Out of Stock'}`);
     }
   };
 
@@ -580,6 +646,8 @@ export default function MerchantAdminPage({ onShowToast }) {
               { id: 'accounts', label: '💳 Accounts & Unpaid Dues', badge: `${unpaidOrdersAllTime.length} Dues` },
               { id: 'tables', label: '🪑 Dining Tables', badge: `${tables.length} Tables` },
               { id: 'catalog', label: '📦 Catalog & Master Controls', badge: `${dishes.length} Items` },
+              { id: 'taxes', label: '🏷️ Taxes & GST (Pre/Post)', badge: 'Config' },
+              { id: 'printers', label: '🖨️ Multi-Printer Setup', badge: 'Hardware' },
             ].map((st) => (
               <button
                 key={st.id}
@@ -1122,42 +1190,129 @@ export default function MerchantAdminPage({ onShowToast }) {
             <div style={{
               background: '#FFFFFF',
               borderRadius: '16px',
-              padding: '18px 22px',
+              padding: '20px 24px',
               border: '1.5px solid #E2E8F0',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
               flexWrap: 'wrap',
-              gap: '12px'
+              gap: '16px'
             }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900, color: '#0F172A' }}>
-                  Catalog &amp; Master Menu Items ({dishes.length} Items)
-                </h3>
-                <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748B' }}>
-                  Full product catalog overview. Add dishes or toggle in-stock availability.
-                </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, color: '#0F172A' }}>
+                    Menu Catalog &amp; Master Products
+                  </h3>
+                  <span style={{
+                    background: '#EFF6FF',
+                    color: '#1D4ED8',
+                    padding: '3px 10px',
+                    borderRadius: '20px',
+                    fontSize: '11.5px',
+                    fontWeight: 800,
+                    border: '1px solid #BFDBFE'
+                  }}>
+                    {dishes.length} Items Total
+                  </span>
+                  <span style={{
+                    background: '#DCFCE7',
+                    color: '#15803D',
+                    padding: '3px 10px',
+                    borderRadius: '20px',
+                    fontSize: '11.5px',
+                    fontWeight: 800,
+                    border: '1px solid #86EFAC',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}>
+                    <HardDrive size={12} /> Local-First Active
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', fontSize: '12.5px', color: '#64748B' }}>
+                  <span>
+                    ☁️ Cloud Sync Status: <strong>{catalogSyncMeta?.lastSyncedAt ? new Date(catalogSyncMeta.lastSyncedAt).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }) : 'Saved in Local Storage (Not synced yet)'}</strong>
+                  </span>
+                  <span>•</span>
+                  <span>Dishes load instantly without fetching from Firebase every time</span>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowAddDishModal(true)}
-                style={{
-                  background: 'linear-gradient(135deg, #1D4ED8 0%, #1E40AF 100%)',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  padding: '10px 18px',
-                  borderRadius: '10px',
-                  fontSize: '13px',
-                  fontWeight: 900,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  boxShadow: '0 4px 12px rgba(29, 78, 216, 0.25)'
-                }}
-              >
-                <Plus size={16} /> Add Product to Catalog
-              </button>
+
+              {/* Action Buttons: Fetch, Push, Add */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                {/* Manual Fetch from Firebase Button */}
+                <button
+                  type="button"
+                  onClick={handleFetchFromFirebase}
+                  disabled={syncingCloud}
+                  style={{
+                    background: '#F0FDF4',
+                    border: '1.5px solid #86EFAC',
+                    color: '#15803D',
+                    padding: '9px 14px',
+                    borderRadius: '10px',
+                    fontSize: '12.5px',
+                    fontWeight: 800,
+                    cursor: syncingCloud ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    opacity: syncingCloud ? 0.7 : 1,
+                    transition: 'all 0.15s'
+                  }}
+                  title="Fetch latest product catalog from Firebase Firestore and save to local storage"
+                >
+                  <CloudDownload size={16} />
+                  <span>{syncingCloud ? 'Fetching...' : 'Fetch from Firebase'}</span>
+                </button>
+
+                {/* Push Local Catalog to Firebase */}
+                <button
+                  type="button"
+                  onClick={handlePushToFirebase}
+                  disabled={pushingCloud}
+                  style={{
+                    background: '#F8FAFC',
+                    border: '1.5px solid #CBD5E1',
+                    color: '#334155',
+                    padding: '9px 14px',
+                    borderRadius: '10px',
+                    fontSize: '12.5px',
+                    fontWeight: 800,
+                    cursor: pushingCloud ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    opacity: pushingCloud ? 0.7 : 1
+                  }}
+                  title="Upload all local catalog products up to Firebase cloud"
+                >
+                  <CloudUpload size={16} />
+                  <span>{pushingCloud ? 'Pushing...' : 'Push to Cloud'}</span>
+                </button>
+
+                {/* Add Product Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowAddDishModal(true)}
+                  style={{
+                    background: 'linear-gradient(135deg, #1D4ED8 0%, #1E40AF 100%)',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    padding: '10px 18px',
+                    borderRadius: '10px',
+                    fontSize: '13px',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 4px 12px rgba(29, 78, 216, 0.25)'
+                  }}
+                >
+                  <Plus size={16} /> Add Product
+                </button>
+              </div>
             </div>
 
             {/* Quick Products Table */}
@@ -1169,7 +1324,7 @@ export default function MerchantAdminPage({ onShowToast }) {
                     <th style={{ padding: '12px 14px' }}>Category</th>
                     <th style={{ padding: '12px 14px' }}>Price</th>
                     <th style={{ padding: '12px 14px' }}>Food Type</th>
-                    <th style={{ padding: '12px 14px' }}>Stock Status</th>
+                    <th style={{ padding: '12px 14px' }}>Stock Status (Click to Toggle)</th>
                     <th style={{ padding: '12px 14px', textAlign: 'right' }}>Actions</th>
                   </tr>
                 </thead>
@@ -1192,16 +1347,26 @@ export default function MerchantAdminPage({ onShowToast }) {
                         </span>
                       </td>
                       <td style={{ padding: '12px 14px' }}>
-                        <span style={{
-                          background: d.inStock !== false ? '#DCFCE7' : '#F1F5F9',
-                          color: d.inStock !== false ? '#15803D' : '#64748B',
-                          padding: '3px 8px',
-                          borderRadius: '6px',
-                          fontSize: '11px',
-                          fontWeight: 800
-                        }}>
-                          {d.inStock !== false ? 'In Stock' : 'Out of Stock'}
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleDishStock(d)}
+                          style={{
+                            background: d.inStock !== false ? '#DCFCE7' : '#F1F5F9',
+                            color: d.inStock !== false ? '#15803D' : '#64748B',
+                            border: d.inStock !== false ? '1px solid #86EFAC' : '1px solid #CBD5E1',
+                            padding: '4px 10px',
+                            borderRadius: '8px',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                          title="Click to toggle In Stock / Out of Stock (updates locally + Firebase)"
+                        >
+                          <span>{d.inStock !== false ? '● In Stock' : '○ Out of Stock'}</span>
+                        </button>
                       </td>
                       <td style={{ padding: '12px 14px', textAlign: 'right' }}>
                         <button
@@ -1220,7 +1385,86 @@ export default function MerchantAdminPage({ onShowToast }) {
           </div>
         )}
 
+        {/* =========================================================================
+            SUB-TAB 6: TAXES & GST CONFIGURATION (PRE-TAX & POST-TAX)
+            ========================================================================= */}
+        {subTab === 'taxes' && (
+          <div style={{ background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid #E2E8F0', padding: '24px', boxShadow: '0 4px 16px rgba(0,0,0,0.03)' }}>
+            <TaxConfigurationSection
+              onSaved={() => {
+                if (typeof onShowToast === 'function') {
+                  onShowToast('Tax settings saved and updated across catalog & orders!');
+                } else {
+                  alert('Tax settings saved and updated across catalog & orders!');
+                }
+              }}
+            />
+          </div>
+        )}
+
+        {/* =========================================================================
+            SUB-TAB 7: MULTI-PRINTER MANAGEMENT (BILL, KOT, KITCHEN, BAR)
+            ========================================================================= */}
+        {subTab === 'printers' && (
+          <div style={{ background: '#FFFFFF', borderRadius: '16px', border: '1.5px solid #E2E8F0', padding: '28px', boxShadow: '0 4px 16px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 900, color: '#0F172A' }}>🖨️ Thermal Printers & Hardware Routing</h2>
+                <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#64748B' }}>
+                  Manage Kitchen KOT, Billing Counter, Bar Counter, and Backup printers. Supports USB, LAN/Ethernet Port 9100, and Browser spoolers.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPrinterModal(true)}
+                style={{
+                  background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  padding: '10px 20px',
+                  borderRadius: '10px',
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 12px rgba(2, 132, 199, 0.25)'
+                }}
+              >
+                <span>Launch Hardware Printer Manager</span>
+                <ArrowRight size={15} />
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
+              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '16px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 800, color: '#0284C7', textTransform: 'uppercase' }}>Kitchen KOT Routing</div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A', marginTop: '6px' }}>Auto-print Chef tickets</div>
+                <p style={{ fontSize: '12px', color: '#64748B', margin: '4px 0 0' }}>Sends food items directly to the kitchen line as soon as order is fired.</p>
+              </div>
+              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '16px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 800, color: '#16A34A', textTransform: 'uppercase' }}>Billing Counter</div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A', marginTop: '6px' }}>Customer GST Receipts</div>
+                <p style={{ fontSize: '12px', color: '#64748B', margin: '4px 0 0' }}>Prints full 80mm/58mm tax invoice with GST breakdown & QR code.</p>
+              </div>
+              <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '16px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 800, color: '#8B5CF6', textTransform: 'uppercase' }}>Bar & Beverage Dispense</div>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A', marginTop: '6px' }}>Drink BOT Slips</div>
+                <p style={{ fontSize: '12px', color: '#64748B', margin: '4px 0 0' }}>Directs beverages, mocktails, and bar snacks to beverage staff.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
       </main>
+
+      {/* MULTI-PRINTER MODAL */}
+      <MultiPrinterModal
+        isOpen={showPrinterModal}
+        onClose={() => setShowPrinterModal(false)}
+        onShowToast={onShowToast}
+      />
 
       {/* =========================================================================
           ADD TABLE MODAL

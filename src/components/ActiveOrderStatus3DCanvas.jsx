@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { CheckCircle2, Star, X, Clock, ChefHat, Flame, Bike, PackageCheck, Sparkles } from 'lucide-react';
+import { Star, X, Clock, ChefHat, Bike, Sparkles, Utensils } from 'lucide-react';
 
 /**
  * 4-Stage User Flow:
@@ -9,6 +9,8 @@ import { CheckCircle2, Star, X, Clock, ChefHat, Flame, Bike, PackageCheck, Spark
  * 3: Served (served, ready, delivered)
  * 4: Bill Paid (completed, paid, settled, done)
  */
+import { getOrderTimers } from '../utils/tableTimerEngine.js';
+
 function getStageDetails(status, seen, isDelivery, sentToKitchen) {
   const rawStatus = (status || 'new').toLowerCase().trim();
   const normalizedStatus = rawStatus.replace(/[^a-z0-9_]/g, '');
@@ -80,29 +82,15 @@ export default function ActiveOrderStatus3DCard({ order, onRatingClick, onDismis
   const stageInfo = getStageDetails(order?.status, order?.seen, isDelivery);
   const [estimatedMins, setEstimatedMins] = useState(15);
   const [secondsLeftToKitchen, setSecondsLeftToKitchen] = useState(30);
+  const [nowTick, setNowTick] = useState(Date.now());
 
+  // 1-second live ticker for real-time prep & dining timers
   useEffect(() => {
-    // If order is placed/new, compute remaining seconds of 30-sec grace window
-    if (stageInfo.stage === 1) {
-      const createdAtMs = order?.createdAt ? new Date(order.createdAt).getTime() : Date.now();
-      const updateCountdown = () => {
-        const elapsed = Math.floor((Date.now() - createdAtMs) / 1000);
-        const remaining = Math.max(0, 30 - elapsed);
-        setSecondsLeftToKitchen(remaining);
-      };
-      updateCountdown();
-      const interval = setInterval(updateCountdown, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [order?.createdAt, stageInfo.stage]);
-
-  useEffect(() => {
-    // Random countdown logic for preparation UI
-    const timer = setInterval(() => {
-      setEstimatedMins((prev) => (prev > 1 ? prev - 1 : 1));
-    }, 60000);
-    return () => clearInterval(timer);
+    const ticker = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(ticker);
   }, []);
+
+  const orderTimers = getOrderTimers(order, nowTick);
 
   // Three.js 3D Interactive Model Canvas
   useEffect(() => {
@@ -314,7 +302,7 @@ export default function ActiveOrderStatus3DCard({ order, onRatingClick, onDismis
       try {
         renderer.dispose();
         renderer.forceContextLoss();
-      } catch (e) {}
+      } catch  {}
     };
   }, [stageInfo]);
 
@@ -453,28 +441,55 @@ export default function ActiveOrderStatus3DCard({ order, onRatingClick, onDismis
             {stageInfo.subtitle}
           </p>
 
-          {/* Time & Location Badge */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '16px', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(15, 23, 42, 0.5)', padding: '4px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
-              <Clock size={13} color={stageInfo.accentColor} />
+          {/* Dual Timers (Timer A: Food Preparation & Timer B: Dining & Payment) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+            {/* Timer A: Food Preparation */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                backgroundColor: 'rgba(15, 23, 42, 0.6)',
+                padding: '5px 12px',
+                borderRadius: '10px',
+                border: `1px solid ${orderTimers.prep.isCompleted ? '#10B981' : '#F97316'}`,
+              }}
+            >
+              <ChefHat size={14} color={orderTimers.prep.isCompleted ? '#34D399' : '#FB923C'} />
               <span style={{ fontSize: '11.5px', color: '#E2E8F0', fontWeight: 600 }}>
-                Est. Time: <strong style={{ color: stageInfo.accentColor }}>~{estimatedMins} Mins</strong>
+                Food Preparation: <strong style={{ color: orderTimers.prep.isCompleted ? '#34D399' : '#FB923C' }}>
+                  {orderTimers.prep.badge}
+                </strong> {orderTimers.prep.isCompleted && '✓'}
               </span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(15, 23, 42, 0.5)', padding: '4px 10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
-              {isDelivery ? <Bike size={13} color="#38BDF8" /> : <ChefHat size={13} color="#38BDF8" />}
+
+            {/* Timer B: Dining & Payment */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                backgroundColor: 'rgba(15, 23, 42, 0.6)',
+                padding: '5px 12px',
+                borderRadius: '10px',
+                border: `1px solid ${orderTimers.dining.isCompleted ? '#10B981' : '#38BDF8'}`,
+              }}
+            >
+              <Clock size={14} color={orderTimers.dining.isCompleted ? '#34D399' : '#38BDF8'} />
+              <span style={{ fontSize: '11.5px', color: '#E2E8F0', fontWeight: 600 }}>
+                Dining &amp; Payment: <strong style={{ color: orderTimers.dining.isCompleted ? '#34D399' : '#38BDF8' }}>
+                  {orderTimers.dining.badge}
+                </strong> {orderTimers.dining.isCompleted && '✓'}
+              </span>
+            </div>
+
+            {/* Table Number */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(15, 23, 42, 0.5)', padding: '5px 10px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.1)' }}>
+              {isDelivery ? <Bike size={13} color="#38BDF8" /> : <Utensils size={13} color="#38BDF8" />}
               <span style={{ fontSize: '11.5px', color: '#E2E8F0', fontWeight: 600 }}>
                 {isDelivery ? 'Home Delivery' : `Table: ${order?.table || 'Dine-In'}`}
               </span>
             </div>
-            {stageInfo.stage === 1 && secondsLeftToKitchen > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'rgba(234, 88, 12, 0.25)', padding: '4px 10px', borderRadius: '8px', border: '1px solid #F97316' }}>
-                <Clock size={13} color="#FB923C" />
-                <span style={{ fontSize: '11.5px', color: '#FDBA74', fontWeight: 700 }}>
-                  Kitchen in: {secondsLeftToKitchen}s
-                </span>
-              </div>
-            )}
           </div>
 
           {/* 4-Stage Animated Responsive Progress Bar */}

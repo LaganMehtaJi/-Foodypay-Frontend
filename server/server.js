@@ -2,10 +2,10 @@ import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import mongoose from 'mongoose';
-import http from 'http';
-import https from 'https';
+
+
 import fs from 'fs';
-import path from 'path';
+
 import { execSync } from 'child_process';
 
 import connectDB from './src/config/db.js';

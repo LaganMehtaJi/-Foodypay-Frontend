@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link, useLocation } from 'react-router-dom';
 import ActiveOrderStatus3DCard from '../components/ActiveOrderStatus3DCanvas';
 import PendingUnpaidBillCard from '../components/PendingUnpaidBillCard';
+import CustomerServiceBar from '../components/CustomerServiceBar';
+import { calculateOrderTaxes, calculateTax, getMerchantTaxConfig } from '../utils/taxEngine.js';
 import {
   Utensils,
   ShoppingBag,
@@ -1456,11 +1458,30 @@ export default function CustomerMenuPage({ onShowToast }) {
     if (onShowToast) onShowToast(' Re-ordered items added to cart!');
   };
 
+  const getCartItemsList = () => {
+    const list = [];
+    const currentCart = carts[getActiveCartKey()] || {};
+    Object.entries(currentCart).forEach(([dishId, qty]) => {
+      if (!dishId || dishId === 'undefined' || !qty || qty <= 0) return;
+      const strId = String(dishId);
+      const dish = dishes.find((d) => String(d.id) === strId) || combos.find((c) => String(c.id) === strId);
+      if (dish) {
+        list.push({
+          ...dish,
+          qty: Number(qty),
+          price: Number(dish.price || dish.comboPrice || 0),
+        });
+      }
+    });
+    return list;
+  };
+
   const subtotal = getSubtotal();
   const discountAmount = appliedCoupon ? subtotal * 0.2 : 0;
-  const taxableAmount = Math.max(0, subtotal - discountAmount);
-  const gstAmount = Math.round((taxableAmount * storeInfo.gstPercent) / 100);
-  const finalTotal = Math.round(taxableAmount + gstAmount);
+  const cartTaxDetails = calculateOrderTaxes(getCartItemsList(), discountAmount);
+  const taxableAmount = cartTaxDetails.taxableValue;
+  const gstAmount = cartTaxDetails.totalTax;
+  const finalTotal = cartTaxDetails.grandTotal;
 
   const filteredDishes = dishes.filter((dish) => {
     const currentStoreId = (effectiveMerchantId || storeInfo.merchantId || '').toUpperCase().trim();
@@ -1640,14 +1661,17 @@ export default function CustomerMenuPage({ onShowToast }) {
 
     const calculatedSubtotal = orderItems.reduce((acc, it) => acc + (it.price * it.qty), 0);
     const calculatedDiscount = appliedCoupon ? Math.round(calculatedSubtotal * 0.2) : 0;
-    const taxable = Math.max(0, calculatedSubtotal - calculatedDiscount);
-    const calculatedTax = Math.round((taxable * (storeInfo.gstPercent || 5)) / 100);
-    const calculatedTotal = taxable + calculatedTax;
+    const orderTaxDetails = calculateOrderTaxes(orderItems, calculatedDiscount);
+    const taxable = orderTaxDetails.taxableValue;
+    const calculatedTax = orderTaxDetails.totalTax;
+    const calculatedTotal = orderTaxDetails.grandTotal;
 
     const newOrderId = `#FP-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const newOrder = {
       id: newOrderId,
+      orderNumber: newOrderId,
+      orderId: newOrderId,
       type: navTab === 'scanner' ? 'Dine-In' : 'Home Delivery',
       table: navTab === 'scanner' ? rawTable : 'Delivery',
       customer: customerName.trim(),
@@ -1656,6 +1680,7 @@ export default function CustomerMenuPage({ onShowToast }) {
       time: 'Just now',
       timestamp: Date.now(),
       createdAt: new Date().toISOString(),
+      waitingStartedAt: Date.now(),
       status: 'placed',
       seen: false,
       sentToKitchen: false,
@@ -1664,9 +1689,12 @@ export default function CustomerMenuPage({ onShowToast }) {
       items: orderItems,
       note: chefNote.trim(),
       subtotal: calculatedSubtotal,
+      taxableValue: taxable,
       discount: calculatedDiscount,
       tax: calculatedTax,
       total: calculatedTotal,
+      taxMode: orderTaxDetails.mode,
+      taxComponents: orderTaxDetails.components,
       merchantId: effectiveMerchantId || storeInfo.merchantId,
       businessId: (effectiveMerchantId || storeInfo.merchantId || '').toUpperCase(),
       merchantFilter: (effectiveMerchantId || storeInfo.merchantId || '').toUpperCase(),
@@ -2534,6 +2562,16 @@ export default function CustomerMenuPage({ onShowToast }) {
           />
         )}
 
+        {/* Table Assistance & Service Requests Bar (Call Waiter, Water, Extra Roti, Cutlery, Bill) */}
+        {rawTable && (
+          <CustomerServiceBar
+            tableId={tableId || rawTable}
+            tableName={rawTable}
+            businessId={effectiveMerchantId}
+            onShowToast={addToast}
+          />
+        )}
+
         {/* Real-Time Pending Unpaid Bill Alert Card */}
         {navTab !== 'home' && pendingUnpaidOrder && (
           <PendingUnpaidBillCard
@@ -3355,7 +3393,7 @@ export default function CustomerMenuPage({ onShowToast }) {
                     <>
                       <Utensils size={42} color="#94A3B8" style={{ marginBottom: '12px' }} />
                       <h4 style={{ margin: '0 0 6px', fontSize: '16.5px', fontWeight: 800, color: '#0F172A' }}>No products in store catalog yet</h4>
-                      <p style={{ margin: '0 0 18px', fontSize: '13px', color: '#64748B', maxWidth: '420px', margin: '0 auto 18px', lineHeight: '1.4' }}>
+                      <p style={{ fontSize: '13px', color: '#64748B', maxWidth: '420px', margin: '0 auto 18px', lineHeight: '1.4' }}>
                         Products added by the merchant in POS Dashboard or CRM Console will appear live here automatically.
                       </p>
                       <Link
@@ -5117,8 +5155,11 @@ export default function CustomerMenuPage({ onShowToast }) {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <button
                     onClick={() => {
+                      const fallbackId = `#FP-${Math.floor(1000 + Math.random() * 9000)}`;
                       const finalOrderToSave = pendingOrderObj ? { ...pendingOrderObj, total: displayTotal } : {
-                        id: `#FP-${Math.floor(1000 + Math.random() * 9000)}`,
+                        id: fallbackId,
+                        orderNumber: fallbackId,
+                        orderId: fallbackId,
                         type: navTab === 'scanner' ? 'Dine-In' : 'Home Delivery',
                         table: navTab === 'scanner' ? rawTable : 'Delivery',
                         customer: customerName.trim() || 'Diner',

@@ -27,7 +27,7 @@ export const protect = async (req, res, next) => {
       }
 
       return next();
-    } catch (error) {
+    } catch  {
       res.status(401);
       return next(new Error('Not authorized, token failed or expired'));
     }
@@ -58,7 +58,7 @@ export const optionalProtect = async (req, res, next) => {
         process.env.JWT_SECRET || 'foodypay_jwt_super_secret_key_2026_change_in_production'
       );
       req.user = await User.findById(decoded.id).select('-password');
-    } catch (error) {
+    } catch  {
       // Continue without setting req.user
     }
   }

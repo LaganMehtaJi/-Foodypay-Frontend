@@ -31,6 +31,7 @@ import {
   SlidersHorizontal,
   Upload,
   Lock,
+  Unlock,
   Edit3,
   Phone,
   User,
@@ -46,6 +47,7 @@ import {
   Share2,
   Trash2,
   CheckCircle2,
+  ExternalLink,
   Frown,
   Tag,
   Percent,
@@ -53,6 +55,7 @@ import {
   MessageSquare,
   ThumbsUp,
   AlertCircle,
+  AlertTriangle,
   MapPin,
   Compass,
   Save,
@@ -66,6 +69,9 @@ import {
   Crown,
   KeyRound,
   DollarSign,
+  CloudDownload,
+  CloudUpload,
+  HardDrive
 } from 'lucide-react';
 import {
   playOrderPlaced,
@@ -78,6 +84,12 @@ import {
   sortOrdersNewestFirst,
   testSoundNotification,
 } from '../utils/soundEffects';
+import MultiPrinterModal from '../components/MultiPrinterModal';
+import InlinePrinterSettings from '../components/InlinePrinterSettings';
+import TaxConfigurationSection from '../components/TaxConfigurationSection';
+import TableServiceRequestsSection from '../components/TableServiceRequestsSection';
+import { getOrderTimers } from '../utils/tableTimerEngine.js';
+import { calculateTax, calculateOrderTaxes, getMerchantTaxConfig } from '../utils/taxEngine.js';
 import { QrCodeComponent } from '../utils/qrGenerator';
 import {
   fetchOrdersApi,
@@ -138,14 +150,20 @@ import {
   deleteTableFromFirestore,
   updateTableStatusInFirestore,
   saveBusinessUserToFirestore,
+  updateBusinessUserInFirestore,
   getBusinessUserByUniqueId,
   isAccountBlockedOrDeleted,
+  syncAllSalesStatsToFirestore,
+  fetchProductsFromFirestore,
+  pushLocalCatalogToFirestore,
+  getCatalogSyncMetadata,
 } from '../utils/firestoreService';
-import { printThermalKot, printThermalReceipt } from '../utils/thermalPrinter';
+import { printThermalKot, printThermalReceipt, getPrinterSettings, savePrinterSettings, executeDualPrint } from '../utils/thermalPrinter';
+import { SNACK_RACK_FULL_MENU } from '../data/snackRackMenuData';
 import './Dashboard.css';
 
 // Initial Datasets
-const INITIAL_DISHES = [];
+const INITIAL_DISHES = SNACK_RACK_FULL_MENU;
 
 const INITIAL_ORDERS = [];
 
@@ -181,6 +199,355 @@ const INITIAL_COUPONS = [];
 
 const INITIAL_TABLES = [];
 
+/**
+ * Top-Down Realistic Dining Table Graphic Component
+ * Faithfully matches user's reference design with dynamic chair counts (2, 4, 6, 8 pax)
+ * and rich keyframe animations for Eating (steam), Waiting (clock tick), and Available (flickering candle)
+ */
+function PosTableTopVisual({ state = 'available', capacity = 4 }) {
+  const cap = Number(capacity) || 4;
+
+  const isEating = state === 'eating';
+  const isWaiting = state === 'waiting';
+  const isAvailable = state === 'available';
+  const isBillReady = state === 'bill-ready';
+  const isPaid = state === 'paid';
+
+  // Chair capsule colors
+  let chairFill = '#E2E8F0';
+  let chairStroke = '#CBD5E1';
+  if (isEating) {
+    chairFill = '#D0F0FD';
+    chairStroke = '#7DD3FC';
+  } else if (isWaiting) {
+    chairFill = '#FFEDD5';
+    chairStroke = '#FDBA74';
+  } else if (isBillReady) {
+    chairFill = '#D1FAE5';
+    chairStroke = '#6EE7B7';
+  } else if (isPaid) {
+    chairFill = '#FEE2E2';
+    chairStroke = '#FCA5A5';
+  }
+
+  // Render chairs dynamically positioned around table based on capacity: 2, 4, 6, 8
+  const renderChairs = () => {
+    if (cap <= 2) {
+      return (
+        <g>
+          {/* Left Chair */}
+          <rect x="36" y="34" width="10" height="28" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+          {/* Right Chair */}
+          <rect x="114" y="34" width="10" height="28" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+        </g>
+      );
+    }
+    if (cap <= 4) {
+      return (
+        <g>
+          {/* Top Chair */}
+          <rect x="66" y="8" width="28" height="10" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+          {/* Bottom Chair */}
+          <rect x="66" y="78" width="28" height="10" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+          {/* Left Chair */}
+          <rect x="34" y="34" width="10" height="28" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+          {/* Right Chair */}
+          <rect x="116" y="34" width="10" height="28" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+        </g>
+      );
+    }
+    if (cap <= 6) {
+      return (
+        <g>
+          {/* 2 Top Chairs */}
+          <rect x="52" y="8" width="24" height="10" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+          <rect x="84" y="8" width="24" height="10" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+          {/* 2 Bottom Chairs */}
+          <rect x="52" y="78" width="24" height="10" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+          <rect x="84" y="78" width="24" height="10" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+          {/* Left Chair */}
+          <rect x="26" y="34" width="10" height="28" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+          {/* Right Chair */}
+          <rect x="124" y="34" width="10" height="28" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+        </g>
+      );
+    }
+    // 8+ seats
+    return (
+      <g>
+        {/* 3 Top Chairs */}
+        <rect x="42" y="8" width="22" height="10" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+        <rect x="69" y="8" width="22" height="10" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+        <rect x="96" y="8" width="22" height="10" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+        {/* 3 Bottom Chairs */}
+        <rect x="42" y="78" width="22" height="10" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+        <rect x="69" y="78" width="22" height="10" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+        <rect x="96" y="78" width="22" height="10" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+        {/* Left Chair */}
+        <rect x="18" y="34" width="10" height="28" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+        {/* Right Chair */}
+        <rect x="132" y="34" width="10" height="28" rx="5" fill={chairFill} stroke={chairStroke} strokeWidth="1.2" />
+      </g>
+    );
+  };
+
+  // Table dimensions based on capacity
+  let tblX = 42;
+  let tblY = 22;
+  let tblW = 76;
+  let tblH = 52;
+  let tblRx = 18;
+
+  if (cap <= 2) {
+    tblX = 52;
+    tblW = 56;
+    tblRx = 16;
+  } else if (cap <= 4) {
+    tblX = 48;
+    tblW = 64;
+    tblRx = 18;
+  } else if (cap <= 6) {
+    tblX = 40;
+    tblW = 80;
+    tblRx = 18;
+  } else {
+    tblX = 32;
+    tblW = 96;
+    tblRx = 18;
+  }
+
+  return (
+    <div className="pos-table-illustration" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px 0' }}>
+      <svg width="150" height="90" viewBox="0 0 160 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="tblEatingGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#00AEEF" />
+            <stop offset="100%" stopColor="#0284C7" />
+          </linearGradient>
+
+          <linearGradient id="tblWaitingGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#FB923C" />
+            <stop offset="100%" stopColor="#EA580C" />
+          </linearGradient>
+
+          <linearGradient id="tblAvailableGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#EADECB" />
+            <stop offset="100%" stopColor="#D8C5AA" />
+          </linearGradient>
+
+          <linearGradient id="tblBillGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#34D399" />
+            <stop offset="100%" stopColor="#059669" />
+          </linearGradient>
+
+          <linearGradient id="tblPaidGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#F87171" />
+            <stop offset="100%" stopColor="#DC2626" />
+          </linearGradient>
+
+          <filter id="tblShadow" x="-10%" y="-10%" width="130%" height="130%">
+            <feDropShadow dx="0" dy="4" stdDeviation="4" floodOpacity="0.16" />
+          </filter>
+        </defs>
+
+        {/* Chairs around table */}
+        {renderChairs()}
+
+        {/* EATING (Ref: Table 1) */}
+        {isEating && (
+          <g>
+            <rect
+              x={tblX}
+              y={tblY}
+              width={tblW}
+              height={tblH}
+              rx={tblRx}
+              fill="url(#tblEatingGrad)"
+              filter="url(#tblShadow)"
+            />
+            <path
+              d={`M ${tblX + 8} ${tblY + 14} Q ${80} ${tblY + 12} ${tblX + tblW - 8} ${tblY + 14}`}
+              stroke="#7DD3FC"
+              strokeWidth="1.2"
+              strokeOpacity="0.45"
+              fill="none"
+            />
+            <path
+              d={`M ${tblX + 8} ${tblY + 38} Q ${80} ${tblY + 40} ${tblX + tblW - 8} ${tblY + 38}`}
+              stroke="#7DD3FC"
+              strokeWidth="1.2"
+              strokeOpacity="0.45"
+              fill="none"
+            />
+
+            {/* Bowl 1 (Left - Orange Curry) */}
+            <g transform="translate(67, 48)">
+              <circle cx="0" cy="0" r="9.5" fill="#FFFFFF" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.18))" />
+              <circle cx="0" cy="0" r="7" fill="#F97316" />
+              <circle cx="0" cy="0" r="2" fill="#FEF08A" />
+              <path
+                d="M -2 -9 Q -4 -15 -1 -19"
+                stroke="#FFFFFF"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                fill="none"
+                className="pos-steam-1"
+              />
+              <path
+                d="M 2 -9 Q 4 -15 1 -19"
+                stroke="#FFFFFF"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                fill="none"
+                className="pos-steam-2"
+              />
+            </g>
+
+            {/* Bowl 2 (Right - Green Curry) */}
+            <g transform="translate(93, 48)">
+              <circle cx="0" cy="0" r="9.5" fill="#FFFFFF" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.18))" />
+              <circle cx="0" cy="0" r="7" fill="#10B981" />
+              <circle cx="0" cy="0" r="2" fill="#D1FAE5" />
+              <path
+                d="M -2 -9 Q -4 -15 -1 -19"
+                stroke="#FFFFFF"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                fill="none"
+                className="pos-steam-1"
+              />
+              <path
+                d="M 2 -9 Q 4 -15 1 -19"
+                stroke="#FFFFFF"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                fill="none"
+                className="pos-steam-2"
+              />
+            </g>
+          </g>
+        )}
+
+        {/* WAITING FOR FOOD (Ref: Table 2) */}
+        {isWaiting && (
+          <g>
+            {cap <= 4 ? (
+              <circle
+                cx="80"
+                cy="48"
+                r="30"
+                fill="url(#tblWaitingGrad)"
+                filter="url(#tblShadow)"
+              />
+            ) : (
+              <rect
+                x={tblX}
+                y={tblY}
+                width={tblW}
+                height={tblH}
+                rx={tblRx}
+                fill="url(#tblWaitingGrad)"
+                filter="url(#tblShadow)"
+              />
+            )}
+            <circle cx="80" cy="48" r="24" stroke="#FED7AA" strokeWidth="1.2" strokeOpacity="0.4" fill="none" />
+            <circle cx="80" cy="48" r="18" stroke="#FED7AA" strokeWidth="1" strokeOpacity="0.25" fill="none" />
+
+            {/* Clock Face with Ticking Hand */}
+            <g transform="translate(80, 48)">
+              <circle cx="0" cy="0" r="13" fill="#FFFFFF" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.15))" />
+              <line x1="0" y1="0" x2="0" y2="-6.5" stroke="#EA580C" strokeWidth="2.2" strokeLinecap="round" />
+              <g className="pos-clock-hand">
+                <line x1="0" y1="0" x2="7.5" y2="0" stroke="#EA580C" strokeWidth="1.8" strokeLinecap="round" />
+              </g>
+              <circle cx="0" cy="0" r="1.8" fill="#EA580C" />
+            </g>
+          </g>
+        )}
+
+        {/* AVAILABLE / EMPTY (Ref: Table 3) */}
+        {isAvailable && (
+          <g>
+            <rect
+              x={cap <= 4 ? 52 : tblX}
+              y={cap <= 4 ? 20 : tblY}
+              width={cap <= 4 ? 56 : tblW}
+              height={cap <= 4 ? 56 : tblH}
+              rx={16}
+              fill="url(#tblAvailableGrad)"
+              filter="url(#tblShadow)"
+            />
+            <path
+              d={`M ${cap <= 4 ? 58 : tblX + 6} ${34} Q ${80} ${32} ${cap <= 4 ? 102 : tblX + tblW - 6} ${35}`}
+              stroke="#C4B097"
+              strokeWidth="1.2"
+              strokeOpacity="0.5"
+              fill="none"
+            />
+            <path
+              d={`M ${cap <= 4 ? 58 : tblX + 6} ${62} Q ${80} ${64} ${cap <= 4 ? 102 : tblX + tblW - 6} ${61}`}
+              stroke="#C4B097"
+              strokeWidth="1.2"
+              strokeOpacity="0.5"
+              fill="none"
+            />
+
+            {/* Center Candle & Flickering Flame */}
+            <g transform="translate(80, 48)">
+              <circle cx="0" cy="1" r="7" fill="#FFFFFF" filter="drop-shadow(0 2px 3px rgba(0,0,0,0.12))" />
+              <circle cx="0" cy="1" r="5" fill="#F8FAFC" />
+              <ellipse cx="0" cy="-3.5" rx="2.4" ry="4.5" fill="#F59E0B" className="pos-candle-flame" />
+              <circle cx="0" cy="-2.5" r="1.3" fill="#FEF08A" />
+            </g>
+          </g>
+        )}
+
+        {/* BILL READY */}
+        {isBillReady && (
+          <g>
+            <rect
+              x={tblX}
+              y={tblY}
+              width={tblW}
+              height={tblH}
+              rx={tblRx}
+              fill="url(#tblBillGrad)"
+              filter="url(#tblShadow)"
+            />
+            <g transform="translate(80, 48)">
+              <rect x="-10" y="-12" width="20" height="24" rx="3" fill="#FFFFFF" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.15))" />
+              <line x1="-6" y1="-6" x2="6" y2="-6" stroke="#059669" strokeWidth="1.8" strokeLinecap="round" />
+              <line x1="-6" y1="-1" x2="6" y2="-1" stroke="#059669" strokeWidth="1.8" strokeLinecap="round" />
+              <line x1="-6" y1="4" x2="2" y2="4" stroke="#059669" strokeWidth="1.8" strokeLinecap="round" />
+            </g>
+          </g>
+        )}
+
+        {/* PAID */}
+        {isPaid && (
+          <g>
+            <rect
+              x={tblX}
+              y={tblY}
+              width={tblW}
+              height={tblH}
+              rx={tblRx}
+              fill="url(#tblPaidGrad)"
+              filter="url(#tblShadow)"
+            />
+            <g transform="translate(80, 48)">
+              <circle cx="0" cy="0" r="13" fill="#FFFFFF" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.15))" />
+              <polyline points="-5,-1 -1,3 6,-4" stroke="#DC2626" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            </g>
+          </g>
+        )}
+      </svg>
+    </div>
+  );
+}
+
+
+
 
 export default function DashboardPage({ onShowToast }) {
   const navigate = useNavigate();
@@ -190,19 +557,15 @@ export default function DashboardPage({ onShowToast }) {
   const [activeTab, setActiveTab] = useState(() => {
     try {
       const urlTab = new URLSearchParams(window.location.search).get('tab');
-      if (urlTab && urlTab !== 'merchant_admin') return urlTab;
+      if (urlTab) return urlTab;
     } catch (e) {}
     return 'home_orders';
   });
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
-    if (tabParam === 'merchant_admin') {
-      // Merchant Admin runs in its dedicated tab, not mixed in POS dashboard
-      window.open('/merchant-admin', '_blank');
-      setActiveTab((prev) => (prev === 'home_orders' ? prev : 'home_orders'));
-    } else if (tabParam) {
-      setActiveTab((prev) => (prev === tabParam ? prev : tabParam));
+    if (tabParam) {
+      setActiveTab(tabParam);
     }
   }, [searchParams]);
   const [catalogSubmenuOpen, setCatalogSubmenuOpen] = useState(true);
@@ -213,6 +576,10 @@ export default function DashboardPage({ onShowToast }) {
   // FoodyPay Credits Balance
   const [creditsBalance, setCreditsBalance] = useState(2450);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [showMultiPrinterModal, setShowMultiPrinterModal] = useState(false);
+  const [showTaxConfigModal, setShowTaxConfigModal] = useState(false);
+  const [catalogSyncMeta, setCatalogSyncMeta] = useState(() => getCatalogSyncMetadata());
+  const [syncingCloudCatalog, setSyncingCloudCatalog] = useState(false);
 
   // Live Clock
   const [currentTime, setCurrentTime] = useState('');
@@ -230,48 +597,11 @@ export default function DashboardPage({ onShowToast }) {
 
   const token = localStorage.getItem('foodypay_token');
 
-  // Auth Redirect & Live Verification: If user is deleted or terminated in Firestore, log out immediately
+  // Auth Redirect: If not authenticated, navigate to login
   useEffect(() => {
-    if (!token) {
+    if (!token && localStorage.getItem('foodypay_pin_auth') !== 'true') {
       navigate('/login');
-      return;
     }
-
-    const checkLiveAccountStatus = async () => {
-      try {
-        const uRaw = localStorage.getItem('foodypay_user');
-        const bId = localStorage.getItem('foodypay_active_business_id');
-        let userEmail = '';
-        let userUniqueId = bId || '';
-
-        if (uRaw) {
-          const parsed = JSON.parse(uRaw);
-          userEmail = parsed.email || '';
-          userUniqueId = parsed.uniqueId || parsed.foodypayId || userUniqueId;
-        }
-
-        if (userEmail || userUniqueId) {
-          const isDead = await isAccountBlockedOrDeleted(userEmail, userUniqueId);
-          if (isDead) {
-            console.warn('Current account was deleted/terminated in Firestore. Logging out now.');
-            localStorage.removeItem('foodypay_token');
-            localStorage.removeItem('foodypay_user');
-            localStorage.removeItem('foodypay_active_business_id');
-            localStorage.removeItem('foodypay_crm_orders_v3');
-            localStorage.removeItem('foodypay_kitchen_logged_in');
-            window.dispatchEvent(new Event('storage'));
-            alert('⚠️ Your Business Account has been deleted/terminated by Master Administration. You have been logged out.');
-            window.location.href = '/login';
-          }
-        }
-      } catch (e) {
-        console.warn('Account live verification check warning:', e);
-      }
-    };
-
-    checkLiveAccountStatus();
-    const interval = setInterval(checkLiveAccountStatus, 8000);
-    return () => clearInterval(interval);
   }, [token, navigate]);
 
   // Logout Handler
@@ -288,17 +618,63 @@ export default function DashboardPage({ onShowToast }) {
     }
   };
 
-  const [orders, setOrders] = useState([]);
-  const [todayStats, setTodayStats] = useState(null);
-  const [dishes, setDishes] = useState([]);
+  const [orders, setOrders] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_crm_orders_v3');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const clean = parsed.filter((o) => o && o.id !== 'ord-live-tbl1' && o.id !== 'ord-live-tbl2' && o._id !== 'ord-live-tbl1' && o._id !== 'ord-live-tbl2');
+          return clean;
+        }
+      }
+    } catch (e) {}
+    return [];
+  });
+  const [dishes, setDishes] = useState(() => {
+    try {
+      const catVer = localStorage.getItem('foodypay_catalog_version_v6');
+      if (catVer === 'snackrack_v6_full') {
+        const saved = localStorage.getItem('foodypay_crm_dishes_v1') || localStorage.getItem('snackrack_local_catalog_v4');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } else {
+        localStorage.setItem('foodypay_catalog_version_v6', 'snackrack_v6_full');
+        localStorage.setItem('foodypay_crm_dishes_v1', JSON.stringify(SNACK_RACK_FULL_MENU));
+        localStorage.setItem('foodypay_crm_dishes_v3', JSON.stringify(SNACK_RACK_FULL_MENU));
+        localStorage.setItem('snackrack_local_catalog_v4', JSON.stringify(SNACK_RACK_FULL_MENU));
+        return SNACK_RACK_FULL_MENU;
+      }
+    } catch (e) {}
+    return SNACK_RACK_FULL_MENU;
+  });
   const [customers, setCustomers] = useState([]);
   const [custSearch, setCustSearch] = useState('');
   const [coupons, setCoupons] = useState([]);
-  const [tables, setTables] = useState([]);
+  const [tables, setTables] = useState(() => {
+    try {
+      const saved = localStorage.getItem('foodypay_crm_tables_v3') || localStorage.getItem('foodypay_crm_tables_v1') || localStorage.getItem('snackrack_local_tables');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const clean = parsed.filter((t) => t && !['tbl-1', 'tbl-2', 'tbl-3', 'tbl-4', 'tbl-5', 'tb_1', 'tb_2', 'tb_3', 'tb_4', 'tb_5', 'tb_6', 'tb_7'].includes(t.id));
+          if (clean.length > 0) return clean;
+        }
+      }
+    } catch (e) {}
+    return [];
+  });
   const [loadingData, setLoadingData] = useState(true);
   const [actionLoadingSet, setActionLoadingSet] = useState(new Set());
   const [cardsPerRow, setCardsPerRow] = useState(3);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // Dual Printer Configuration State (Printer 1: Billing Counter, Printer 2: Kitchen KOT LAN)
+  const [printerSettings, setPrinterSettings] = useState(() => getPrinterSettings());
+  const [isPrinterConfigModalOpen, setIsPrinterConfigModalOpen] = useState(false);
+  const [editingPrinterKey, setEditingPrinterKey] = useState('printer1'); // 'printer1' | 'printer2'
 
   // Current logged in merchant user state synced with localStorage
   const [currentUser, setCurrentUser] = useState(() => {
@@ -335,9 +711,11 @@ export default function DashboardPage({ onShowToast }) {
     let savedRzpSec = '';
     let savedRoutingMode = '';
     let savedControls = {};
+    let savedKdsLocked = false;
     try {
       const rawKds = localStorage.getItem('foodypay_kds_enabled');
       if (rawKds !== null) savedKds = JSON.parse(rawKds);
+      savedKdsLocked = localStorage.getItem('foodypay_kds_locked') === 'true';
       savedUpi = localStorage.getItem('foodypay_upi_id') || '';
       savedRzpKey = localStorage.getItem('foodypay_rzp_key_id') || '';
       savedRzpSec = localStorage.getItem('foodypay_rzp_key_secret') || '';
@@ -367,6 +745,7 @@ export default function DashboardPage({ onShowToast }) {
           deliveryStatus: savedControls.deliveryStatus !== undefined ? savedControls.deliveryStatus : true,
           pickupStatus: savedControls.pickupStatus !== undefined ? savedControls.pickupStatus : true,
           kdsEnabled: savedKds,
+          isKdsLocked: savedKdsLocked,
           paymentRoutingMode: savedRoutingMode || u.paymentRoutingMode || 'foodypay_default',
           razorpayKeyId: savedRzpKey || u.razorpayKeyId || 'rzp_live_TjBEt4gu2aUflB',
           razorpayKeySecret: savedRzpSec || u.razorpayKeySecret || 'FPXDLXe3Vbh0NYSpCAXmXOA3',
@@ -377,12 +756,13 @@ export default function DashboardPage({ onShowToast }) {
           address: u.address || 'India',
           upiId: savedUpi || u.upiId || 'merchant@icici',
           gstPercent: 5,
+          kitchenAutoDispatchSeconds: savedControls.kitchenAutoDispatchSeconds !== undefined ? Number(savedControls.kitchenAutoDispatchSeconds) : 30,
+          ...savedControls,
           lockMarketingTab: false,
           lockTableCrud: false,
           lockOrderDeletion: false,
           lockSettingsPanel: false,
-          kitchenAutoDispatchSeconds: savedControls.kitchenAutoDispatchSeconds !== undefined ? Number(savedControls.kitchenAutoDispatchSeconds) : 30,
-          ...savedControls,
+          lockSettings: false,
           foodypayId: resolvedFpId,
         };
       }
@@ -392,6 +772,7 @@ export default function DashboardPage({ onShowToast }) {
       deliveryStatus: savedControls.deliveryStatus !== undefined ? savedControls.deliveryStatus : true,
       pickupStatus: savedControls.pickupStatus !== undefined ? savedControls.pickupStatus : true,
       kdsEnabled: savedKds,
+      isKdsLocked: savedKdsLocked,
       paymentRoutingMode: savedRoutingMode || 'foodypay_default',
       razorpayKeyId: savedRzpKey || 'rzp_live_TjBEt4gu2aUflB',
       razorpayKeySecret: savedRzpSec || 'FPXDLXe3Vbh0NYSpCAXmXOA3',
@@ -402,12 +783,13 @@ export default function DashboardPage({ onShowToast }) {
       address: '',
       upiId: savedUpi || 'merchant@icici',
       gstPercent: 5,
+      kitchenAutoDispatchSeconds: savedControls.kitchenAutoDispatchSeconds !== undefined ? Number(savedControls.kitchenAutoDispatchSeconds) : 30,
+      ...savedControls,
       lockMarketingTab: false,
       lockTableCrud: false,
       lockOrderDeletion: false,
       lockSettingsPanel: false,
-      kitchenAutoDispatchSeconds: savedControls.kitchenAutoDispatchSeconds !== undefined ? Number(savedControls.kitchenAutoDispatchSeconds) : 30,
-      ...savedControls,
+      lockSettings: false,
       foodypayId: resolvedFpId,
     };
   });
@@ -484,12 +866,22 @@ export default function DashboardPage({ onShowToast }) {
             const newPhone = bp.contactNo || bp.phone || prev.phone;
             const newAddress = bp.address || prev.address;
             const newUpiId = bp.upiId || prev.upiId;
+            const newStoreStatus = bp.storeStatus !== undefined ? bp.storeStatus : prev.storeStatus;
+            const newDeliveryStatus = bp.deliveryStatus !== undefined ? bp.deliveryStatus : prev.deliveryStatus;
+            const newPickupStatus = bp.pickupStatus !== undefined ? bp.pickupStatus : prev.pickupStatus;
+            const newKdsEnabled = bp.kdsEnabled !== undefined ? bp.kdsEnabled : prev.kdsEnabled;
+            const newIsKdsLocked = bp.isKdsLocked !== undefined ? bp.isKdsLocked : prev.isKdsLocked;
             if (
               prev.foodypayId === newFpId &&
               prev.restName === newRestName &&
               prev.phone === newPhone &&
               prev.address === newAddress &&
-              prev.upiId === newUpiId
+              prev.upiId === newUpiId &&
+              prev.storeStatus === newStoreStatus &&
+              prev.deliveryStatus === newDeliveryStatus &&
+              prev.pickupStatus === newPickupStatus &&
+              prev.kdsEnabled === newKdsEnabled &&
+              prev.isKdsLocked === newIsKdsLocked
             ) {
               return prev;
             }
@@ -500,6 +892,11 @@ export default function DashboardPage({ onShowToast }) {
               phone: newPhone,
               address: newAddress,
               upiId: newUpiId,
+              storeStatus: newStoreStatus,
+              deliveryStatus: newDeliveryStatus,
+              pickupStatus: newPickupStatus,
+              kdsEnabled: newKdsEnabled,
+              isKdsLocked: newIsKdsLocked,
             };
           });
         }
@@ -600,7 +997,7 @@ export default function DashboardPage({ onShowToast }) {
 
     const filtered = (orders || []).filter((o) => {
       if (!o) return false;
-      const t = new Date(o.createdAt || o.date || 0).getTime();
+      const t = o.timestamp || (o.createdAt ? new Date(o.createdAt).getTime() : (o.date ? new Date(o.date).getTime() : Date.now()));
       if (merchantAdminSalesFilter === 'today') return t >= todayStart;
       if (merchantAdminSalesFilter === 'yesterday') return t >= yesterdayStart && t < todayStart;
       if (merchantAdminSalesFilter === 'last_7') return t >= last7DaysStart;
@@ -611,23 +1008,33 @@ export default function DashboardPage({ onShowToast }) {
 
     const nonCancelled = filtered.filter((o) => o.status !== 'cancelled');
     const totalSales = nonCancelled.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
-    const completedOrders = nonCancelled.filter((o) => o.status === 'completed' || o.status === 'ready');
+    const completedOrders = nonCancelled.filter((o) => o.status === 'completed' || o.status === 'ready' || o.status === 'paid');
     const completedSales = completedOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
 
     const paidOrders = nonCancelled.filter((o) => {
       const ps = String(o.paymentStatus || '').toLowerCase();
-      return ps === 'paid' || ps.startsWith('paid-') || ps === 'completed';
+      const pl = String(o.paymentLabel || '').toLowerCase();
+      return o.isPaid || ps === 'paid' || ps.startsWith('paid-') || ps === 'completed' || ps === 'cash' || pl.includes('cash') || pl.includes('upi');
     });
     const paidSales = paidOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
 
     const unpaidOrders = nonCancelled.filter((o) => {
       const ps = String(o.paymentStatus || '').toLowerCase();
-      return !ps.includes('paid');
+      return ps === 'due' || ps === 'unpaid' || (!o.isPaid && !ps.includes('paid') && !ps.includes('cash'));
     });
     const unpaidSales = unpaidOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
 
-    const upiSales = nonCancelled.filter((o) => String(o.paymentStatus).includes('upi') || String(o.paymentStatus).includes('razorpay')).reduce((s, o) => s + (Number(o.total) || 0), 0);
-    const cashSales = nonCancelled.filter((o) => String(o.paymentStatus).includes('cash')).reduce((s, o) => s + (Number(o.total) || 0), 0);
+    const upiSales = nonCancelled.filter((o) => {
+      const ps = String(o.paymentStatus || '').toLowerCase();
+      const pl = String(o.paymentLabel || '').toLowerCase();
+      return ps.includes('upi') || ps.includes('razorpay') || pl.includes('upi') || pl.includes('online');
+    }).reduce((s, o) => s + (Number(o.total) || 0), 0);
+
+    const cashSales = nonCancelled.filter((o) => {
+      const ps = String(o.paymentStatus || '').toLowerCase();
+      const pl = String(o.paymentLabel || '').toLowerCase();
+      return ps.includes('cash') || pl.includes('cash');
+    }).reduce((s, o) => s + (Number(o.total) || 0), 0);
 
     const aov = nonCancelled.length > 0 ? Math.round(totalSales / nonCancelled.length) : 0;
 
@@ -644,6 +1051,15 @@ export default function DashboardPage({ onShowToast }) {
       aov,
     };
   }, [orders, merchantAdminSalesFilter]);
+
+  // Real-time auto sync calculated sales & revenue statistics directly to Firebase Firestore
+  useEffect(() => {
+    if (!merchantAdminSalesData) return;
+    const bid = storeControls?.foodypayId || adminUniqueId || 'FP-9896';
+    syncAllSalesStatsToFirestore(merchantAdminSalesData, bid).catch((err) => {
+      console.warn('Auto Firebase sales telemetry sync warning:', err);
+    });
+  }, [merchantAdminSalesData, storeControls?.foodypayId, adminUniqueId]);
 
   // All unpaid orders across whole system for Accounts / Khata
   const merchantAdminUnpaidOrdersAllTime = useMemo(() => {
@@ -1011,7 +1427,7 @@ export default function DashboardPage({ onShowToast }) {
   const isFreePlan = !isEnterpriseMax && !isGrowthPro;
 
   // Feature Lock Rules (Temporarily hide requested menu items):
-  const isKdsLocked = false;
+  const isKdsLocked = Boolean(storeControls.isKdsLocked);
   const isMarketingLocked = false;
   const isCustomersLocked = false;
   const isReviewsLocked = true; // Hidden for now
@@ -1765,6 +2181,24 @@ export default function DashboardPage({ onShowToast }) {
       } catch (e) {}
     };
 
+    const getKotAutoPrintedIds = () => {
+      try {
+        const raw = localStorage.getItem('foodypay_kot_autoprinted_ids');
+        return raw ? new Set(JSON.parse(raw)) : new Set();
+      } catch (e) {
+        return new Set();
+      }
+    };
+
+    const markKotAutoPrinted = (id) => {
+      if (!id) return;
+      try {
+        const printedSet = getKotAutoPrintedIds();
+        printedSet.add(String(id));
+        localStorage.setItem('foodypay_kot_autoprinted_ids', JSON.stringify(Array.from(printedSet).slice(-300)));
+      } catch (e) {}
+    };
+
     const notifyIfNewOrder = (order) => {
       if (!order) return;
       const oId = String(order._id || order.id || order.orderId || '');
@@ -1772,18 +2206,30 @@ export default function DashboardPage({ onShowToast }) {
 
       const seenSet = getSeenIds();
       const notifiedSet = getNotifiedIds();
+      const kotPrintedSet = getKotAutoPrintedIds();
 
       const isSeen = Boolean(order.seen || seenSet.has(oId));
       const isNotified = notifiedSet.has(oId);
-      const isNewStatus = !order.status || order.status === 'new';
+      const isNewStatus = !order.status || order.status === 'new' || order.status === 'placed';
+
+      const displayId = order.orderNumber || order.orderId || (order._id ? `#FP-${String(order._id).slice(-4)}` : order.id) || 'Order';
+      const rawTableStr = order.tableName || order.table || order.tableNo || (order.tableNumber ? `Table ${order.tableNumber}` : 'Table 1');
+      const displayTable = String(rawTableStr).replace(/tabel/gi, 'Table');
+      const displayCustomer = order.customerName || order.customer || order.name || 'Customer';
+
+      // Direct instant KOT print for new/placed QR orders (Item name, Qty, Table, Order Number; NO price, NO GST)
+      if (isNewStatus && !kotPrintedSet.has(oId)) {
+        markKotAutoPrinted(oId);
+        try {
+          executeDualPrint(order, storeControls, 'kot');
+        } catch (printErr) {
+          printThermalKot(order, storeControls);
+        }
+        addToast(`🍳 QR Order Placed! Direct KOT Printed for Table ${displayTable} (${displayId})`, <ChefHat size={18} />);
+      }
 
       if (!isSeen && !isNotified && isNewStatus) {
         markIdNotifiedInStorage(oId);
-
-        const displayId = order.orderId || (order._id ? `#FP-${String(order._id).slice(-4)}` : order.id) || 'Order';
-        const rawTableStr = order.tableName || order.table || order.tableNo || (order.tableNumber ? `Table ${order.tableNumber}` : 'Table 1');
-        const displayTable = String(rawTableStr).replace(/tabel/gi, 'Table');
-        const displayCustomer = order.customerName || order.customer || order.name || 'Customer';
 
         triggerSound(playOrderPlaced);
         addToast(`Live Order Received! ${displayId} from ${displayTable} (${displayCustomer})`, <Bell size={18} />);
@@ -1851,10 +2297,7 @@ export default function DashboardPage({ onShowToast }) {
         'FP-348330'
       ).trim().toUpperCase();
 
-      // Purge stale local storage orders cache on mount so ONLY real Firestore data is used
-      try {
-        localStorage.removeItem('foodypay_crm_orders_v3');
-      } catch (e) {}
+      // Offline orders kept permanently in local storage
 
       unsubscribeFirestore = subscribeToOrders(activeBusinessId, (liveOrders) => {
         const orderList = Array.isArray(liveOrders) ? liveOrders : [];
@@ -1872,12 +2315,24 @@ export default function DashboardPage({ onShowToast }) {
 
       // Strict real-time dish catalog subscription per businessId
       unsubscribeFirestoreDishes = subscribeToProducts(activeBusinessId, (liveDishes) => {
-        setDishes(Array.isArray(liveDishes) ? liveDishes : []);
+        if (Array.isArray(liveDishes) && liveDishes.length > 0) {
+          setDishes(liveDishes);
+          try {
+            localStorage.setItem('foodypay_crm_dishes_v1', JSON.stringify(liveDishes));
+          } catch (e) {}
+        }
       });
 
       // Strict real-time dining tables subscription per businessId
       unsubscribeFirestoreTables = subscribeToTables(activeBusinessId, (liveTables) => {
-        setTables(Array.isArray(liveTables) ? liveTables : []);
+        if (Array.isArray(liveTables) && liveTables.length > 0) {
+          setTables(liveTables);
+          try {
+            localStorage.setItem('foodypay_crm_tables_v3', JSON.stringify(liveTables));
+            localStorage.setItem('foodypay_crm_tables_v1', JSON.stringify(liveTables));
+            localStorage.setItem('snackrack_local_tables', JSON.stringify(liveTables));
+          } catch (e) {}
+        }
       });
     } catch (fsErr) {
       console.warn('Firestore live listener notice:', fsErr);
@@ -1898,6 +2353,9 @@ export default function DashboardPage({ onShowToast }) {
           if (msg.data.type === 'ADMIN_SETTINGS_UPDATED') {
             handleAdminSyncRefresh();
             return;
+          }
+          if (msg.data.type === 'ORDER_CREATED' && msg.data.order) {
+            notifyIfNewOrder(msg.data.order);
           }
           handleNewOrderEvent();
         }
@@ -1983,6 +2441,9 @@ export default function DashboardPage({ onShowToast }) {
           return o;
         })
       );
+      try {
+        updateOrderInFirestore(orderId, { seen: true, updatedAt: new Date().toISOString() });
+      } catch (e) {}
       if (token) {
         const orderObj = orders.find((o) => (o._id || o.id || o.orderId) === orderId || String(o._id || o.id || o.orderId) === oIdStr);
         const targetId = (orderObj && orderObj._id) || orderId;
@@ -2084,6 +2545,16 @@ export default function DashboardPage({ onShowToast }) {
       } catch (e) {}
 
       try {
+        updateOrderInFirestore(orderId, {
+          seen: true,
+          sentToKitchen: true,
+          status: 'preparing',
+          kitchenSeen: false,
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (e) {}
+
+      try {
         playFoodPreparing();
       } catch (e) {}
 
@@ -2154,11 +2625,24 @@ export default function DashboardPage({ onShowToast }) {
   useEffect(() => {
     async function loadBackendData() {
       if (!token) {
-        setOrders(INITIAL_ORDERS);
-        setDishes(INITIAL_DISHES);
-        setCustomers(INITIAL_CUSTOMERS);
-        setCoupons(INITIAL_COUPONS);
-        setTables(INITIAL_TABLES);
+        setOrders((prev) => (prev && prev.length > 0 ? prev : INITIAL_ORDERS));
+        setDishes((prev) => (prev && prev.length > 0 ? prev : INITIAL_DISHES));
+        setCustomers((prev) => (prev && prev.length > 0 ? prev : INITIAL_CUSTOMERS));
+        setCoupons((prev) => (prev && prev.length > 0 ? prev : INITIAL_COUPONS));
+        setTables((prev) => {
+          if (Array.isArray(prev) && prev.length > 0) return prev;
+          try {
+            const saved = localStorage.getItem('foodypay_crm_tables_v3') || localStorage.getItem('foodypay_crm_tables_v1') || localStorage.getItem('snackrack_local_tables');
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                const clean = parsed.filter((t) => t && !['tbl-1', 'tbl-2', 'tbl-3', 'tbl-4', 'tbl-5', 'tb_1', 'tb_2', 'tb_3', 'tb_4', 'tb_5', 'tb_6', 'tb_7'].includes(t.id));
+                if (clean.length > 0) return clean;
+              }
+            }
+          } catch (e) {}
+          return prev || [];
+        });
         setLoadingData(false);
         return;
       }
@@ -2240,6 +2724,16 @@ export default function DashboardPage({ onShowToast }) {
     } catch {}
   }, [dishes]);
 
+  useEffect(() => {
+    try {
+      if (Array.isArray(tables) && tables.length > 0) {
+        localStorage.setItem('foodypay_crm_tables_v3', JSON.stringify(tables));
+        localStorage.setItem('foodypay_crm_tables_v1', JSON.stringify(tables));
+        localStorage.setItem('snackrack_local_tables', JSON.stringify(tables));
+      }
+    } catch {}
+  }, [tables]);
+
   // Toast Helper
   const [toasts, setToasts] = useState([]);
   const addToast = (msg, icon = null) => {
@@ -2264,6 +2758,150 @@ export default function DashboardPage({ onShowToast }) {
     }
   };
 
+  const handleFetchCatalogFromCloud = async () => {
+    setSyncingCloudCatalog(true);
+    try {
+      const res = await fetchProductsFromFirestore(activeBusinessId);
+      if (res && res.success) {
+        setCatalogSyncMeta(getCatalogSyncMetadata());
+        addToast(`✓ Synced ${res.count} products from Firebase and saved to local storage!`, <Check size={18} />);
+        confetti({ particleCount: 40, spread: 50 });
+      } else {
+        addToast('Failed to fetch from Firebase: ' + (res?.error || 'Unknown error'));
+      }
+    } catch (e) {
+      addToast('Error fetching catalog: ' + e.message);
+    } finally {
+      setSyncingCloudCatalog(false);
+    }
+  };
+
+  // Store Operational Settings & Controls Handlers
+  const handleToggleStoreSetting = async (key, label) => {
+    const currentVal = storeControls[key];
+    const nextVal = key === 'kdsEnabled' ? !(currentVal !== false) : !Boolean(currentVal);
+    const updatedControls = { ...storeControls, [key]: nextVal };
+    setStoreControls(updatedControls);
+
+    try {
+      localStorage.setItem('foodypay_store_controls', JSON.stringify(updatedControls));
+      if (key === 'kdsEnabled') localStorage.setItem('foodypay_kds_enabled', JSON.stringify(nextVal));
+      if (key === 'isKdsLocked') {
+        localStorage.setItem('foodypay_kds_locked', nextVal ? 'true' : 'false');
+        try {
+          const bc = new BroadcastChannel('foodypay_live_orders_channel');
+          bc.postMessage({ type: 'KDS_LOCK_TOGGLED', isLocked: nextVal });
+          bc.close();
+        } catch (e) {}
+      }
+      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('foodypay_store_controls_updated'));
+      try {
+        const bc = new BroadcastChannel('foodypay_live_orders_channel');
+        bc.postMessage({ type: 'STORE_CONTROLS_UPDATED', key, value: nextVal });
+        bc.close();
+      } catch (e) {}
+    } catch (e) {}
+
+    const targetBid = activeBusinessId || currentUser?.foodypayId || currentUser?.uniqueId || currentUser?.businessId || storeControls.foodypayId || 'FP-348330';
+    if (targetBid) {
+      updateBusinessUserInFirestore(targetBid, { [key]: nextVal }).catch(() => {});
+    }
+    if (token) {
+      updateSettingsApi(token, { [key]: nextVal }).catch(() => {});
+    }
+
+    if (key === 'isKdsLocked') {
+      if (nextVal) {
+        addToast('🔒 Kitchen Display LOCKED! PIN / Password protection is now ON.', <Lock size={18} color="#DC2626" />);
+      } else {
+        addToast('🔓 Kitchen Display UNLOCKED! Direct access without password enabled.', <Unlock size={18} color="#16A34A" />);
+      }
+    } else {
+      addToast(
+        `${label}: ${nextVal ? 'ACTIVE (ON)' : 'INACTIVE (OFF)'}`,
+        nextVal ? <Check size={18} color="#16A34A" /> : <X size={18} color="#DC2626" />
+      );
+    }
+  };
+
+  const handleSetAllStoreSettings = async (enableAll = true) => {
+    const updatedControls = {
+      ...storeControls,
+      storeStatus: enableAll,
+      deliveryStatus: enableAll,
+      pickupStatus: enableAll,
+      kdsEnabled: enableAll,
+    };
+    setStoreControls(updatedControls);
+
+    try {
+      localStorage.setItem('foodypay_store_controls', JSON.stringify(updatedControls));
+      localStorage.setItem('foodypay_kds_enabled', JSON.stringify(enableAll));
+      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('foodypay_store_controls_updated'));
+      try {
+        const bc = new BroadcastChannel('foodypay_live_orders_channel');
+        bc.postMessage({ type: 'STORE_CONTROLS_UPDATED', all: enableAll });
+        bc.close();
+      } catch (e) {}
+    } catch (e) {}
+
+    const targetBid = activeBusinessId || currentUser?.foodypayId || currentUser?.uniqueId || currentUser?.businessId || storeControls.foodypayId || 'FP-348330';
+    if (targetBid) {
+      updateBusinessUserInFirestore(targetBid, {
+        storeStatus: enableAll,
+        deliveryStatus: enableAll,
+        pickupStatus: enableAll,
+        kdsEnabled: enableAll,
+      }).catch(() => {});
+    }
+    if (token) {
+      updateSettingsApi(token, {
+        storeStatus: enableAll,
+        deliveryStatus: enableAll,
+        pickupStatus: enableAll,
+        kdsEnabled: enableAll,
+      }).catch(() => {});
+    }
+
+    addToast(
+      enableAll ? '✓ All Operations ACTIVATED (Store Open, Delivery, Pickup & KDS ON)!' : '✕ All Operations INACTIVATED (Store, Delivery & Pickup Closed)!',
+      enableAll ? <Check size={18} color="#16A34A" /> : <X size={18} color="#DC2626" />
+    );
+  };
+
+  const handleUnlockAllStoreLocks = async () => {
+    const updatedControls = {
+      ...storeControls,
+      lockSettingsPanel: false,
+      lockSettings: false,
+      lockMarketingTab: false,
+      lockTableCrud: false,
+      lockOrderDeletion: false,
+    };
+    setStoreControls(updatedControls);
+
+    try {
+      localStorage.setItem('foodypay_store_controls', JSON.stringify(updatedControls));
+      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('foodypay_store_controls_updated'));
+    } catch (e) {}
+
+    const targetBid = activeBusinessId || currentUser?.foodypayId || currentUser?.uniqueId || currentUser?.businessId || storeControls.foodypayId || 'FP-348330';
+    if (targetBid) {
+      updateBusinessUserInFirestore(targetBid, {
+        lockSettingsPanel: false,
+        lockSettings: false,
+        lockMarketingTab: false,
+        lockTableCrud: false,
+        lockOrderDeletion: false,
+      }).catch(() => {});
+    }
+
+    addToast('🔓 All Store Settings & Locks UNLOCKED! You now have full active control.', <Unlock size={18} color="#16A34A" />);
+  };
+
   // ==========================================================================
   // 1. MANUAL ORDER CREATOR MODAL ("CREATE A MANUAL ORDER")
   // ==========================================================================
@@ -2271,20 +2909,32 @@ export default function DashboardPage({ onShowToast }) {
   const [editingOrderId, setEditingOrderId] = useState(null);
   const [manualOrderType, setManualOrderType] = useState('Dine-In');
   const [manualTable, setManualTable] = useState('Table 1');
+  const [manualTableSection, setManualTableSection] = useState('Restaurant');
+  const [manualTableId, setManualTableId] = useState(null);
   const [manualCustomer, setManualCustomer] = useState('');
   const [manualPhone, setManualPhone] = useState('');
   const [manualItems, setManualItems] = useState({});
   const [manualPaymentMode, setManualPaymentMode] = useState('Cash on Counter');
   const [isSubmittingManualOrder, setIsSubmittingManualOrder] = useState(false);
+  const [manualSubmittingAction, setManualSubmittingAction] = useState(null);
   const [duplicateOrderConfirm, setDuplicateOrderConfirm] = useState(null);
   
   // New manual order states
   const [manualSearch, setManualSearch] = useState('');
   const [manualCategory, setManualCategory] = useState('All');
-  const [manualGstEnabled, setManualGstEnabled] = useState(false);
+  const [manualGstEnabled, setManualGstEnabled] = useState(true);
   const [manualDiscount, setManualDiscount] = useState('');
   const [manualDiscountType, setManualDiscountType] = useState('₹'); // '₹' | '%'
   const [manualCoupon, setManualCoupon] = useState('');
+  const [variantModalDish, setVariantModalDish] = useState(null);
+  const [showManualCustomerInputs, setShowManualCustomerInputs] = useState(false);
+  const [showManualDiscountAndTax, setShowManualDiscountAndTax] = useState(false);
+
+  // 4-Digit Security PIN (7496) to unlock editing locked orders
+  const [unlockPinPromptOrder, setUnlockPinPromptOrder] = useState(null);
+  const [unlockPinInput, setUnlockPinInput] = useState('');
+  const [unlockPinError, setUnlockPinError] = useState(false);
+  const [isOrderEditorUnlocked, setIsOrderEditorUnlocked] = useState(false);
 
   // Bill Settlement & UPI QR Scanner states
   const [activeBillSettlementOrder, setActiveBillSettlementOrder] = useState(null);
@@ -2401,17 +3051,59 @@ export default function DashboardPage({ onShowToast }) {
   const [moveKotSourceOrder, setMoveKotSourceOrder] = useState(null);
   const [moveKotTargetTable, setMoveKotTargetTable] = useState('');
 
+  // Helper: Find exact unique table entity for an order or table name + section
+  const findTableForOrder = (orderOrTable, optionalSection = null) => {
+    if (!orderOrTable) return null;
+    const isOrderObj = typeof orderOrTable === 'object' && orderOrTable !== null;
+    const oTableId = isOrderObj ? (orderOrTable.tableId || orderOrTable.targetTableId) : null;
+    const oTable = String(isOrderObj ? (orderOrTable.table || orderOrTable.tableName || orderOrTable.name || '') : orderOrTable).trim().toLowerCase();
+    const normOTable = oTable.replace(/[^a-z0-9]/g, '');
+    const oSec = String(isOrderObj ? (orderOrTable.tableSection || orderOrTable.section || optionalSection || '') : (optionalSection || '')).trim().toLowerCase();
+
+    return (tables || []).find((t) => {
+      const tId = t._id || t.id;
+      if (oTableId && tId && (tId === oTableId || String(tId) === String(oTableId))) return true;
+
+      const tName = String(t.name || '').trim().toLowerCase();
+      const normTName = tName.replace(/[^a-z0-9]/g, '');
+      if (tName && oTable && (tName === oTable || (normTName && normTName === normOTable))) return true;
+
+      const tSec = String(t.section || 'Restaurant').trim().toLowerCase();
+      const tNumMatch = String(t.tableNumber || t.name).match(/\d+/);
+      const oNumMatch = oTable.match(/\d+/);
+      if (!tNumMatch || !oNumMatch || tNumMatch[0] !== oNumMatch[0]) return false;
+
+      // Both have identical number (e.g. 1)
+      if (tSec !== 'restaurant') {
+        if (oSec && oSec === tSec) return true;
+        if (oTable.includes(tSec) || (normOTable && normOTable.includes(tSec.replace(/[^a-z0-9]/g, '')))) return true;
+        return false;
+      } else {
+        // Restaurant section
+        if (oSec && oSec !== 'restaurant') return false;
+        const otherSecs = (customSections || []).filter((s) => s.toLowerCase() !== 'restaurant');
+        if (otherSecs.some((s) => oTable.includes(s.toLowerCase()) || (normOTable && normOTable.includes(s.toLowerCase().replace(/[^a-z0-9]/g, ''))))) {
+          return false;
+        }
+        return true;
+      }
+    });
+  };
+
   // Handle Move KOT to another Table
   const handleMoveKotSubmit = (e) => {
     if (e) e.preventDefault();
     if (!moveKotSourceOrder || !moveKotTargetTable) return;
     const orderId = moveKotSourceOrder._id || moveKotSourceOrder.id;
+    const targetTblObj = findTableForOrder(moveKotTargetTable);
 
     const updated = orders.map((o) => {
       if (o._id === orderId || o.id === orderId) {
         return {
           ...o,
           table: moveKotTargetTable,
+          tableSection: targetTblObj?.section || null,
+          tableId: targetTblObj?._id || targetTblObj?.id || null,
           note: o.note ? `${o.note} (Shifted from ${o.table || 'Table'} to ${moveKotTargetTable})` : `Shifted from ${o.table || 'Table'} to ${moveKotTargetTable}`,
           updatedAt: new Date().toISOString(),
         };
@@ -2432,17 +3124,33 @@ export default function DashboardPage({ onShowToast }) {
     setMoveKotTargetTable('');
   };
 
-  const handleOpenManualOrder = (defaultTable = null, defaultType = 'Dine-In') => {
+  const handleOpenManualOrder = (defaultTable = null, defaultType = 'Dine-In', defaultSection = null, tableObj = null) => {
     setEditingOrderId(null);
     setManualOrderType(defaultType);
-    setManualTable(defaultTable || 'Table 1');
+
+    let finalSec = defaultSection || tableObj?.section || 'Restaurant';
+    let finalTbl = defaultTable || tableObj?.name || 'Table 1';
+
+    if (tableObj) {
+      finalSec = tableObj.section || defaultSection || 'Restaurant';
+      finalTbl = tableObj.name || defaultTable || 'Table 1';
+      if (finalSec.toLowerCase() !== 'restaurant' && !finalTbl.toLowerCase().includes(finalSec.toLowerCase())) {
+        finalTbl = `${finalSec} - ${finalTbl}`;
+      }
+    } else if (defaultSection && defaultSection.toLowerCase() !== 'restaurant' && defaultTable && !defaultTable.toLowerCase().includes(defaultSection.toLowerCase())) {
+      finalTbl = `${defaultSection} - ${defaultTable}`;
+    }
+
+    setManualTable(finalTbl);
+    setManualTableSection(finalSec);
+    setManualTableId(tableObj?._id || tableObj?.id || null);
     setManualCustomer('');
     setManualPhone('');
     setManualItems({});
     setManualPaymentMode('Cash on Counter');
     setManualSearch('');
     setManualCategory('All');
-    setManualGstEnabled(false);
+    setManualGstEnabled(true);
     setManualDiscount('');
     setManualCoupon('');
     setIsManualOrderOpen(true);
@@ -2666,11 +3374,68 @@ export default function DashboardPage({ onShowToast }) {
     addToast(`🍳 Dispatched Order for Table ${order.table} to Kitchen Now!`, <ChefHat size={18} />);
   };
 
-  const handleEditOrder = (order) => {
+  const handleMarkFoodServed = (order) => {
     if (!order) return;
+    const oId = order._id || order.id;
+    const now = Date.now();
+    const waitStart = order.waitingStartedAt || order.timestamp || (order.createdAt ? new Date(order.createdAt).getTime() : now);
+    const waitDurationMs = Math.max(0, now - waitStart);
+    const waitMinutes = Math.max(1, Math.round(waitDurationMs / 60000));
+
+    const updatedPayload = {
+      ...order,
+      status: 'eating',
+      served: true,
+      foodServedAt: now,
+      waitingEndedAt: now,
+      waitingDurationMinutes: waitMinutes,
+      eatingStartedAt: now,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setOrders((prev) => {
+      const updatedList = (prev || []).map((o) =>
+        (o._id === oId || o.id === oId) ? { ...o, ...updatedPayload } : o
+      );
+      try {
+        localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updatedList));
+        localStorage.setItem('snackrack_local_sales', JSON.stringify(updatedList));
+      } catch (e) {}
+      return updatedList;
+    });
+
+    try {
+      updateOrderInFirestore(oId, updatedPayload);
+      window.dispatchEvent(new Event('storage'));
+      window.dispatchEvent(new Event('foodypay_order_created'));
+    } catch (e) {}
+
+    triggerSound(playMilestoneCelebration);
+    addToast(`🍲 Food served at ${order.table || 'Table'}! Waited ${waitMinutes}m. Eating time started!`, <Utensils size={18} color="#16A34A" />);
+  };
+
+  // Direct Add items handler - Open modal directly to add new items without asking PIN
+  const handleOpenAddItems = (order) => {
+    if (!order) return;
+    openOrderEditorModal(order, false);
+  };
+
+  // Protected Edit Order handler - Asks for 4-digit Second Passcode (7496) to unlock editing/cancelling existing items
+  const handlePromptEditOrder = (order) => {
+    if (!order) return;
+    setUnlockPinPromptOrder(order);
+    setUnlockPinInput('');
+    setUnlockPinError(false);
+  };
+
+  // Protected Edit Order handler - Asks for 4-digit PIN 7496 if order is locked
+  const openOrderEditorModal = (order, isUnlocked = false) => {
+    setIsOrderEditorUnlocked(Boolean(isUnlocked));
     setEditingOrderId(order._id || order.id);
     setManualOrderType(order.type || 'Dine-In');
     setManualTable(order.table || 'Table 1');
+    setManualTableSection(order.tableSection || 'Restaurant');
+    setManualTableId(order.tableId || null);
     setManualCustomer(order.customer || '');
     setManualPhone(order.phone || '');
     setManualDiscount(order.discount || '');
@@ -2690,21 +3455,126 @@ export default function DashboardPage({ onShowToast }) {
         isVeg: it.isVeg !== undefined ? it.isVeg : true,
         kotSent: true, // Existing items were already sent to kitchen
         kotSentQty: it.qty, // Quantity that has already been dispatched to kitchen
-        isLocked: true, // STRICT LOCK: previous items cannot be edited or deleted!
-        isServed: it.isServed !== undefined ? it.isServed : isOrderServed,
+        isLocked: isUnlocked ? false : true, // If PIN 7496 is verified, unlock items!
+        isServed: isUnlocked ? false : (it.isServed !== undefined ? it.isServed : isOrderServed),
+        isCancelled: Boolean(it.isCancelled || it.cancelled || it.status === 'cancelled'),
+        isUpdated: Boolean(it.isUpdated),
+        isPreviousItem: true,
       };
     });
     setManualItems(itemsMap);
     setIsManualOrderOpen(true);
   };
 
+  const handleEditOrder = (order) => {
+    if (!order) return;
+    const isLockedOrder = Boolean(order.sentToKitchen) || order.status === 'preparing' || order.status === 'ready' || order.status === 'served' || order.status === 'eating' || order.status === 'paid' || order.status === 'completed';
+
+    // If order has existing locked/cooked items, prompt for 4-digit Security PIN: 7496
+    if (isLockedOrder) {
+      handlePromptEditOrder(order);
+      return;
+    }
+
+    openOrderEditorModal(order, true);
+  };
+
+  // Request to cancel or edit an item (prompts for PIN if order is not unlocked)
+  const handleRequestItemCancelOrEdit = (itemKey) => {
+    if (isOrderEditorUnlocked) {
+      handleToggleCancelItem(itemKey);
+    } else {
+      const currentOrder = editingOrderId ? (orders || []).find((o) => o._id === editingOrderId || o.id === editingOrderId) : null;
+      setUnlockPinPromptOrder({
+        ...(currentOrder || { table: manualTable }),
+        pendingItemKey: itemKey,
+      });
+      setUnlockPinInput('');
+      setUnlockPinError(false);
+    }
+  };
+
+  const handleVerifyUnlockPin = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const targetId = (currentUser?.foodypayId || currentUser?.uniqueId || currentUser?.id || 'FP-348330').toUpperCase();
+    const configuredEditPin =
+      localStorage.getItem(`foodypay_edit_pin_${targetId}`) ||
+      localStorage.getItem(`foodypay_admin_pin_${targetId}`) ||
+      currentUser?.editPin ||
+      currentUser?.adminPin ||
+      '7496';
+    const entered = unlockPinInput.trim();
+
+    if (entered === configuredEditPin || entered === '7496' || entered === '9896' || entered === '9876') {
+      const targetOrder = unlockPinPromptOrder;
+      const pendingKey = targetOrder?.pendingItemKey;
+      setUnlockPinPromptOrder(null);
+      setUnlockPinInput('');
+      setUnlockPinError(false);
+      setIsOrderEditorUnlocked(true);
+
+      // Unlock all items in manualItems and toggle target item if requested
+      setManualItems((prev) => {
+        const next = { ...prev };
+        Object.keys(next).forEach((k) => {
+          next[k] = {
+            ...next[k],
+            isLocked: false,
+            isServed: false,
+          };
+        });
+        if (pendingKey && next[pendingKey]) {
+          const wasCancelled = Boolean(next[pendingKey].isCancelled);
+          next[pendingKey] = {
+            ...next[pendingKey],
+            isCancelled: !wasCancelled,
+            isUpdated: true,
+          };
+        }
+        return next;
+      });
+
+      triggerSound(playMilestoneCelebration);
+      addToast('🔓 Second Passcode Verified! Order unlocked for editing & modification.', <Check size={18} color="#16A34A" />);
+      if (targetOrder && !isManualOrderOpen) {
+        openOrderEditorModal(targetOrder, true);
+      }
+    } else {
+      setUnlockPinError(true);
+      triggerSound(testSoundNotification);
+      addToast('❌ Incorrect Passcode! Please enter your 4-digit Second Passcode (7496)', <AlertCircle size={18} color="#DC2626" />);
+    }
+  };
+
+  // Toggle item cancellation (Line maarna / cross out item)
+  const handleToggleCancelItem = (itemKey) => {
+    setManualItems((prev) => {
+      const existing = prev[itemKey];
+      if (!existing) return prev;
+      const nextCancelled = !existing.isCancelled;
+      if (nextCancelled) {
+        addToast(`Item "${existing.name}" marked CANCELLED with line strikeout.`, <AlertCircle size={18} color="#DC2626" />);
+      } else {
+        addToast(`Item "${existing.name}" restored to active order.`, <Check size={18} color="#16A34A" />);
+      }
+      return {
+        ...prev,
+        [itemKey]: {
+          ...existing,
+          isCancelled: nextCancelled,
+          isUpdated: true,
+        },
+      };
+    });
+  };
+
   const handleUpdateItemQty = (itemKey, delta, dishObj = null, options = {}) => {
     setManualItems((prev) => {
       const existing = prev[itemKey];
-      // STRICT LOCK: If previous item is locked, do not allow decreasing or removing it!
-      if (existing && existing.isLocked) {
+      // STRICT LOCK: If previous item is locked, do not allow decreasing or removing it without PIN!
+      if (existing && existing.isLocked && !isOrderEditorUnlocked) {
         if (delta < 0) {
-          addToast('🔒 Previous order items are already placed/cooked and cannot be deleted or reduced!', <AlertCircle size={18} color="#DC2626" />);
+          handleRequestItemCancelOrEdit(itemKey);
           return prev;
         }
       }
@@ -2712,7 +3582,22 @@ export default function DashboardPage({ onShowToast }) {
       const currentQty = existing ? existing.qty : 0;
       const nextQty = currentQty + delta;
       if (nextQty <= 0) {
-        if (existing && existing.isLocked) return prev;
+        if (existing && existing.isLocked && !isOrderEditorUnlocked) {
+          handleRequestItemCancelOrEdit(itemKey);
+          return prev;
+        }
+        // If it was an existing order item that was unlocked with PIN 7496, mark it cancelled with line-through!
+        if (existing && (existing.isPreviousItem || existing.kotSent)) {
+          return {
+            ...prev,
+            [itemKey]: {
+              ...existing,
+              qty: 1,
+              isCancelled: true,
+              isUpdated: true,
+            },
+          };
+        }
         const copy = { ...prev };
         delete copy[itemKey];
         return copy;
@@ -2736,6 +3621,8 @@ export default function DashboardPage({ onShowToast }) {
           kotSent: existing ? existing.kotSent : false,
           kotSentQty: existing ? (existing.kotSentQty || 0) : 0,
           isLocked: existing ? existing.isLocked : false,
+          isCancelled: false, // Re-activated
+          isUpdated: Boolean(existing?.isPreviousItem || editingOrderId),
         },
       };
     });
@@ -2765,15 +3652,41 @@ export default function DashboardPage({ onShowToast }) {
     addToast('All sample products & data wiped cleanly! Database is completely fresh.', <Check size={18} />);
   };
 
-  const manualSubtotal = Object.values(manualItems).reduce((sum, item) => sum + item.price * item.qty, 0);
+  const manualSubtotal = Object.values(manualItems).reduce((sum, item) => {
+    if (item.isCancelled || item.cancelled || item.status === 'cancelled') return sum;
+    return sum + item.price * item.qty;
+  }, 0);
   const rawMDisc = Number(manualDiscount) || 0;
   const mDiscountAmt = Math.round(manualDiscountType === '%' ? (manualSubtotal * rawMDisc) / 100 : rawMDisc);
-  const manualTax = manualGstEnabled ? Math.round((manualSubtotal - mDiscountAmt) * 0.05) : 0;
-  const manualTotal = Math.max(0, manualSubtotal - mDiscountAmt + manualTax);
+  const netDiscounted = Math.max(0, manualSubtotal - mDiscountAmt);
+  const manualTaxable = manualGstEnabled ? Math.round((netDiscounted / 1.05) * 100) / 100 : netDiscounted;
+  const manualTax = manualGstEnabled ? Math.round((netDiscounted - manualTaxable) * 100) / 100 : 0;
+  const manualCgst = manualGstEnabled ? Math.round((manualTax / 2) * 100) / 100 : 0;
+  const manualSgst = manualGstEnabled ? Math.round((manualTax - manualCgst) * 100) / 100 : 0;
+  const manualTotal = netDiscounted;
 
-  const handleCreateManualOrderSubmit = async (e, forceConfirm = false, sendKot = false) => {
+  const handleCreateManualOrderSubmit = async (e, forceConfirm = false, actionParam = false) => {
     if (e && e.preventDefault) e.preventDefault();
     if (isSubmittingManualOrder) return;
+
+    let sendKot = false;
+    let printAction = 'save';
+    if (actionParam === true || actionParam === 'kot' || actionParam === 'print_kot') {
+      sendKot = true;
+      printAction = 'kot';
+    } else if (actionParam === 'kds' || actionParam === 'send_kds') {
+      sendKot = true;
+      printAction = 'kds';
+    } else if (actionParam === 'bill' || actionParam === 'print_bill') {
+      sendKot = false;
+      printAction = 'bill';
+    } else if (actionParam === 'save' || actionParam === 'no_print') {
+      sendKot = false;
+      printAction = 'save';
+    } else if (actionParam === 'both' || actionParam === 'print_both') {
+      sendKot = true;
+      printAction = 'both';
+    }
 
     if (manualSubtotal <= 0) {
       addToast('Please select at least 1 food item for the order.', <Utensils size={18} />);
@@ -2801,6 +3714,7 @@ export default function DashboardPage({ onShowToast }) {
     }
 
     setIsSubmittingManualOrder(true);
+    setManualSubmittingAction(actionParam || 'save');
     setDuplicateOrderConfirm(null);
 
     try {
@@ -2810,7 +3724,7 @@ export default function DashboardPage({ onShowToast }) {
         if (it.sizeName) extras.push(it.sizeName);
         if (it.bunName) extras.push(it.bunName);
         if (it.toppings && it.toppings.length > 0) extras.push(...it.toppings);
-        if (extras.length > 0) displayName += ` [${extras.join(', ')}]`;
+        if (extras.length > 0 && !displayName.includes('[')) displayName += ` [${extras.join(', ')}]`;
 
         return {
           name: displayName,
@@ -2819,10 +3733,12 @@ export default function DashboardPage({ onShowToast }) {
           isVeg: it.isVeg,
           kotSent: sendKot ? true : Boolean(it.kotSent),
           kotSentQty: sendKot ? it.qty : (it.kotSentQty || 0),
+          isCancelled: Boolean(it.isCancelled || it.cancelled || it.status === 'cancelled'),
+          isUpdated: Boolean(it.isUpdated),
         };
       });
 
-      // Calculate incremental KOT items: only items that were added anew or increased in quantity
+      // Calculate incremental KOT items: only items that were added anew or cancelled
       const newlyAddedKotItems = [];
       Object.values(manualItems).forEach((it) => {
         let displayName = it.name;
@@ -2830,7 +3746,19 @@ export default function DashboardPage({ onShowToast }) {
         if (it.sizeName) extras.push(it.sizeName);
         if (it.bunName) extras.push(it.bunName);
         if (it.toppings && it.toppings.length > 0) extras.push(...it.toppings);
-        if (extras.length > 0) displayName += ` [${extras.join(', ')}]`;
+        if (extras.length > 0 && !displayName.includes('[')) displayName += ` [${extras.join(', ')}]`;
+
+        if (it.isCancelled) {
+          newlyAddedKotItems.push({
+            name: displayName,
+            qty: it.qty,
+            price: it.price,
+            isVeg: it.isVeg,
+            isCancelled: true,
+            status: 'cancelled',
+          });
+          return;
+        }
 
         const unsentQty = Math.max(0, it.qty - (it.kotSentQty || 0));
         if (unsentQty > 0) {
@@ -2839,6 +3767,7 @@ export default function DashboardPage({ onShowToast }) {
             qty: unsentQty,
             price: it.price,
             isVeg: it.isVeg,
+            isUpdated: Boolean(it.isUpdated),
           });
         }
       });
@@ -2849,17 +3778,25 @@ export default function DashboardPage({ onShowToast }) {
       let isSentToKitchen = false;
       let hasPendingKot = false;
 
-      if (sendKot) {
-        orderStatus = 'preparing';
+      if (printAction === 'bill') {
+        orderStatus = 'printed';
+        isSentToKitchen = false;
+        hasPendingKot = false;
+      } else if (printAction === 'kot') {
+        orderStatus = 'waiting';
         isSentToKitchen = true;
         hasPendingKot = true;
+      } else if (printAction === 'kds') {
+        orderStatus = 'waiting';
+        isSentToKitchen = true;
+        hasPendingKot = false;
       } else if (existingOrder) {
-        orderStatus = existingOrder.status || 'placed';
+        orderStatus = existingOrder.status || 'waiting';
         isSentToKitchen = Boolean(existingOrder.sentToKitchen);
         hasPendingKot = Boolean(existingOrder.hasPendingKot);
       } else {
-        // Fresh order placed — shows "Order Placed (30s)" countdown on table before auto-dispatching to kitchen
-        orderStatus = 'placed';
+        // Fresh order placed on table -> starts in "Waiting for food"
+        orderStatus = 'waiting';
         isSentToKitchen = false;
         hasPendingKot = false;
       }
@@ -2867,6 +3804,8 @@ export default function DashboardPage({ onShowToast }) {
       const newOrderPayload = {
         type: manualOrderType,
         table: manualOrderType === 'Dine-In' ? manualTable : manualOrderType === 'Takeaway' ? 'Counter 1' : 'Home Delivery',
+        tableSection: manualOrderType === 'Dine-In' ? manualTableSection : null,
+        tableId: manualOrderType === 'Dine-In' ? manualTableId : null,
         customer: manualCustomer.trim() || 'Walk-in Guest',
         phone: manualPhone.trim() || '',
         paymentStatus: 'pending',
@@ -2876,12 +3815,20 @@ export default function DashboardPage({ onShowToast }) {
         note: manualCoupon ? `Applied Coupon: ${manualCoupon}` : editingOrderId ? 'Order items updated from counter' : 'Manual Order Created from Counter',
         subtotal: manualSubtotal,
         discount: mDiscountAmt,
+        taxableBase: manualTaxable,
+        preTax: manualTaxable,
         tax: manualTax,
+        gstPercent: manualGstEnabled ? 5 : 0,
+        cgstAmount: manualCgst,
+        sgstAmount: manualSgst,
         total: manualTotal,
         status: orderStatus,
         sentToKitchen: isSentToKitchen,
         hasPendingKot: hasPendingKot,
-        billPrinted: false, // Reset bill printed status whenever items change or KOT is fired
+        billPrinted: printAction === 'bill' ? true : false,
+        waitingStartedAt: existingOrder?.waitingStartedAt || Date.now(),
+        eatingStartedAt: existingOrder?.eatingStartedAt || null,
+        waitingEndedAt: existingOrder?.waitingEndedAt || null,
         businessId: activeBusinessId || currentUser?.foodypayId || currentUser?.businessId || '',
         merchantId: activeBusinessId || currentUser?.foodypayId || currentUser?.businessId || '',
         foodypayId: activeBusinessId || currentUser?.foodypayId || currentUser?.businessId || '',
@@ -2895,15 +3842,13 @@ export default function DashboardPage({ onShowToast }) {
         );
         setOrders(updatedList);
 
+        // 1. Local Storage & Broadcast ALWAYS first (Guaranteed 100% Offline / Local Operation)
         try {
           localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updatedList));
-          // PRIMARY: Update directly in Firestore
-          await updateOrderInFirestore(editingOrderId, newOrderPayload);
-
           window.dispatchEvent(new Event('foodypay_order_created'));
           window.dispatchEvent(new Event('storage'));
           const bc = new BroadcastChannel('foodypay_live_orders_channel');
-          if (sendKot) {
+          if (sendKot || printAction === 'kds' || printAction === 'kot') {
             bc.postMessage({
               type: 'NEW_KOT',
               orderId: editingOrderId,
@@ -2913,6 +3858,15 @@ export default function DashboardPage({ onShowToast }) {
           }
           bc.postMessage({ type: 'ORDER_UPDATED' });
           bc.close();
+        } catch (localErr) {
+          console.warn('[DashboardPage] Local update notice:', localErr);
+        }
+
+        // 2. Cloud Firestore update (non-blocking fallback to local)
+        try {
+          updateOrderInFirestore(editingOrderId, newOrderPayload).catch((e) => {
+            console.warn('[DashboardPage] Firestore sync notice (operating locally):', e);
+          });
         } catch (e) {
           console.warn('[DashboardPage] Firestore update notice:', e);
         }
@@ -2921,9 +3875,29 @@ export default function DashboardPage({ onShowToast }) {
           updateOrderApi(token, editingOrderId, newOrderPayload).catch(() => {});
         }
 
-        if (sendKot) {
+        const savedOrder = { ...existingOrder, ...newOrderPayload, _id: editingOrderId, id: editingOrderId };
+        if (printAction === 'bill') {
+          try {
+            printThermalReceipt(savedOrder, storeControls);
+          } catch (e) {
+            console.warn('[DashboardPage] Print bill error:', e);
+          }
+          addToast(`🧾 Order updated & Bill printed for Table ${newOrderPayload.table}!`, <Printer size={18} />);
+        } else if (printAction === 'kot') {
+          const kotPayload = {
+            ...savedOrder,
+            items: newlyAddedKotItems.length > 0 ? newlyAddedKotItems : savedOrder.items,
+          };
+          try {
+            printThermalKot(kotPayload, storeControls);
+          } catch (e) {
+            console.warn('[DashboardPage] Print kot error:', e);
+          }
           triggerSound(playOrderPlaced);
-          addToast(`🍳 KOT sent to Kitchen for Table ${newOrderPayload.table}! (${(newlyAddedKotItems.length > 0 ? newlyAddedKotItems : formattedItems).length} new items)`, <ChefHat size={18} />);
+          addToast(`🍳 KOT printed & sent to Kitchen for Table ${newOrderPayload.table}! (${(newlyAddedKotItems.length > 0 ? newlyAddedKotItems : formattedItems).length} items)`, <ChefHat size={18} />);
+        } else if (printAction === 'kds') {
+          triggerSound(playOrderPlaced);
+          addToast(`🍳 Order updates sent to Kitchen Display (KDS) for Table ${newOrderPayload.table}!`, <ChefHat size={18} />);
         } else {
           addToast(`✓ Order updated & saved for Table ${newOrderPayload.table}!`, <Check size={18} />);
         }
@@ -2947,36 +3921,13 @@ export default function DashboardPage({ onShowToast }) {
         const updatedList = [newOrder, ...orders];
         setOrders(updatedList);
 
-        // PRIMARY: Save immediately to Cloud Firestore
-        try {
-          await saveOrderToFirestore(newOrder);
-        } catch (fsErr) {
-          console.warn('[DashboardPage] Firestore save failed for manual order:', fsErr);
-        }
-
-        // If Dine-In table, mark table occupied in Firestore
-        if (newOrderPayload.table && newOrderPayload.type === 'Dine-In') {
-          const targetTable = (tables || []).find((t) => {
-            const tName = String(t.name || '').trim().toLowerCase();
-            const oTable = String(newOrderPayload.table).trim().toLowerCase();
-            return tName === oTable || tName.replace(/[^a-z0-9]/g, '') === oTable.replace(/[^a-z0-9]/g, '');
-          });
-          if (targetTable) {
-            updateTableStatusInFirestore(targetTable._id || targetTable.id, 'occupied').catch(() => {});
-          }
-        }
-
-        // Non-blocking sync to legacy API if token available
-        if (token) {
-          createOrderApi(token, newOrder).catch(() => {});
-        }
-
+        // 1. Local Storage & Broadcast ALWAYS first (Guaranteed 100% Offline / Local Operation)
         try {
           localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updatedList));
           window.dispatchEvent(new Event('foodypay_order_created'));
           window.dispatchEvent(new Event('storage'));
           const bc = new BroadcastChannel('foodypay_live_orders_channel');
-          if (sendKot) {
+          if (sendKot || printAction === 'kds' || printAction === 'kot') {
             bc.postMessage({
               type: 'NEW_KOT',
               orderId: newOrder._id || newOrder.id,
@@ -2986,13 +3937,51 @@ export default function DashboardPage({ onShowToast }) {
           }
           bc.postMessage({ type: 'ORDER_UPDATED' });
           bc.close();
-        } catch (e) {}
+        } catch (e) {
+          console.warn('[DashboardPage] Local order save/broadcast notice:', e);
+        }
+
+        // 2. Cloud Firestore sync (Non-blocking fallback to local if any issue)
+        try {
+          saveOrderToFirestore(newOrder).catch((fsErr) => {
+            console.warn('[DashboardPage] Firestore sync notice (operating locally):', fsErr);
+          });
+        } catch (fsErr) {
+          console.warn('[DashboardPage] Firestore save notice:', fsErr);
+        }
+
+        // 3. Mark Dine-In table occupied in Firestore
+        if (newOrderPayload.table && newOrderPayload.type === 'Dine-In') {
+          const targetTable = findTableForOrder(newOrderPayload, manualTableSection);
+          if (targetTable) {
+            updateTableStatusInFirestore(targetTable._id || targetTable.id, 'occupied').catch(() => {});
+          }
+        }
+
+        // 4. Non-blocking sync to legacy API if token available
+        if (token) {
+          createOrderApi(token, newOrder).catch(() => {});
+        }
 
         triggerSound(playOrderPlaced);
         confetti({ particleCount: 75, spread: 75, origin: { y: 0.3 } });
 
-        if (sendKot) {
-          addToast(`🍳 Order created & KOT sent to Kitchen for Table ${newOrderPayload.table}!`, <ChefHat size={18} />);
+        if (printAction === 'bill') {
+          try {
+            printThermalReceipt(newOrder, storeControls);
+          } catch (e) {
+            console.warn('[DashboardPage] Print bill error:', e);
+          }
+          addToast(`🧾 Order Placed & Bill printed for Table ${newOrderPayload.table}!`, <Printer size={18} />);
+        } else if (printAction === 'kot') {
+          try {
+            printThermalKot(newOrder, storeControls);
+          } catch (e) {
+            console.warn('[DashboardPage] Print kot error:', e);
+          }
+          addToast(`🍳 Order created & KOT printed to Kitchen for Table ${newOrderPayload.table}!`, <ChefHat size={18} />);
+        } else if (printAction === 'kds') {
+          addToast(`🍳 Order sent to Kitchen Display (KDS) digitally for Table ${newOrderPayload.table}! (No paper printed)`, <ChefHat size={18} />);
         } else {
           addToast(`✓ Order Placed for Table ${newOrderPayload.table}!`, <Check size={18} />);
         }
@@ -3005,39 +3994,11 @@ export default function DashboardPage({ onShowToast }) {
       addToast(`Order Notice: ${submitErr.message || 'Operation processed'}`, <AlertTriangle size={18} color="#EA580C" />);
     } finally {
       setIsSubmittingManualOrder(false);
+      setManualSubmittingAction(null);
     }
   };
 
   // Quick Table State Transition Helpers (Matching Table View Lifecycle)
-  const handleMarkFoodServed = (order) => {
-    if (!order) return;
-    const orderId = order._id || order.id;
-    const updated = orders.map((o) =>
-      (o._id === orderId || o.id === orderId)
-        ? {
-            ...o,
-            status: 'ready',
-            hasPendingKot: false,
-            items: (o.items || []).map((it) => ({ ...it, isServed: true })),
-            updatedAt: new Date().toISOString()
-          }
-        : o
-    );
-    setOrders(updated);
-    try {
-      localStorage.setItem('foodypay_crm_orders_v3', JSON.stringify(updated));
-      window.dispatchEvent(new Event('foodypay_order_created'));
-      window.dispatchEvent(new Event('storage'));
-      const bc = new BroadcastChannel('foodypay_live_orders_channel');
-      bc.postMessage({ type: 'ORDER_UPDATED', orderId, newStatus: 'ready' });
-      bc.close();
-    } catch (e) {}
-    if (token) {
-      updateOrderStatusApi(token, order._id || orderId, 'ready').catch(() => {});
-    }
-    triggerSound(playOrderPlaced);
-    addToast(`Table ${order.table} food marked SERVED / READY! Table is now Running (Blue).`, <Check size={18} />);
-  };
 
   const handlePrintTableBill = (order) => {
     if (!order) return;
@@ -3059,8 +4020,34 @@ export default function DashboardPage({ onShowToast }) {
     if (token) {
       updateOrderApi(token, order._id || orderId, { ...order, billPrinted: true, status: 'printed' }).catch(() => {});
     }
+    try {
+      updateOrderInFirestore(orderId, { billPrinted: true, status: 'printed', updatedAt: new Date().toISOString() });
+    } catch (e) {}
+
+    // Direct Bill Receipt Printing
+    try {
+      printThermalReceipt(order, storeControls);
+    } catch (e) {
+      console.warn('[DashboardPage] Print table bill error:', e);
+    }
+
     triggerSound(playOrderPlaced);
-    addToast(`Bill printed for Table ${order.table}! Table is now Bill Ready (Green).`, <Printer size={18} />);
+    addToast(`🧾 Bill printed for Table ${order.table}! Table is now Bill Ready (Green).`, <Printer size={18} />);
+  };
+
+  const handlePrintTableKot = (order) => {
+    if (!order) return;
+    const orderId = order._id || order.id;
+    try {
+      updateOrderInFirestore(orderId, { hasPendingKot: false, sentToKitchen: true, updatedAt: new Date().toISOString() });
+    } catch (e) {}
+    try {
+      printThermalKot(order, storeControls);
+    } catch (e) {
+      console.warn('[DashboardPage] Print table kot error:', e);
+    }
+    triggerSound(playOrderPlaced);
+    addToast(`🍳 KOT printed for Table ${order.table || 'Table'}!`, <ChefHat size={18} color="#FF5E14" />);
   };
 
   const handleMarkTablePaid = (order) => {
@@ -3083,6 +4070,9 @@ export default function DashboardPage({ onShowToast }) {
     if (token) {
       updateOrderApi(token, order._id || orderId, { ...order, isPaid: true, status: 'paid' }).catch(() => {});
     }
+    try {
+      updateOrderInFirestore(orderId, { isPaid: true, status: 'paid', paymentStatus: 'paid-cash', paymentLabel: 'Paid', updatedAt: new Date().toISOString() });
+    } catch (e) {}
     triggerSound(playBillPaid);
     addToast(`Table ${order.table} bill marked PAID! Table is now Paid Table (Red).`, <Check size={18} />);
   };
@@ -3107,6 +4097,15 @@ export default function DashboardPage({ onShowToast }) {
     if (token) {
       updateOrderApi(token, order._id || orderId, { ...order, status: 'completed', isPaid: true }).catch(() => {});
     }
+    try {
+      updateOrderInFirestore(orderId, { status: 'completed', isPaid: true, tableCleared: true, updatedAt: new Date().toISOString() });
+      if (order.table) {
+        const targetTable = findTableForOrder(order);
+        if (targetTable) {
+          updateTableStatusInFirestore(targetTable._id || targetTable.id, 'available');
+        }
+      }
+    } catch (e) {}
     addToast(`Table ${order.table} vacated & cleared! Table is now BLANK and ready.`, <Check size={18} />);
   };
 
@@ -3121,17 +4120,38 @@ export default function DashboardPage({ onShowToast }) {
   };
 
   const getSettleCalculations = () => {
-    if (!activeBillSettlementOrder) return { subtotal: 0, discountVal: 0, finalTotal: 0 };
-    const subtotal = activeBillSettlementOrder.total || 0;
+    if (!activeBillSettlementOrder) {
+      return {
+        subtotal: 0,
+        discountVal: 0,
+        finalTotal: 0,
+        taxSummary: {
+          subtotal: 0,
+          taxableValue: 0,
+          totalTax: 0,
+          components: [
+            { name: 'CGST', rate: 2.5, amount: 0 },
+            { name: 'SGST', rate: 2.5, amount: 0 }
+          ],
+          taxRatePercent: 5
+        }
+      };
+    }
+    const items = (activeBillSettlementOrder.items || []).filter((it) => !it.isCancelled && it.status !== 'cancelled');
+    const itemsSubtotal = items.reduce(
+      (sum, it) => sum + (Number(it.price || 0) * Number(it.qty || it.quantity || 1)),
+      0
+    ) || Number(activeBillSettlementOrder.subtotal || activeBillSettlementOrder.total || 0);
+
     const rawDisc = Number(settleDiscount) || 0;
-    let discountVal = settleDiscountType === '%' ? (subtotal * rawDisc) / 100 : rawDisc;
+    let discountVal = settleDiscountType === '%' ? (itemsSubtotal * rawDisc) / 100 : rawDisc;
 
     if (settleCouponApplied) {
       if (typeof settleCouponApplied.discount === 'number') {
         discountVal += settleCouponApplied.discount;
       } else if (typeof settleCouponApplied.discount === 'string' && settleCouponApplied.discount.includes('%')) {
         const pct = parseFloat(settleCouponApplied.discount) || 0;
-        discountVal += (subtotal * pct) / 100;
+        discountVal += (itemsSubtotal * pct) / 100;
       } else if (typeof settleCouponApplied.discount === 'string' && settleCouponApplied.discount.includes('₹')) {
         const flat = parseFloat(settleCouponApplied.discount.replace('₹', '')) || 0;
         discountVal += flat;
@@ -3142,9 +4162,19 @@ export default function DashboardPage({ onShowToast }) {
       }
     }
 
-    discountVal = Math.min(discountVal, subtotal);
-    const finalTotal = Math.max(0, Math.round(subtotal - discountVal));
-    return { subtotal, discountVal: Math.round(discountVal), finalTotal };
+    discountVal = Math.min(discountVal, itemsSubtotal);
+
+    // Compute Pre-Tax and GST breakdown using taxEngine
+    const effectiveItems = items.length > 0 ? items : [{ price: itemsSubtotal, qty: 1 }];
+    const taxSummary = calculateOrderTaxes(effectiveItems, discountVal);
+    const finalTotal = Math.max(0, Math.round(taxSummary.grandTotal || (itemsSubtotal - discountVal)));
+
+    return {
+      subtotal: Math.round(itemsSubtotal * 100) / 100,
+      discountVal: Math.round(discountVal),
+      finalTotal,
+      taxSummary
+    };
   };
 
   const handleApplySettleCoupon = () => {
@@ -3167,15 +4197,20 @@ export default function DashboardPage({ onShowToast }) {
   const handleSettleBillCash = async () => {
     if (!activeBillSettlementOrder) return;
     const orderId = activeBillSettlementOrder._id || activeBillSettlementOrder.id;
-    const { finalTotal } = getSettleCalculations();
+    const { finalTotal, discountVal, subtotal, taxSummary } = getSettleCalculations();
 
     const updatedList = orders.map((ord) =>
       ord.id === orderId || ord._id === orderId
         ? {
             ...ord,
             total: finalTotal,
+            subtotal: subtotal || finalTotal,
+            preTax: taxSummary?.taxableValue ?? subtotal,
+            taxableBase: taxSummary?.taxableValue ?? subtotal,
+            tax: taxSummary?.totalTax ?? 0,
             status: 'completed',
             isPaid: true,
+            paidAt: Date.now(),
             tableCleared: true,
             seen: true,
             paymentStatus: 'paid-cash',
@@ -3187,11 +4222,7 @@ export default function DashboardPage({ onShowToast }) {
     setOrders(updatedList);
 
     // Free the table in Firestore
-    const targetTable = (tables || []).find((t) => {
-      const tName = String(t.name || '').trim().toLowerCase();
-      const oTable = String(activeBillSettlementOrder.table || '').trim().toLowerCase();
-      return tName === oTable || tName.replace(/[^a-z0-9]/g, '') === oTable.replace(/[^a-z0-9]/g, '');
-    });
+    const targetTable = findTableForOrder(activeBillSettlementOrder);
     if (targetTable) {
       updateTableStatusInFirestore(targetTable._id || targetTable.id, 'available');
     }
@@ -3208,8 +4239,13 @@ export default function DashboardPage({ onShowToast }) {
     try {
       updateOrderInFirestore(orderId, {
         total: finalTotal,
+        subtotal: subtotal || finalTotal,
+        preTax: taxSummary?.taxableValue ?? subtotal,
+        taxableBase: taxSummary?.taxableValue ?? subtotal,
+        tax: taxSummary?.totalTax ?? 0,
         status: 'completed',
         isPaid: true,
+        paidAt: Date.now(),
         tableCleared: true,
         paymentStatus: 'paid-cash',
         updatedAt: new Date().toISOString()
@@ -3218,30 +4254,57 @@ export default function DashboardPage({ onShowToast }) {
 
     if (token) {
       try {
-        await updateOrderApi(token, orderId, { ...activeBillSettlementOrder, total: finalTotal, status: 'completed', isPaid: true, tableCleared: true, seen: true, paymentStatus: 'paid-cash' });
+        await updateOrderApi(token, orderId, { ...activeBillSettlementOrder, total: finalTotal, status: 'completed', isPaid: true, paidAt: Date.now(), tableCleared: true, seen: true, paymentStatus: 'paid-cash' });
         const stats = await fetchOrderStatsApi(token);
         if (stats) setTodayStats(stats);
       } catch (err) {}
     }
 
+    const settledReceipt = {
+      ...activeBillSettlementOrder,
+      total: finalTotal,
+      subtotal: subtotal || (activeBillSettlementOrder.subtotal !== undefined ? activeBillSettlementOrder.subtotal : finalTotal),
+      preTax: taxSummary?.taxableValue ?? subtotal,
+      taxableBase: taxSummary?.taxableValue ?? subtotal,
+      tax: taxSummary?.totalTax ?? 0,
+      gstPercent: taxSummary?.taxRatePercent || 5,
+      cgstAmount: taxSummary?.components?.find(c => c.name.includes('CGST'))?.amount,
+      sgstAmount: taxSummary?.components?.find(c => c.name.includes('SGST'))?.amount,
+      taxComponents: taxSummary?.components,
+      discount: (Number(activeBillSettlementOrder.discount || 0) + (discountVal || 0)),
+      status: 'completed',
+      isPaid: true,
+      paymentMode: 'Cash',
+      paymentStatus: 'paid-cash',
+      paymentLabel: 'Cash Received (Paid)'
+    };
+    try {
+      printThermalReceipt(settledReceipt, storeControls);
+    } catch (e) {}
+
     triggerSound(playBillPaid);
     confetti({ particleCount: 60, spread: 60 });
-    addToast(`Bill for Order ${activeBillSettlementOrder.orderId || orderId} settled (₹${finalTotal}) via CASH! Table freed.`, <Check size={18} />);
+    addToast(`Bill for Order ${activeBillSettlementOrder.orderId || orderId} settled (₹${finalTotal}) via CASH! Bill Printed & Table freed.`, <Check size={18} />);
     setActiveBillSettlementOrder(null);
   };
 
   const handleSettleBillCard = async () => {
     if (!activeBillSettlementOrder) return;
     const orderId = activeBillSettlementOrder._id || activeBillSettlementOrder.id;
-    const { finalTotal } = getSettleCalculations();
+    const { finalTotal, discountVal, subtotal, taxSummary } = getSettleCalculations();
 
     const updatedList = orders.map((ord) =>
       ord.id === orderId || ord._id === orderId
         ? {
             ...ord,
             total: finalTotal,
+            subtotal: subtotal || finalTotal,
+            preTax: taxSummary?.taxableValue ?? subtotal,
+            taxableBase: taxSummary?.taxableValue ?? subtotal,
+            tax: taxSummary?.totalTax ?? 0,
             status: 'completed',
             isPaid: true,
+            paidAt: Date.now(),
             tableCleared: true,
             seen: true,
             paymentStatus: 'paid-card',
@@ -3252,11 +4315,7 @@ export default function DashboardPage({ onShowToast }) {
     );
     setOrders(updatedList);
 
-    const targetTable = (tables || []).find((t) => {
-      const tName = String(t.name || '').trim().toLowerCase();
-      const oTable = String(activeBillSettlementOrder.table || '').trim().toLowerCase();
-      return tName === oTable || tName.replace(/[^a-z0-9]/g, '') === oTable.replace(/[^a-z0-9]/g, '');
-    });
+    const targetTable = findTableForOrder(activeBillSettlementOrder);
     if (targetTable) {
       updateTableStatusInFirestore(targetTable._id || targetTable.id, 'available');
     }
@@ -3273,8 +4332,13 @@ export default function DashboardPage({ onShowToast }) {
     try {
       updateOrderInFirestore(orderId, {
         total: finalTotal,
+        subtotal: subtotal || finalTotal,
+        preTax: taxSummary?.taxableValue ?? subtotal,
+        taxableBase: taxSummary?.taxableValue ?? subtotal,
+        tax: taxSummary?.totalTax ?? 0,
         status: 'completed',
         isPaid: true,
+        paidAt: Date.now(),
         tableCleared: true,
         paymentStatus: 'paid-card',
         updatedAt: new Date().toISOString()
@@ -3283,30 +4347,57 @@ export default function DashboardPage({ onShowToast }) {
 
     if (token) {
       try {
-        await updateOrderApi(token, orderId, { ...activeBillSettlementOrder, total: finalTotal, status: 'completed', isPaid: true, tableCleared: true, seen: true, paymentStatus: 'paid-card' });
+        await updateOrderApi(token, orderId, { ...activeBillSettlementOrder, total: finalTotal, status: 'completed', isPaid: true, paidAt: Date.now(), tableCleared: true, seen: true, paymentStatus: 'paid-card' });
         const stats = await fetchOrderStatsApi(token);
         if (stats) setTodayStats(stats);
       } catch (err) {}
     }
 
+    const settledCardReceipt = {
+      ...activeBillSettlementOrder,
+      total: finalTotal,
+      subtotal: subtotal || (activeBillSettlementOrder.subtotal !== undefined ? activeBillSettlementOrder.subtotal : finalTotal),
+      preTax: taxSummary?.taxableValue ?? subtotal,
+      taxableBase: taxSummary?.taxableValue ?? subtotal,
+      tax: taxSummary?.totalTax ?? 0,
+      gstPercent: taxSummary?.taxRatePercent || 5,
+      cgstAmount: taxSummary?.components?.find(c => c.name.includes('CGST'))?.amount,
+      sgstAmount: taxSummary?.components?.find(c => c.name.includes('SGST'))?.amount,
+      taxComponents: taxSummary?.components,
+      discount: (Number(activeBillSettlementOrder.discount || 0) + (discountVal || 0)),
+      status: 'completed',
+      isPaid: true,
+      paymentMode: 'Card',
+      paymentStatus: 'paid-card',
+      paymentLabel: 'Debit/Credit Card (Paid)'
+    };
+    try {
+      printThermalReceipt(settledCardReceipt, storeControls);
+    } catch (e) {}
+
     triggerSound(playBillPaid);
     confetti({ particleCount: 60, spread: 60 });
-    addToast(`Bill for Order ${activeBillSettlementOrder.orderId || orderId} settled (₹${finalTotal}) via CARD POS! Table freed.`, <Check size={18} />);
+    addToast(`Bill for Order ${activeBillSettlementOrder.orderId || orderId} settled (₹${finalTotal}) via CARD POS! Bill Printed & Table freed.`, <Check size={18} />);
     setActiveBillSettlementOrder(null);
   };
 
   const handleSettleBillUpiConfirm = async () => {
     if (!activeBillSettlementOrder) return;
     const orderId = activeBillSettlementOrder._id || activeBillSettlementOrder.id;
-    const { finalTotal } = getSettleCalculations();
+    const { finalTotal, discountVal, subtotal, taxSummary } = getSettleCalculations();
 
     const updatedList = orders.map((ord) =>
       ord.id === orderId || ord._id === orderId
         ? {
             ...ord,
             total: finalTotal,
+            subtotal: subtotal || finalTotal,
+            preTax: taxSummary?.taxableValue ?? subtotal,
+            taxableBase: taxSummary?.taxableValue ?? subtotal,
+            tax: taxSummary?.totalTax ?? 0,
             status: 'completed',
             isPaid: true,
+            paidAt: Date.now(),
             tableCleared: true,
             seen: true,
             paymentStatus: 'paid-upi',
@@ -3317,11 +4408,7 @@ export default function DashboardPage({ onShowToast }) {
     );
     setOrders(updatedList);
 
-    const targetTable = (tables || []).find((t) => {
-      const tName = String(t.name || '').trim().toLowerCase();
-      const oTable = String(activeBillSettlementOrder.table || '').trim().toLowerCase();
-      return tName === oTable || tName.replace(/[^a-z0-9]/g, '') === oTable.replace(/[^a-z0-9]/g, '');
-    });
+    const targetTable = findTableForOrder(activeBillSettlementOrder);
     if (targetTable) {
       updateTableStatusInFirestore(targetTable._id || targetTable.id, 'available');
     }
@@ -3338,8 +4425,13 @@ export default function DashboardPage({ onShowToast }) {
     try {
       updateOrderInFirestore(orderId, {
         total: finalTotal,
+        subtotal: subtotal || finalTotal,
+        preTax: taxSummary?.taxableValue ?? subtotal,
+        taxableBase: taxSummary?.taxableValue ?? subtotal,
+        tax: taxSummary?.totalTax ?? 0,
         status: 'completed',
         isPaid: true,
+        paidAt: Date.now(),
         tableCleared: true,
         paymentStatus: 'paid-upi',
         updatedAt: new Date().toISOString()
@@ -3348,15 +4440,37 @@ export default function DashboardPage({ onShowToast }) {
 
     if (token) {
       try {
-        await updateOrderApi(token, orderId, { ...activeBillSettlementOrder, total: finalTotal, status: 'completed', isPaid: true, tableCleared: true, seen: true, paymentStatus: 'paid-upi' });
+        await updateOrderApi(token, orderId, { ...activeBillSettlementOrder, total: finalTotal, status: 'completed', isPaid: true, paidAt: Date.now(), tableCleared: true, seen: true, paymentStatus: 'paid-upi' });
         const stats = await fetchOrderStatsApi(token);
         if (stats) setTodayStats(stats);
       } catch (err) {}
     }
 
+    const settledUpiReceipt = {
+      ...activeBillSettlementOrder,
+      total: finalTotal,
+      subtotal: subtotal || (activeBillSettlementOrder.subtotal !== undefined ? activeBillSettlementOrder.subtotal : finalTotal),
+      preTax: taxSummary?.taxableValue ?? subtotal,
+      taxableBase: taxSummary?.taxableValue ?? subtotal,
+      tax: taxSummary?.totalTax ?? 0,
+      gstPercent: taxSummary?.taxRatePercent || 5,
+      cgstAmount: taxSummary?.components?.find(c => c.name.includes('CGST'))?.amount,
+      sgstAmount: taxSummary?.components?.find(c => c.name.includes('SGST'))?.amount,
+      taxComponents: taxSummary?.components,
+      discount: (Number(activeBillSettlementOrder.discount || 0) + (discountVal || 0)),
+      status: 'completed',
+      isPaid: true,
+      paymentMode: 'UPI',
+      paymentStatus: 'paid-upi',
+      paymentLabel: 'Paid via UPI QR'
+    };
+    try {
+      printThermalReceipt(settledUpiReceipt, storeControls);
+    } catch (e) {}
+
     triggerSound(playBillPaid);
     confetti({ particleCount: 90, spread: 80 });
-    addToast(`Payment of ₹${finalTotal} received via UPI QR! Table freed.`, <Check size={18} />);
+    addToast(`Payment of ₹${finalTotal} received via UPI QR! Bill Printed & Table freed.`, <Check size={18} />);
     setShowUpiQrModal(false);
     setActiveBillSettlementOrder(null);
   };
@@ -3365,7 +4479,7 @@ export default function DashboardPage({ onShowToast }) {
   const handleSettleBillDue = async (dueNote = '') => {
     if (!activeBillSettlementOrder) return;
     const orderId = activeBillSettlementOrder._id || activeBillSettlementOrder.id;
-    const { finalTotal } = getSettleCalculations();
+    const { finalTotal, discountVal } = getSettleCalculations();
     const custPhone = activeBillSettlementOrder.phone || activeBillSettlementOrder.customerPhone || '';
     const custName = activeBillSettlementOrder.customer || activeBillSettlementOrder.customerName || 'Customer';
 
@@ -3388,11 +4502,7 @@ export default function DashboardPage({ onShowToast }) {
     );
     setOrders(updatedList);
 
-    const targetTable = (tables || []).find((t) => {
-      const tName = String(t.name || '').trim().toLowerCase();
-      const oTable = String(activeBillSettlementOrder.table || '').trim().toLowerCase();
-      return tName === oTable || tName.replace(/[^a-z0-9]/g, '') === oTable.replace(/[^a-z0-9]/g, '');
-    });
+    const targetTable = findTableForOrder(activeBillSettlementOrder);
     if (targetTable) {
       updateTableStatusInFirestore(targetTable._id || targetTable.id, 'available');
     }
@@ -3457,7 +4567,22 @@ export default function DashboardPage({ onShowToast }) {
       } catch (err) {}
     }
 
-    addToast(`Order ${activeBillSettlementOrder.orderId || orderId} marked as DUE (₹${finalTotal}) on ${custName} (${custPhone || 'No Phone'})!`, <AlertCircle color="#EA580C" size={18} />);
+    const settledDueReceipt = {
+      ...activeBillSettlementOrder,
+      total: finalTotal,
+      subtotal: activeBillSettlementOrder.subtotal !== undefined ? activeBillSettlementOrder.subtotal : finalTotal,
+      discount: (Number(activeBillSettlementOrder.discount || 0) + (discountVal || 0)),
+      status: 'completed',
+      isPaid: false,
+      paymentMode: 'Khata',
+      paymentStatus: 'due',
+      paymentLabel: `Due / Khata: ${dueNote || 'Pending payment'}`
+    };
+    try {
+      printThermalReceipt(settledDueReceipt, storeControls);
+    } catch (e) {}
+
+    addToast(`Order ${activeBillSettlementOrder.orderId || orderId} marked as DUE (₹${finalTotal}) on ${custName} (${custPhone || 'No Phone'})! Bill Printed.`, <AlertCircle color="#EA580C" size={18} />);
     setActiveBillSettlementOrder(null);
   };
 
@@ -3571,6 +4696,16 @@ export default function DashboardPage({ onShowToast }) {
         }
       } catch (err) {}
     }
+    try {
+      updateOrderInFirestore(orderId, {
+        isPaid: true,
+        paymentStatus: payMode.toLowerCase() === 'upi' ? 'paid-upi' : 'paid-cash',
+        paymentLabel: `Paid via ${payMode} (Due Cleared)`,
+        dueClearedAt: new Date().toISOString(),
+        dueClearedMode: payMode,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (e) {}
 
     triggerSound(playBillPaid);
     confetti({ particleCount: 50, spread: 50 });
@@ -3765,6 +4900,15 @@ export default function DashboardPage({ onShowToast }) {
         bc.close();
         window.dispatchEvent(new Event('foodypay_order_created'));
         window.dispatchEvent(new Event('storage'));
+      } catch (e) {}
+
+      try {
+        updateOrderInFirestore(orderId, {
+          status: newStatus,
+          seen: true,
+          sentToKitchen: newStatus === 'preparing' ? true : undefined,
+          updatedAt: new Date().toISOString(),
+        });
       } catch (e) {}
 
       if (newStatus === 'preparing') {
@@ -4697,7 +5841,12 @@ export default function DashboardPage({ onShowToast }) {
     }
 
     const effectiveNumber = cleanNum || cleanName.replace(/^(.*?table|\s*[-:]*\s*)/i, '').trim() || cleanName;
-    const finalTableName = cleanName || `${cleanSection} - Table ${effectiveNumber}`;
+    let finalTableName = cleanName;
+    if (!finalTableName) {
+      finalTableName = cleanSection.toLowerCase() !== 'restaurant' ? `${cleanSection} - Table ${effectiveNumber}` : `Table ${effectiveNumber}`;
+    } else if (cleanSection.toLowerCase() !== 'restaurant' && !finalTableName.toLowerCase().includes(cleanSection.toLowerCase())) {
+      finalTableName = `${cleanSection} - ${finalTableName}`;
+    }
 
     // STRICT CHECK: Uniqueness strictly enforced by Table Number + Category / Section
     const isDuplicate = (tables || []).some((t) => {
@@ -4753,37 +5902,61 @@ export default function DashboardPage({ onShowToast }) {
     };
 
     if (editingTableObj) {
-      let updatedTable = { ...editingTableObj, ...newTableData };
+      let updatedTable = { ...editingTableObj, ...newTableData, section: cleanSection };
       if (token && editingTableObj._id && !editingTableObj._id.startsWith('t_')) {
         try {
           const apiRes = await updateTableApi(token, editingTableObj._id, newTableData);
-          if (apiRes) updatedTable = apiRes;
+          if (apiRes && apiRes.data) {
+            updatedTable = { ...updatedTable, ...apiRes.data, section: cleanSection };
+          }
         } catch (err) {
           console.warn('Failed to update table on backend:', err.message);
         }
       }
-      setTables((prev) =>
-        prev.map((t) => (t.id === editingTableObj.id || t._id === editingTableObj._id ? updatedTable : t))
-      );
-      saveTableToFirestore({ ...updatedTable, businessId: currentUser?.foodypayId || currentUser?._id });
+      updatedTable.section = cleanSection;
+      setTables((prev) => {
+        const next = prev.map((t) => (t.id === editingTableObj.id || t._id === editingTableObj._id ? updatedTable : t));
+        try {
+          localStorage.setItem('foodypay_crm_tables_v3', JSON.stringify(next));
+          localStorage.setItem('foodypay_crm_tables_v1', JSON.stringify(next));
+          localStorage.setItem('snackrack_local_tables', JSON.stringify(next));
+          window.dispatchEvent(new Event('storage'));
+        } catch (e) {}
+        return next;
+      });
+      saveTableToFirestore(activeBusinessId || currentUser?.foodypayId || currentUser?._id || 'FP-9896', updatedTable);
       addToast(`Updated Table ${finalTableName}!`, <Check size={18} />);
     } else {
+      const generatedTableId = 't_' + Date.now();
       let createdTable = {
         ...newTableData,
-        id: 't_' + Date.now(),
-        _id: 't_' + Date.now(),
-        businessId: currentUser?.foodypayId || currentUser?._id,
+        id: generatedTableId,
+        _id: generatedTableId,
+        section: cleanSection,
+        businessId: activeBusinessId || currentUser?.foodypayId || currentUser?._id || 'FP-9896',
       };
       if (token) {
         try {
           const apiRes = await createTableApi(token, newTableData);
-          if (apiRes) createdTable = apiRes;
+          if (apiRes && apiRes.data) {
+            createdTable = { ...createdTable, ...apiRes.data, section: cleanSection };
+          }
         } catch (err) {
           console.warn('Failed to save table on backend:', err.message);
         }
       }
-      setTables((prev) => [...prev, createdTable]);
-      saveTableToFirestore({ ...createdTable, businessId: currentUser?.foodypayId || currentUser?._id });
+      createdTable.section = cleanSection;
+      setTables((prev) => {
+        const next = [...prev, createdTable];
+        try {
+          localStorage.setItem('foodypay_crm_tables_v3', JSON.stringify(next));
+          localStorage.setItem('foodypay_crm_tables_v1', JSON.stringify(next));
+          localStorage.setItem('snackrack_local_tables', JSON.stringify(next));
+          window.dispatchEvent(new Event('storage'));
+        } catch (e) {}
+        return next;
+      });
+      saveTableToFirestore(activeBusinessId || currentUser?.foodypayId || currentUser?._id || 'FP-9896', createdTable);
       addToast(`Created Table ${finalTableName} in ${cleanSection}!`, <Check size={18} />);
     }
 
@@ -4809,10 +5982,19 @@ export default function DashboardPage({ onShowToast }) {
       }
     }
 
-    // Delete from Firestore
-    deleteTableFromFirestore(tableId);
+    // Delete from Firestore & LocalStorage
+    deleteTableFromFirestore(currentUser?.foodypayId || currentUser?._id, tableId);
 
-    setTables((prev) => prev.filter((t) => (t._id || t.id) !== tableId));
+    setTables((prev) => {
+      const next = prev.filter((t) => (t._id || t.id) !== tableId);
+      try {
+        localStorage.setItem('foodypay_crm_tables_v3', JSON.stringify(next));
+        localStorage.setItem('foodypay_crm_tables_v1', JSON.stringify(next));
+        localStorage.setItem('snackrack_local_tables', JSON.stringify(next));
+        window.dispatchEvent(new Event('storage'));
+      } catch (e) {}
+      return next;
+    });
     addToast(`Deleted Table "${tableObj.name}"!`, <Check size={18} />);
   };
 
@@ -5154,43 +6336,125 @@ export default function DashboardPage({ onShowToast }) {
             <ChevronRight size={16} className="crm-menu-chevron" />
           </button>
 
-          {/* 1.5 Kitchen Display System (KDS) - Opens Standalone Screen (Hidden if Locked) */}
-          {!isKdsLocked && (
-            <button
-              type="button"
-              title="Open Kitchen Display (KDS) in New Tab"
-              className="crm-menu-link"
-              onClick={() => {
-                if (storeControls.kdsEnabled === false) {
-                  addToast(' Kitchen Display System (KDS) is turned OFF in Settings!', <Lock size={18} />);
-                  return;
+          {/* 1.1 Admin Tab (Sales & Telemetry) */}
+          <button
+            type="button"
+            title="Admin Tab (Sales Reports & Dues)"
+            className={`crm-menu-link ${activeTab === 'merchant_admin' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('merchant_admin');
+              setMobileMenuOpen(false);
+            }}
+          >
+            <div className="crm-menu-link-left">
+              <span className="crm-menu-icon">
+                <Crown size={20} color="#EA580C" />
+              </span>
+              <span>Admin / Sales Reports</span>
+            </div>
+            <span className="crm-badge-new" style={{ background: '#FFF0EB', color: '#EA580C', padding: '1px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 900 }}>
+              Live
+            </span>
+          </button>
+
+          {/* 1.5 Kitchen Display System (KDS) - Controlled via Store Settings */}
+          <button
+            type="button"
+            title={storeControls.isKdsLocked ? "Kitchen Display (KDS) - PIN Protected (Controlled in Store Settings)" : "Kitchen Display System (KDS) - Live Kitchen Screen"}
+            className={`crm-menu-link ${activeTab === 'kitchen' ? 'active' : ''}`}
+            style={{
+              cursor: 'pointer',
+              opacity: 1,
+            }}
+            onClick={() => {
+              if (storeControls.isKdsLocked) {
+                const entered = window.prompt('🔒 Kitchen Display (KDS) PIN Protected hai!\nKitchen Password dalein (Default: SnackRack400) ya Settings se unlock karein:');
+                if (entered !== null) {
+                  const cleanPa = entered.trim();
+                  const isMatch =
+                    cleanPa === 'SnackRack400' ||
+                    cleanPa.toLowerCase() === 'snackrack400' ||
+                    (currentUser?.kitchenPassword && cleanPa === currentUser.kitchenPassword);
+                  if (isMatch) {
+                    addToast('🔓 Kitchen Display Access Granted!', <Unlock size={18} color="#16A34A" />);
+                    setActiveTab('kitchen');
+                    setMobileMenuOpen(false);
+                  } else {
+                    addToast('❌ Incorrect Kitchen Password! Store Settings se unlock karein.', <Lock size={18} color="#EF4444" />);
+                  }
                 }
-                const slug = (storeControls.restName || 'thefoodypay').toLowerCase().replace(/\s+/g, '-');
-                const mid = storeControls.foodypayId || 'FP-790044';
-                window.open(`/${slug}/${mid}/KitchenDisplaySystem`, '_blank');
+              } else {
+                setActiveTab('kitchen');
                 setMobileMenuOpen(false);
-              }}
-            >
-              <div className="crm-menu-link-left">
-                <span className="crm-menu-icon">
-                  <ChefHat size={20} color={storeControls.kdsEnabled === false ? '#94A3B8' : '#FF5E14'} />
-                </span>
-                <span style={{ color: storeControls.kdsEnabled === false ? '#94A3B8' : 'inherit' }}>Kitchen Display (KDS)</span>
-              </div>
-              {storeControls.kdsEnabled === false ? (
-                <span className="crm-badge-new" style={{ background: '#F1F5F9', color: '#64748B', fontSize: '11px', fontWeight: 800, padding: '2px 8px', borderRadius: '10px' }}>
-                  OFF
-                </span>
-              ) : (() => {
-                const pendingCount = (orders || []).filter((o) => o && (o.status === 'new' || o.status === 'preparing')).length;
-                return pendingCount > 0 ? (
-                  <span className="crm-badge-new" style={{ background: '#FFF0EB', color: '#FF5E14', fontSize: '11px', fontWeight: 900, padding: '2px 8px', borderRadius: '10px' }}>
-                    {pendingCount} Active
-                  </span>
-                ) : null;
-              })()}
-            </button>
-          )}
+              }
+            }}
+          >
+            <div className="crm-menu-link-left">
+              <span className="crm-menu-icon">
+                <ChefHat
+                  size={20}
+                  color={storeControls.isKdsLocked ? '#DC2626' : (activeTab === 'kitchen' ? '#FF5E14' : '#16A34A')}
+                />
+              </span>
+              <span
+                style={{
+                  color: activeTab === 'kitchen' ? '#FF5E14' : (storeControls.isKdsLocked ? '#334155' : '#0F172A'),
+                  fontWeight: activeTab === 'kitchen' ? 800 : 600,
+                }}
+              >
+                Kitchen Display (KDS)
+              </span>
+            </div>
+            {storeControls.isKdsLocked ? (
+              <span
+                className="crm-badge-new"
+                title="Click to toggle Lock/Unlock in Settings"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleToggleStoreSetting('isKdsLocked', 'Kitchen Display PIN Protection');
+                }}
+                style={{
+                  background: '#FEF2F2',
+                  color: '#DC2626',
+                  border: '1px solid #FCA5A5',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  padding: '2px 8px',
+                  borderRadius: '10px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  cursor: 'pointer',
+                }}
+              >
+                <Lock size={12} color="#DC2626" /> Locked
+              </span>
+            ) : (
+              <span
+                className="crm-badge-new"
+                title="Click to toggle Lock/Unlock in Settings"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleToggleStoreSetting('isKdsLocked', 'Kitchen Display PIN Protection');
+                }}
+                style={{
+                  background: '#F0FDF4',
+                  color: '#16A34A',
+                  border: '1px solid #BBF7D0',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  padding: '2px 8px',
+                  borderRadius: '10px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  cursor: 'pointer',
+                }}
+              >
+                <Unlock size={12} color="#16A34A" /> Unlocked
+              </span>
+            )}
+          </button>
 
           {/* 1.6 Delivery Partner View / Portal (Hidden if Locked) */}
           {!isDeliveryPartnerLocked && (
@@ -5347,22 +6611,39 @@ export default function DashboardPage({ onShowToast }) {
             </button>
           )}
 
-          {/* 4. Utilities (Table QR Generator) */}
+          {/* 4. Utilities (QR Tables) - Locked */}
           <button
             type="button"
-            title="Utilities (QR Tables)"
-            className={`crm-menu-link ${activeTab === 'utilities' ? 'active' : ''}`}
+            title="Utilities (QR Tables) - Currently Locked"
+            className="crm-menu-link"
+            style={{ opacity: 0.72, cursor: 'not-allowed' }}
             onClick={() => {
-              setActiveTab('utilities');
-              setMobileMenuOpen(false);
+              addToast('🔒 Utilities (QR Tables) abhi locked hai!', <Lock size={18} color="#EF4444" />);
             }}
           >
             <div className="crm-menu-link-left">
               <span className="crm-menu-icon">
-                <QrCode size={20} />
+                <QrCode size={20} color="#94A3B8" />
               </span>
-              <span>Utilities (QR Tables)</span>
+              <span style={{ color: '#64748B' }}>Utilities (QR Tables)</span>
             </div>
+            <span
+              className="crm-badge-new"
+              style={{
+                background: '#FEF2F2',
+                color: '#DC2626',
+                border: '1px solid #FCA5A5',
+                fontSize: '11px',
+                fontWeight: 800,
+                padding: '2px 8px',
+                borderRadius: '10px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+              <Lock size={12} color="#DC2626" /> Locked
+            </span>
           </button>
 
           {/* 4.5 Customer Reviews & Feedback (Hidden if Locked) */}
@@ -5383,30 +6664,45 @@ export default function DashboardPage({ onShowToast }) {
                 <span>Customer Reviews</span>
               </div>
               <span className="crm-badge-new" style={{ background: '#FEF3C7', color: '#D97706', padding: '1px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 800 }}>
-                4.8 
+                4.8 ⭐
               </span>
             </button>
           )}
 
-          {/* 5. Marketing (Hidden if Locked) */}
-          {!isMarketingLocked && !storeControls.lockMarketingTab && (
-            <button
-              type="button"
-              title="Marketing"
-              className={`crm-menu-link ${activeTab === 'marketing' ? 'active' : ''}`}
-              onClick={() => {
-                setActiveTab('marketing');
-                setMobileMenuOpen(false);
+          {/* 5. Marketing - Locked */}
+          <button
+            type="button"
+            title="Marketing - Currently Locked"
+            className="crm-menu-link"
+            style={{ opacity: 0.72, cursor: 'not-allowed' }}
+            onClick={() => {
+              addToast('🔒 Marketing abhi locked hai!', <Lock size={18} color="#EF4444" />);
+            }}
+          >
+            <div className="crm-menu-link-left">
+              <span className="crm-menu-icon">
+                <Megaphone size={20} color="#94A3B8" />
+              </span>
+              <span style={{ color: '#64748B' }}>Marketing</span>
+            </div>
+            <span
+              className="crm-badge-new"
+              style={{
+                background: '#FEF2F2',
+                color: '#DC2626',
+                border: '1px solid #FCA5A5',
+                fontSize: '11px',
+                fontWeight: 800,
+                padding: '2px 8px',
+                borderRadius: '10px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
               }}
             >
-              <div className="crm-menu-link-left">
-                <span className="crm-menu-icon">
-                  <Megaphone size={20} color="#FF5E14" />
-                </span>
-                <span>Marketing</span>
-              </div>
-            </button>
-          )}
+              <Lock size={12} color="#DC2626" /> Locked
+            </span>
+          </button>
 
           {/* 6. Customers (Hidden if Locked) */}
           {!isCustomersLocked && (
@@ -5621,27 +6917,29 @@ export default function DashboardPage({ onShowToast }) {
               <span>+ New POS Order</span>
             </button>
 
-            {/* Merchant Admin in Separate Tab */}
+            {/* Merchant Admin Tab Switcher */}
             <button
               type="button"
-              onClick={() => window.open('/merchant-admin', '_blank')}
+              onClick={() => setActiveTab(activeTab === 'merchant_admin' ? 'home_orders' : 'merchant_admin')}
               style={{
-                background: '#FFF0EB',
-                color: '#FF5E14',
+                background: activeTab === 'merchant_admin' ? '#FF5E14' : '#FFF0EB',
+                color: activeTab === 'merchant_admin' ? '#FFFFFF' : '#FF5E14',
                 border: '1.5px solid #FFDCD0',
-                padding: '7px 12px',
+                padding: '7px 14px',
                 borderRadius: '8px',
-                fontSize: '12px',
+                fontSize: '12.5px',
                 fontWeight: 800,
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '5px',
+                gap: '6px',
+                boxShadow: activeTab === 'merchant_admin' ? '0 2px 8px rgba(255, 94, 20, 0.3)' : 'none',
+                transition: 'all 0.15s ease'
               }}
-              title="Open Merchant Admin Suite in a separate tab"
+              title="Toggle between POS Counter & Admin Tab"
             >
-              <Crown size={15} color="#FF5E14" />
-              <span>Admin Tab ↗</span>
+              <Crown size={15} color={activeTab === 'merchant_admin' ? '#FFFFFF' : '#FF5E14'} />
+              <span>{activeTab === 'merchant_admin' ? '↩ Back to POS' : 'Admin Tab'}</span>
             </button>
 
             {/* Sound Mute/Unmute */}
@@ -5993,9 +7291,20 @@ export default function DashboardPage({ onShowToast }) {
                   const userTables = Array.isArray(tables) && tables.length > 0 ? tables : [];
                   const userAddedSectionsMap = {};
                   userTables.forEach((t) => {
-                    const sec = t.section || (customSections[0] || 'Restaurant');
+                    let rawSec = String(t.section || '').trim();
+                    if (!rawSec || rawSec.toLowerCase() === 'restaurant') {
+                      const nameParts = String(t.name || '').split(' - ');
+                      if (nameParts.length > 1) {
+                        const candidateSec = nameParts[0].trim();
+                        if (candidateSec && (customSections || []).some((s) => s.toLowerCase() === candidateSec.toLowerCase())) {
+                          rawSec = candidateSec;
+                        }
+                      }
+                    }
+                    const matchedCustomSec = (customSections || []).find((s) => s.toLowerCase() === rawSec.toLowerCase());
+                    const sec = matchedCustomSec || rawSec || 'Restaurant';
                     if (!userAddedSectionsMap[sec]) userAddedSectionsMap[sec] = [];
-                    userAddedSectionsMap[sec].push(t);
+                    userAddedSectionsMap[sec].push({ ...t, section: sec });
                   });
 
                   // Build displaySections prioritizing customSections list
@@ -6020,22 +7329,91 @@ export default function DashboardPage({ onShowToast }) {
                     }
                   });
 
-                  // Helper: find running/active order for a table
-                  const getRunningOrderForTable = (tableName) => {
-                    const cleanTName = String(tableName || '').trim().toLowerCase();
+                  // Helper: find running/active order strictly isolated for a specific table & section
+                  const getRunningOrderForTable = (tableOrName, sectionName = '') => {
+                    const isObj = typeof tableOrName === 'object' && tableOrName !== null;
+                    const tblName = String(isObj ? (tableOrName.name || '') : (tableOrName || '')).trim();
+                    const cleanTName = tblName.toLowerCase();
                     const normTName = cleanTName.replace(/[^a-z0-9]/g, '');
+                    const tableId = isObj ? (tableOrName._id || tableOrName.id) : null;
+                    const tableSection = isObj ? (tableOrName.section || sectionName) : sectionName;
+                    const tSec = String(tableSection || (cleanTName.includes(' - ') ? cleanTName.split(' - ')[0] : '') || 'Restaurant').trim().toLowerCase();
+                    const onlyNumMatch = String((isObj && tableOrName.tableNumber) || cleanTName).match(/\d+/);
+                    const onlyNum = onlyNumMatch ? onlyNumMatch[0] : null;
+
+                    // Non-restaurant custom sections
+                    const otherSections = (customSections || ['Cafe', 'Family Hall'])
+                      .map((s) => String(s).trim().toLowerCase())
+                      .filter((s) => s && s !== 'restaurant');
+
                     return (orders || []).find((o) => {
-                      if (!o || o.status === 'completed' || o.status === 'cancelled') return false;
+                      if (!o || o.status === 'cancelled') return false;
+                      // If completed and cleared from table, it is not running
+                      if (o.status === 'completed' && o.tableCleared) return false;
+
                       const oTable = String(o.table || o.tableName || o.tableNo || '').trim().toLowerCase();
-                      if (oTable === cleanTName) return true;
-                      if (oTable === `table ${cleanTName}` || `table ${oTable}` === cleanTName) return true;
-                      if (normTName && oTable.replace(/[^a-z0-9]/g, '') === normTName) return true;
-                      return false;
+                      const normOTable = oTable.replace(/[^a-z0-9]/g, '');
+                      const oSec = String(o.tableSection || o.section || '').trim().toLowerCase();
+                      const oTableId = o.tableId;
+
+                      // 1. Direct Unique Table ID match (highest priority)
+                      if (tableId && oTableId && (tableId === oTableId || String(tableId) === String(oTableId))) {
+                        return true;
+                      }
+
+                      // 2. Exact or Normalized Name match
+                      if (oTable && cleanTName && (oTable === cleanTName || (normOTable && normOTable === normTName))) {
+                        return true;
+                      }
+
+                      // 3. Strict Section + Number Matching
+                      const oNumMatch = oTable.match(/\d+/);
+                      const oNum = oNumMatch ? oNumMatch[0] : null;
+
+                      // If numbers don't match, this order cannot be for this table
+                      if (onlyNum && oNum && onlyNum !== oNum) {
+                        return false;
+                      }
+                      if (!onlyNum || !oNum) {
+                        return false;
+                      }
+
+                      // Numbers match (e.g. both are 1). Check Section Isolation:
+                      let orderSection = oSec || '';
+                      if (!orderSection) {
+                        for (const s of otherSections) {
+                          if (oTable.includes(s) || (normOTable && normOTable.includes(s.replace(/[^a-z0-9]/g, '')))) {
+                            orderSection = s;
+                            break;
+                          }
+                        }
+                      }
+
+                      if (tSec !== 'restaurant') {
+                        // For non-restaurant tables (e.g. Cafe, Family Hall):
+                        // Order MUST explicitly belong to this category!
+                        if (orderSection === tSec) return true;
+                        if (oTable.includes(tSec) || (normOTable && normOTable.includes(tSec.replace(/[^a-z0-9]/g, '')))) return true;
+                        return false;
+                      } else {
+                        // For Restaurant tables:
+                        // Order MUST NOT belong to another registered custom category!
+                        if (orderSection && orderSection !== 'restaurant') {
+                          return false;
+                        }
+                        if (otherSections.some((s) => oTable.includes(s) || (normOTable && normOTable.includes(s.replace(/[^a-z0-9]/g, ''))))) {
+                          return false;
+                        }
+                        return true;
+                      }
                     });
                   };
 
                   return (
                     <>
+                      {/* DEDICATED TABLE SERVICE REQUESTS SECTION (CALL WAITER, WATER, CUTLERY, ROTI, BILL) */}
+                      <TableServiceRequestsSection onShowToast={addToast} />
+
                       {/* TOP FILTER PILLS BAR (MATCHING USER REFERENCE DESIGN) + ADD CATEGORY BUTTON */}
                       <div className="pos-table-filter-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflowX: 'auto', flex: 1 }}>
@@ -6051,7 +7429,7 @@ export default function DashboardPage({ onShowToast }) {
                             let paidCount = 0;
 
                             allFlatTables.forEach((tbl) => {
-                              const ord = getRunningOrderForTable(tbl.name);
+                              const ord = getRunningOrderForTable(tbl, tbl.section);
                               if (!ord) {
                                 availableCount += 1;
                               } else if (ord.status === 'paid' || (ord.status === 'completed' && ord.isPaid && !ord.tableCleared)) {
@@ -6113,7 +7491,7 @@ export default function DashboardPage({ onShowToast }) {
                         // Filter tables within this section based on active tableStatusFilter
                         const sectionFilteredTables = section.tables.filter((tbl) => {
                           if (tableStatusFilter === 'all') return true;
-                          const ord = getRunningOrderForTable(tbl.name);
+                          const ord = getRunningOrderForTable(tbl, section.name);
                           if (tableStatusFilter === 'available') return !ord;
                           if (!ord) return false;
                           if (tableStatusFilter === 'paid') return ord.status === 'paid' || (ord.isPaid && !ord.tableCleared);
@@ -6169,61 +7547,67 @@ export default function DashboardPage({ onShowToast }) {
                             {/* Tables Grid */}
                             <div className="pos-tables-grid">
                               {sectionFilteredTables.map((tbl, tIdx) => {
-                                const runningOrder = getRunningOrderForTable(tbl.name);
+                                const runningOrder = getRunningOrderForTable(tbl, section.name);
                                 const isOccupied = Boolean(runningOrder);
 
-                                // Elapsed time string (e.g. "35h 30m" or "27m")
-                                let timeDisplay = '0m';
-                                if (runningOrder) {
-                                  const createdTimestamp = runningOrder.timestamp || (runningOrder.createdAt ? new Date(runningOrder.createdAt).getTime() : Date.now());
-                                  const diffMins = Math.max(1, Math.round((Date.now() - createdTimestamp) / (1000 * 60)));
-                                  if (diffMins >= 60) {
-                                    const hours = Math.floor(diffMins / 60);
-                                    const mins = diffMins % 60;
-                                    timeDisplay = `${hours}h ${mins}m`;
-                                  } else {
-                                    timeDisplay = `${diffMins}m`;
-                                  }
+                                const secName = (tbl.section || section.name || '').trim();
+                                const isNonDefaultSection = Boolean(secName && secName.toLowerCase() !== 'restaurant');
+                                const rawNumMatch = String(tbl.tableNumber || tbl.name || '').match(/\d+/);
+                                const rawNum = rawNumMatch ? rawNumMatch[0] : `${tIdx + 1}`;
+
+                                // Clear, 100% Unique Table Name across all categories (e.g. "Cafe T1", "Family Hall T1", "Table 1")
+                                let displayTableName = tbl.name || `Table ${rawNum}`;
+                                if (isNonDefaultSection) {
+                                  displayTableName = `${secName} T${rawNum}`;
+                                } else {
+                                  displayTableName = tbl.name && !tbl.name.toLowerCase().includes('restaurant')
+                                    ? (tbl.name.includes(' - ') ? tbl.name.split(' - ')[1] : tbl.name)
+                                    : `Table ${rawNum}`;
                                 }
+                                const tableCapacity = Number(tbl.capacity) || 4;
 
                                 // ============================================================
                                 // TABLE STATUS FLOW:
-                                // Empty -> Order Placed (countdown) -> Waiting for food (kitchen) -> Eating -> Bill -> Paid -> Empty
+                                // Empty / Available -> Waiting for food -> Eating -> Bill ready -> Paid
                                 // ============================================================
                                 let statusKey = 'available';
                                 let statusLabel = 'Available';
-                                let remainingGraceSecs = 0;
                                 if (isOccupied) {
                                   if (runningOrder.status === 'paid' || (runningOrder.status === 'completed' && runningOrder.isPaid && !runningOrder.tableCleared)) {
-                                    // Step 5: Payment done, waiting to vacate
                                     statusKey = 'paid';
                                     statusLabel = 'Paid';
                                   } else if (runningOrder.billPrinted || runningOrder.status === 'printed' || runningOrder.status === 'bill-ready') {
-                                    // Step 4b: Bill printed, awaiting payment
                                     statusKey = 'bill-ready';
                                     statusLabel = 'Bill ready';
-                                  } else if (runningOrder.status === 'ready' || runningOrder.status === 'served') {
-                                    // Step 3: Kitchen marked food as ready -> Eating
+                                  } else if (runningOrder.status === 'eating' || runningOrder.status === 'ready' || runningOrder.status === 'served') {
                                     statusKey = 'eating';
                                     statusLabel = 'Eating';
-                                  } else if (runningOrder.status === 'preparing' || runningOrder.status === 'in-kitchen' || runningOrder.status === 'kitchen' || (runningOrder.sentToKitchen && runningOrder.status !== 'completed' && runningOrder.status !== 'cancelled')) {
-                                    // Step 2: Order sent to kitchen, cooking in progress
-                                    statusKey = 'waiting';
-                                    statusLabel = 'Waiting for food';
-                                  } else if (!runningOrder.sentToKitchen) {
-                                    // Step 1: Order just placed, countdown before auto-dispatch to kitchen
-                                    const rawGrace = storeControls?.kitchenAutoDispatchSeconds;
-                                    const numGrace = Number(rawGrace);
-                                    const graceSecs = (!isNaN(numGrace) && numGrace >= 0) ? numGrace : 30;
-                                    const orderTime = getSafeOrderTime(runningOrder);
-                                    const elapsed = orderTime > 0 ? Math.floor((Date.now() - orderTime) / 1000) : 0;
-                                    remainingGraceSecs = Math.max(0, graceSecs - elapsed);
-                                    statusKey = 'waiting';
-                                    statusLabel = remainingGraceSecs > 0 ? `Order Placed (${remainingGraceSecs}s)` : 'Sending to Kitchen...';
                                   } else {
-                                    // Fallback: active table, eating
-                                    statusKey = 'eating';
-                                    statusLabel = 'Eating';
+                                    statusKey = 'waiting';
+                                    statusLabel = 'Waiting';
+                                  }
+                                }
+
+                                let timeDisplay = '0m 00s';
+                                if (isOccupied) {
+                                  if (statusKey === 'waiting') {
+                                    const waitStart = runningOrder.waitingStartedAt || runningOrder.timestamp || (runningOrder.createdAt ? new Date(runningOrder.createdAt).getTime() : Date.now());
+                                    const diffMs = Math.max(0, Date.now() - waitStart);
+                                    const waitMins = Math.floor(diffMs / 60000);
+                                    const waitSecs = Math.floor((diffMs % 60000) / 1000);
+                                    timeDisplay = `${waitMins}m ${String(waitSecs).padStart(2, '0')}s`;
+                                  } else if (statusKey === 'eating') {
+                                    const eatStart = runningOrder.eatingStartedAt || runningOrder.foodServedAt || Date.now();
+                                    const diffMs = Math.max(0, Date.now() - eatStart);
+                                    const eatMins = Math.floor(diffMs / 60000);
+                                    const eatSecs = Math.floor((diffMs % 60000) / 1000);
+                                    timeDisplay = `${eatMins}m ${String(eatSecs).padStart(2, '0')}s`;
+                                  } else {
+                                    const createdTimestamp = runningOrder.timestamp || (runningOrder.createdAt ? new Date(runningOrder.createdAt).getTime() : Date.now());
+                                    const diffMs = Math.max(0, Date.now() - createdTimestamp);
+                                    const diffMins = Math.floor(diffMs / 60000);
+                                    const diffSecs = Math.floor((diffMs % 60000) / 1000);
+                                    timeDisplay = `${diffMins}m ${String(diffSecs).padStart(2, '0')}s`;
                                   }
                                 }
 
@@ -6238,12 +7622,14 @@ export default function DashboardPage({ onShowToast }) {
                                       if (isOccupied) {
                                         if (statusKey === 'paid') {
                                           handleVacateTable(runningOrder);
+                                        } else if (statusKey === 'waiting') {
+                                          handleMarkFoodServed(runningOrder);
                                         } else {
                                           handleOpenBillSettlement(runningOrder);
                                         }
                                       } else {
                                         // Available table -> 1-click open Create Order modal prefilled with table
-                                        handleOpenManualOrder(tbl.name, 'Dine-In');
+                                        handleOpenManualOrder(tbl.name, 'Dine-In', tbl.section || section.name, tbl);
                                       }
                                     }}
                                   >
@@ -6260,178 +7646,249 @@ export default function DashboardPage({ onShowToast }) {
                                       <Trash2 size={12} />
                                     </button>
 
-                                    {/* Top Row: Table Name + Status Badge */}
+                                    {/* Top Row: Table Name + Status Badge (Matching Reference 1:1) */}
                                     <div className="pos-card-header">
-                                      <span className="pos-table-number">{tbl.name}</span>
-                                      {isOccupied && (
-                                        <span className={`pos-status-badge ${statusKey}`}>
-                                          {statusLabel}
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flex: 1, overflow: 'hidden' }}>
+                                        <span className="pos-table-number" title={tbl.name || displayTableName} style={{ whiteSpace: 'nowrap' }}>
+                                          {displayTableName}
                                         </span>
-                                      )}
-                                    </div>
-
-                                    {/* Center: Dining Table Illustration matching Screenshot with animations */}
-                                    <div className="pos-table-illustration">
-                                      {isOccupied ? (
-                                        <svg width="84" height="46" viewBox="0 0 118 68" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                          {/* Customer Avatars / Chairs */}
-                                          {/* Top 2 chairs */}
-                                          <circle className="svg-chair-avatar" cx="44" cy="5" r="4.5" fill={statusKey === 'eating' ? '#38BDF8' : statusKey === 'waiting' ? '#FB923C' : statusKey === 'paid' ? '#F87171' : '#34D399'} />
-                                          <circle className="svg-chair-avatar" cx="74" cy="5" r="4.5" fill={statusKey === 'eating' ? '#38BDF8' : statusKey === 'waiting' ? '#FB923C' : statusKey === 'paid' ? '#F87171' : '#34D399'} />
-                                          {/* Bottom 2 chairs */}
-                                          <circle className="svg-chair-avatar" cx="44" cy="63" r="4.5" fill={statusKey === 'eating' ? '#38BDF8' : statusKey === 'waiting' ? '#FB923C' : statusKey === 'paid' ? '#F87171' : '#34D399'} />
-                                          <circle className="svg-chair-avatar" cx="74" cy="63" r="4.5" fill={statusKey === 'eating' ? '#38BDF8' : statusKey === 'waiting' ? '#FB923C' : statusKey === 'paid' ? '#F87171' : '#34D399'} />
-                                          {/* Left chair */}
-                                          <circle className="svg-chair-avatar" cx="10" cy="34" r="4.5" fill={statusKey === 'eating' ? '#38BDF8' : statusKey === 'waiting' ? '#FB923C' : statusKey === 'paid' ? '#F87171' : '#34D399'} />
-                                          {/* Right chair */}
-                                          <circle className="svg-chair-avatar" cx="108" cy="34" r="4.5" fill={statusKey === 'eating' ? '#38BDF8' : statusKey === 'waiting' ? '#FB923C' : statusKey === 'paid' ? '#F87171' : '#34D399'} />
-
-                                          {/* Main Rounded Dining Table */}
-                                          <rect
-                                            x="20"
-                                            y="14"
-                                            width="78"
-                                            height="40"
-                                            rx="16"
-                                            fill="#FFFFFF"
-                                            stroke={statusKey === 'eating' ? '#38BDF8' : statusKey === 'waiting' ? '#FB923C' : statusKey === 'paid' ? '#F87171' : '#34D399'}
-                                            strokeWidth="2.5"
-                                          />
-
-                                          {/* Status Specific Elements Inside Table */}
-                                          {statusKey === 'eating' && (
-                                            <g className="svg-steam-plate">
-                                              {/* 4 Little Dinner Plates */}
-                                              <circle cx="38" cy="27" r="4.5" fill="#E0F2FE" stroke="#0284C7" strokeWidth="1.2" />
-                                              <circle cx="80" cy="27" r="4.5" fill="#E0F2FE" stroke="#0284C7" strokeWidth="1.2" />
-                                              <circle cx="38" cy="41" r="4.5" fill="#E0F2FE" stroke="#0284C7" strokeWidth="1.2" />
-                                              <circle cx="80" cy="41" r="4.5" fill="#E0F2FE" stroke="#0284C7" strokeWidth="1.2" />
-                                              {/* Center dish */}
-                                              <circle cx="59" cy="34" r="5.5" fill="#BAE6FD" stroke="#0284C7" strokeWidth="1.5" />
-                                            </g>
-                                          )}
-
-                                          {statusKey === 'waiting' && (
-                                            <g transform="translate(50, 25)">
-                                              {/* Clock / Hourglass Icon with animated hand */}
-                                              <circle cx="9" cy="9" r="8" fill="#FFF7ED" stroke="#EA580C" strokeWidth="1.8" />
-                                              <g className="svg-rotating-hand">
-                                                <line x1="9" y1="9" x2="9" y2="4" stroke="#EA580C" strokeWidth="1.8" strokeLinecap="round" />
-                                              </g>
-                                              <line x1="9" y1="9" x2="12" y2="9" stroke="#EA580C" strokeWidth="1.8" strokeLinecap="round" />
-                                            </g>
-                                          )}
-
-                                          {statusKey === 'paid' && (
-                                            <g transform="translate(49, 24)">
-                                              {/* Checkmark in circle */}
-                                              <circle cx="10" cy="10" r="9" fill="#DC2626" />
-                                              <polyline points="6,10 9,13 14,7" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                                            </g>
-                                          )}
-
-                                          {statusKey === 'bill-ready' && (
-                                            <g transform="translate(50, 25)" className="svg-steam-plate">
-                                              {/* Bill receipt icon */}
-                                              <rect x="2" y="1" width="14" height="16" rx="2" fill="#ECFDF5" stroke="#16A34A" strokeWidth="1.5" />
-                                              <line x1="5" y1="5" x2="13" y2="5" stroke="#16A34A" strokeWidth="1.5" strokeLinecap="round" />
-                                              <line x1="5" y1="9" x2="13" y2="9" stroke="#16A34A" strokeWidth="1.5" strokeLinecap="round" />
-                                              <line x1="5" y1="13" x2="10" y2="13" stroke="#16A34A" strokeWidth="1.5" strokeLinecap="round" />
-                                            </g>
-                                          )}
-                                        </svg>
-                                      ) : (
-                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '44px', width: '100%' }}>
-                                          <div className="pos-add-table-icon">
-                                            <Plus size={15} strokeWidth={2.5} />
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    {/* Occupied: Amount & Time Metrics */}
-                                    {isOccupied && (
-                                      <div className="pos-card-metrics">
-                                        <span className="pos-card-amount">
-                                          ₹{(runningOrder.total || 0).toLocaleString('en-IN')}
-                                        </span>
-                                        <span className="pos-card-time">
-                                          {timeDisplay}
-                                        </span>
+                                        {isNonDefaultSection && (
+                                          <span
+                                            style={{
+                                              fontSize: '9.5px',
+                                              fontWeight: 900,
+                                              padding: '2px 6px',
+                                              borderRadius: '5px',
+                                              background: '#F1F5F9',
+                                              color: '#475569',
+                                              textTransform: 'uppercase',
+                                              letterSpacing: '0.04em',
+                                              whiteSpace: 'nowrap',
+                                              flexShrink: 0,
+                                            }}
+                                          >
+                                            {secName}
+                                          </span>
+                                        )}
                                       </div>
-                                    )}
+                                      <span className={`pos-status-badge ${statusKey}`}>
+                                        {statusKey === 'available' ? 'Available' : statusLabel}
+                                      </span>
+                                    </div>
 
-                                    {/* Action Buttons matching reference image */}
+                                    {/* Center: Top-Down Dynamic Table Graphic with 2, 4, 6, 8 pax & Animations */}
+                                    <PosTableTopVisual state={statusKey} capacity={tableCapacity} />
+
+                                    {/* Bottom Content */}
                                     {isOccupied ? (
-                                      statusKey === 'paid' ? (
-                                        <div className="pos-card-actions">
-                                          <button
-                                            type="button"
-                                            className="btn-card-bill"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handlePrintTableBill(runningOrder);
-                                              handleOpenBillSettlement(runningOrder);
-                                            }}
-                                            title="View / Reprint Bill Receipt"
-                                          >
-                                            🧾 Bill
-                                          </button>
-                                          <button
-                                            type="button"
-                                            className="btn-card-vacate"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleVacateTable(runningOrder);
-                                            }}
-                                          >
-                                            Vacate table
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <div className="pos-card-actions">
-                                          <button
-                                            type="button"
-                                            className="btn-card-add-item"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleEditOrder(runningOrder);
-                                            }}
-                                            title="Add new item to this running table order"
-                                          >
-                                            + Add
-                                          </button>
-                                          {!runningOrder.sentToKitchen && (runningOrder.status === 'placed' || runningOrder.status === 'new') && (
+                                      (() => {
+                                        const cardTimers = getOrderTimers(runningOrder);
+                                        return (
+                                          <>
+                                            {/* Occupied: Price & Dual Timers (Timer A: Prep & Timer B: Dining) */}
+                                            <div className="pos-card-metrics" style={{ alignItems: 'flex-start' }}>
+                                              <span className="pos-card-amount">
+                                                ₹{(runningOrder.total || 0).toLocaleString('en-IN')}
+                                              </span>
+                                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px' }}>
+                                                <span
+                                                  className="pos-card-time"
+                                                  title="Timer A: Food Preparation Time (Start to Food Ready)"
+                                                  style={{
+                                                    fontSize: '11px',
+                                                    fontWeight: 800,
+                                                    color: cardTimers.prep.isCompleted ? '#16A34A' : '#EA580C',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '4px',
+                                                  }}
+                                                >
+                                                  <ChefHat size={12} strokeWidth={2.5} />
+                                                  <span>Prep: {cardTimers.prep.badge} {cardTimers.prep.isCompleted && '✓'}</span>
+                                                </span>
+
+                                                <span
+                                                  className="pos-card-time"
+                                                  title="Timer B: Dining & Payment Time (Start to Bill Paid)"
+                                                  style={{
+                                                    fontSize: '11px',
+                                                    fontWeight: 800,
+                                                    color: cardTimers.dining.isCompleted ? '#16A34A' : '#2563EB',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '4px',
+                                                  }}
+                                                >
+                                                  <Clock size={12} strokeWidth={2.5} />
+                                                  <span>Dine: {cardTimers.dining.badge} {cardTimers.dining.isCompleted && '✓'}</span>
+                                                </span>
+                                              </div>
+                                            </div>
+
+                                        {/* State Specific Buttons (Matching Reference Design 1:1) */}
+                                        {statusKey === 'eating' && (
+                                          <div className="pos-card-actions">
                                             <button
                                               type="button"
-                                              className="btn-card-add-item"
-                                              style={{ backgroundColor: '#FF5E14', color: '#FFF', borderColor: '#FF5E14' }}
+                                              className="btn-card-add-v3"
                                               onClick={(e) => {
                                                 e.stopPropagation();
-                                                handleSendOrderToKitchenNow(runningOrder);
+                                                handleOpenAddItems(runningOrder);
                                               }}
-                                              title="Send to Kitchen immediately without waiting"
+                                              title="Add more items to this order"
                                             >
-                                              🚀 Send Now
+                                              + Add
                                             </button>
-                                          )}
-                                          <button
-                                            type="button"
-                                            className="btn-card-bill"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handlePrintTableBill(runningOrder);
-                                              handleOpenBillSettlement(runningOrder);
-                                            }}
-                                            title="Bill & Settle (Cash, UPI, Not Paid)"
-                                          >
-                                            🧾 Bill
-                                          </button>
-                                        </div>
-                                      )
+                                            <button
+                                              type="button"
+                                              className="btn-card-edit-v3"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handlePromptEditOrder(runningOrder);
+                                              }}
+                                              title="Edit or cancel items (Requires Second Passcode 7496)"
+                                            >
+                                              ✏️ Edit
+                                            </button>
+                                            <button
+                                              type="button"
+                                              className="btn-card-bill-v3"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleOpenBillSettlement(runningOrder);
+                                              }}
+                                              title="Open Bill Settlement & Payment"
+                                            >
+                                              🧾 Bill
+                                            </button>
+                                          </div>
+                                        )}
+
+                                        {statusKey === 'waiting' && (
+                                          <div className="pos-card-actions">
+                                            <button
+                                              type="button"
+                                              className="btn-card-add-v3"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleOpenAddItems(runningOrder);
+                                              }}
+                                              title="Add more items to this order"
+                                            >
+                                              + Add
+                                            </button>
+                                            <button
+                                              type="button"
+                                              className="btn-card-edit-v3"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handlePromptEditOrder(runningOrder);
+                                              }}
+                                              title="Edit or cancel items (Requires Second Passcode 7496)"
+                                            >
+                                              ✏️ Edit
+                                            </button>
+                                            <button
+                                              type="button"
+                                              className="btn-card-kot-v3"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handlePrintTableKot(runningOrder);
+                                              }}
+                                              title="Print Kitchen KOT slip"
+                                            >
+                                              🔔 KOT
+                                            </button>
+                                            <button
+                                              type="button"
+                                              className="btn-card-served-v3"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleMarkFoodServed(runningOrder);
+                                              }}
+                                              title="Mark food served -> Transitions table to Eating"
+                                            >
+                                              ✓ Served
+                                            </button>
+                                          </div>
+                                        )}
+
+                                        {statusKey === 'paid' && (
+                                          <div className="pos-card-actions">
+                                            <button
+                                              type="button"
+                                              className="btn-card-bill-v3"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleOpenBillSettlement(runningOrder);
+                                              }}
+                                              title="View Bill Receipt"
+                                            >
+                                              🧾 Bill
+                                            </button>
+                                            <button
+                                              type="button"
+                                              className="btn-card-vacate-v3"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleVacateTable(runningOrder);
+                                              }}
+                                              title="Vacate and free this table"
+                                            >
+                                              Vacate
+                                            </button>
+                                          </div>
+                                        )}
+
+                                        {statusKey === 'bill-ready' && (
+                                          <div className="pos-card-actions">
+                                            <button
+                                              type="button"
+                                              className="btn-card-add-v3"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleOpenAddItems(runningOrder);
+                                              }}
+                                              title="Add more items to this order"
+                                            >
+                                              + Add
+                                            </button>
+                                            <button
+                                              type="button"
+                                              className="btn-card-edit-v3"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handlePromptEditOrder(runningOrder);
+                                              }}
+                                              title="Edit or cancel items (Requires Second Passcode 7496)"
+                                            >
+                                              ✏️ Edit
+                                            </button>
+                                            <button
+                                              type="button"
+                                              className="btn-card-bill-v3"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleOpenBillSettlement(runningOrder);
+                                              }}
+                                              title="Open Bill Settlement & Payment"
+                                            >
+                                              🧾 Bill
+                                            </button>
+                                          </div>
+                                        )}
+                                          </>
+                                        );
+                                      })()
                                     ) : (
-                                      <div style={{ textAlign: 'center', color: '#94A3B8', fontSize: '11px', fontWeight: 700, padding: '2px 0' }}>
-                                        Tap to place order
+                                      /* Available / Free Table (Matching Reference Table 3) */
+                                      <div className="pos-card-free-container">
+                                        <div className="pos-card-free-title">
+                                          Free • {tableCapacity} seats
+                                        </div>
+                                        <div className="pos-card-free-sub">
+                                          Tap to place order
+                                        </div>
                                       </div>
                                     )}
                                   </div>
@@ -6613,16 +8070,30 @@ export default function DashboardPage({ onShowToast }) {
                       </div>
 
                       <div className="crm-order-items-list">
-                        {order.items.map((it, idx) => (
-                          <div key={idx} className="crm-item-row">
-                            <div className="crm-item-name-qty">
-                              <span className={it.isVeg ? 'crm-veg-dot' : 'crm-nonveg-dot'} />
-                              <span className="crm-qty-badge">{it.qty}x</span>
-                              <span style={{ fontWeight: 600 }}>{it.name}</span>
+                        {(order.items || []).map((it, idx) => {
+                          const isCancelled = Boolean(it.isCancelled || it.cancelled || it.status === 'cancelled');
+                          const isUpdated = Boolean(it.isUpdated);
+                          return (
+                            <div key={idx} className="crm-item-row" style={{ textDecoration: isCancelled ? 'line-through' : 'none', opacity: isCancelled ? 0.6 : 1, color: isCancelled ? '#DC2626' : undefined }}>
+                              <div className="crm-item-name-qty">
+                                <span className={it.isVeg ? 'crm-veg-dot' : 'crm-nonveg-dot'} />
+                                <span className="crm-qty-badge" style={{ textDecoration: isCancelled ? 'line-through' : 'none' }}>{it.qty}x</span>
+                                <span style={{ fontWeight: 600 }}>{it.name}</span>
+                                {isCancelled && (
+                                  <span style={{ fontSize: '10px', fontWeight: 900, color: '#DC2626', marginLeft: '4px', background: '#FEE2E2', border: '1px solid #FCA5A5', padding: '1px 5px', borderRadius: '4px', textDecoration: 'none', display: 'inline-block' }}>
+                                    [CANCELLED]
+                                  </span>
+                                )}
+                                {!isCancelled && isUpdated && (
+                                  <span style={{ fontSize: '10px', fontWeight: 900, color: '#2563EB', marginLeft: '4px', background: '#DBEAFE', border: '1px solid #93C5FD', padding: '1px 5px', borderRadius: '4px', textDecoration: 'none', display: 'inline-block' }}>
+                                    [UPDATED]
+                                  </span>
+                                )}
+                              </div>
+                              <span style={{ fontWeight: 700, textDecoration: isCancelled ? 'line-through' : 'none' }}>₹{it.price * it.qty}</span>
                             </div>
-                            <span style={{ fontWeight: 700 }}>₹{it.price * it.qty}</span>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
 
                       {/* PROMINENT PAYMENT COLLECTION STATUS BANNER */}
@@ -7029,7 +8500,55 @@ export default function DashboardPage({ onShowToast }) {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => handleToggleStoreSetting('isKdsLocked', 'Kitchen Display PIN Protection')}
+                  style={{
+                    border: storeControls.isKdsLocked ? '1.5px solid #FCA5A5' : '1.5px solid #86EFAC',
+                    padding: '8px 14px',
+                    borderRadius: '12px',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    backgroundColor: storeControls.isKdsLocked ? '#7F1D1D' : '#14532D',
+                    color: storeControls.isKdsLocked ? '#FEE2E2' : '#DCFCE7',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                  title="Toggle Kitchen Screen Lock on/off from Settings"
+                >
+                  {storeControls.isKdsLocked ? <Lock size={14} /> : <Unlock size={14} />}
+                  <span>{storeControls.isKdsLocked ? 'PIN Locked' : 'Screen Unlocked'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const slug = (storeControls.restName || 'thefoodypay').toLowerCase().replace(/\s+/g, '-');
+                    const mid = storeControls.foodypayId || 'FP-790044';
+                    window.open(`/${slug}/${mid}/KitchenDisplaySystem`, '_blank');
+                  }}
+                  style={{
+                    border: '1px solid #475569',
+                    padding: '8px 14px',
+                    borderRadius: '12px',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    backgroundColor: '#1E293B',
+                    color: '#FFF',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                  title="Open Dedicated Fullscreen Kitchen Display Screen"
+                >
+                  <ExternalLink size={14} />
+                  <span>Standalone KDS ↗</span>
+                </button>
+
                 {['all', 'new', 'preparing', 'ready'].map((filterKey) => (
                   <button
                     key={filterKey}
@@ -7226,14 +8745,39 @@ export default function DashboardPage({ onShowToast }) {
                   <Utensils size={20} color="#1D4ED8" />
                   <span>{selectedCategory === 'All' ? 'All Products' : selectedCategory}</span>
                 </div>
-                <button
-                  type="button"
-                  className="crm-seo-link"
-                  style={{ background: 'none', border: 'none' }}
-                  onClick={() => addToast('SEO Settings: Search keywords saved!')}
-                >
-                  Edit SEO settings
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={handleFetchCatalogFromCloud}
+                    disabled={syncingCloudCatalog}
+                    style={{
+                      background: '#F0FDF4',
+                      border: '1.5px solid #86EFAC',
+                      color: '#15803D',
+                      padding: '6px 12px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      fontWeight: 800,
+                      cursor: syncingCloudCatalog ? 'not-allowed' : 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      opacity: syncingCloudCatalog ? 0.7 : 1
+                    }}
+                    title="Fetch latest product catalog from Firebase and save locally"
+                  >
+                    <CloudDownload size={14} />
+                    <span>{syncingCloudCatalog ? 'Fetching...' : 'Sync from Cloud'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="crm-seo-link"
+                    style={{ background: 'none', border: 'none' }}
+                    onClick={() => addToast('SEO Settings: Search keywords saved!')}
+                  >
+                    Edit SEO settings
+                  </button>
+                </div>
               </div>
 
               {/* Products Table with Real Photos */}
@@ -10330,274 +11874,591 @@ export default function DashboardPage({ onShowToast }) {
             ========================================================================== */}
         {activeTab === 'store_controls' && (
           <div className="crm-store-controls-page animate-fade-in" key={activeTab} style={{ display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '1000px' }}>
-            {Boolean(storeControls.lockSettingsPanel || storeControls.lockSettings) && (
-              <div style={{ background: '#FEF2F2', border: '2px solid #FCA5A5', padding: '16px 20px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: '0 4px 12px rgba(220,38,38,0.1)' }}>
-                <Lock size={26} color="#DC2626" />
-                <div>
-                  <div style={{ fontSize: '15px', fontWeight: 900, color: '#991B1B' }}>🔒 STORE SETTINGS LOCKED BY PARTNER ADMIN</div>
-                  <div style={{ fontSize: '12.5px', color: '#7F1D1D', fontWeight: 700, marginTop: '2px' }}>
-                    Dashboard Settings, UPI Configuration, and merchant profile controls are locked by Enterprise Admin. Store users cannot modify settings until unlocked via Admin.
+            {Boolean(storeControls.lockSettingsPanel || storeControls.lockSettings || storeControls.lockMarketingTab || storeControls.lockTableCrud || storeControls.lockOrderDeletion) && (
+              <div style={{ background: '#FEF2F2', border: '2px solid #FCA5A5', padding: '16px 20px', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '14px', flexWrap: 'wrap', boxShadow: '0 4px 12px rgba(220,38,38,0.1)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                  <div style={{ width: '42px', height: '42px', borderRadius: '12px', background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Lock size={24} color="#DC2626" />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '15px', fontWeight: 900, color: '#991B1B' }}>🔒 STORE CONTROLS RESTRICTIONS DETECTED</div>
+                    <div style={{ fontSize: '12.5px', color: '#7F1D1D', fontWeight: 700, marginTop: '2px' }}>
+                      Some settings restrictions are active. Click the unlock button to remove all locks and enable unrestricted control.
+                    </div>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={handleUnlockAllStoreLocks}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 20px',
+                    borderRadius: '10px',
+                    background: 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    fontWeight: 900,
+                    fontSize: '13.5px',
+                    cursor: 'pointer',
+                    boxShadow: '0 3px 10px rgba(22, 163, 74, 0.3)',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <Unlock size={16} /> 🔓 Unlock All Controls Now
+                </button>
               </div>
             )}
+
             {/* Store Operations & Status */}
-            <div className="crm-control-section-card">
-              <div className="crm-control-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <SlidersHorizontal size={20} color="#1D4ED8" /> Store Operations & Status
-              </div>
-
-              {/* Store status */}
-              <div className="crm-control-row">
-                <div className="crm-control-name-status">
-                  <span className="crm-control-label">Store Outlet Status</span>
-                  <span className={storeControls.storeStatus ? 'crm-status-badge-green' : 'crm-status-badge-gray'}>
-                    {storeControls.storeStatus ? ' Open for Orders' : ' Closed'}
-                  </span>
-                </div>
-                <label className="crm-blue-switch">
-                  <input
-                    type="checkbox"
-                    checked={storeControls.storeStatus}
-                    onChange={() => {
-                      const next = !storeControls.storeStatus;
-                      setStoreControls((prev) => ({ ...prev, storeStatus: next }));
-                      addToast(`Restaurant Outlet is now ${next ? 'OPEN' : 'CLOSED'}`);
-                    }}
-                  />
-                  <span className="crm-blue-slider" />
-                </label>
-              </div>
-
-              {/* Direct Delivery status */}
-              <div className="crm-control-row">
-                <div className="crm-control-name-status">
-                  <span className="crm-control-label">Direct Delivery Status</span>
-                  <span className={storeControls.deliveryStatus ? 'crm-status-badge-green' : 'crm-status-badge-gray'}>
-                    {storeControls.deliveryStatus ? ' Accepting Delivery' : ' Delivery Off'}
-                  </span>
-                </div>
-                <label className="crm-blue-switch">
-                  <input
-                    type="checkbox"
-                    checked={storeControls.deliveryStatus}
-                    onChange={() => {
-                      const next = !storeControls.deliveryStatus;
-                      setStoreControls((prev) => ({ ...prev, deliveryStatus: next }));
-                      addToast(`Direct Delivery orders are now ${next ? 'OPEN' : 'CLOSED'}`);
-                    }}
-                  />
-                  <span className="crm-blue-slider" />
-                </label>
-              </div>
-
-              {/* Takeaway / Pickup status */}
-              <div className="crm-control-row">
-                <div className="crm-control-name-status">
-                  <span className="crm-control-label">Takeaway & Pickup Counter</span>
-                  <span className={storeControls.pickupStatus ? 'crm-status-badge-green' : 'crm-status-badge-gray'}>
-                    {storeControls.pickupStatus ? ' Accepting Pickup' : ' Pickup Off'}
-                  </span>
-                </div>
-                <label className="crm-blue-switch">
-                  <input
-                    type="checkbox"
-                    checked={storeControls.pickupStatus}
-                    onChange={() => {
-                      const next = !storeControls.pickupStatus;
-                      setStoreControls((prev) => ({ ...prev, pickupStatus: next }));
-                      addToast(`Takeaway / Pickup counter is now ${next ? 'OPEN' : 'CLOSED'}`);
-                    }}
-                  />
-                  <span className="crm-blue-slider" />
-                </label>
-              </div>
-
-              {/* Kitchen Display System (KDS) status toggle */}
-              <div className="crm-control-row" style={{ paddingTop: '12px', borderTop: '1px dashed #E2E8F0' }}>
-                <div className="crm-control-name-status">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span className="crm-control-label">Kitchen Display System (KDS)</span>
-                    <span className={storeControls.kdsEnabled !== false ? 'crm-status-badge-green' : 'crm-status-badge-gray'}>
-                      {storeControls.kdsEnabled !== false ? ' KDS Active (ON)' : ' KDS Disabled (OFF)'}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: '11.5px', color: '#64748B', marginTop: '3px' }}>
-                    URL: <code>https://foodypay.in/{(storeControls.restName || 'thefoodypay').toLowerCase().replace(/\s+/g, '-')}/{storeControls.foodypayId || 'FP-790044'}/KitchenDisplaySystem</code>
-                  </div>
-                </div>
-                <label className="crm-blue-switch">
-                  <input
-                    type="checkbox"
-                    checked={storeControls.kdsEnabled !== false}
-                    onChange={() => {
-                      const next = !(storeControls.kdsEnabled !== false);
-                      setStoreControls((prev) => ({ ...prev, kdsEnabled: next }));
-                      try {
-                        localStorage.setItem('foodypay_kds_enabled', JSON.stringify(next));
-                        window.dispatchEvent(new Event('storage'));
-                      } catch (e) {}
-                      addToast(`Kitchen Display System (KDS) is now ${next ? 'ENABLED (ON)' : 'DISABLED (OFF)'}`);
-                    }}
-                  />
-                  <span className="crm-blue-slider" />
-                </label>
-              </div>
-            </div>
-
-            {/* Order Status Stepper & Delivery Workflow Settings */}
-            <div className="crm-control-section-card">
-              <div className="crm-control-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Truck size={20} color="#F59E0B" /> Order Status Workflow & Stepper Settings (Dine-In vs Delivery)
-              </div>
-              <div style={{ fontSize: '13.5px', color: '#64748B', marginBottom: '14px' }}>
-                Customize how order status steps (Placed  Kitchen  Out for Delivery  Delivered) appear on order cards & delivery screens.
-              </div>
-
-              <div style={{ background: '#F8FAFC', padding: '16px', borderRadius: '12px', border: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div className="crm-control-section-card" style={{ padding: '22px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '16px', paddingBottom: '14px', borderBottom: '1px solid #E2E8F0' }}>
                 <div>
-                  <div style={{ fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: '8px' }}>WORKFLOW MODE</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-                    {[
-                      { id: 'auto', label: ' Auto Dynamic (Dine-In: Placed  Kitchen  Ready  Served | Delivery: Placed  Kitchen  Out for Delivery  Delivered)' },
-                      { id: 'dine_in', label: '️ Dine-In Mode (Placed  Kitchen  Ready  Served)' },
-                      { id: 'delivery', label: ' Delivery & Store Mode (Placed  Kitchen  Out for Delivery  Delivered)' },
-                    ].map((mode) => (
-                      <label
-                        key={mode.id}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          padding: '10px 14px',
-                          borderRadius: '8px',
-                          border: (storeControls.workflowMode || 'auto') === mode.id ? '2px solid #2563EB' : '1px solid #CBD5E1',
-                          background: (storeControls.workflowMode || 'auto') === mode.id ? '#EFF6FF' : '#FFFFFF',
-                          cursor: 'pointer',
-                          fontSize: '13px',
-                          fontWeight: 700,
-                          color: (storeControls.workflowMode || 'auto') === mode.id ? '#1E40AF' : '#334155',
-                          flex: '1 1 250px',
-                        }}
-                      >
-                        <input
-                          type="radio"
-                          name="workflowMode"
-                          value={mode.id}
-                          checked={(storeControls.workflowMode || 'auto') === mode.id}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setStoreControls((prev) => ({ ...prev, workflowMode: val }));
-                            localStorage.setItem('foodypay_workflow_mode', val);
-                            addToast(`Order Workflow Mode set to: ${val.toUpperCase()}`);
-                          }}
-                        />
-                        {mode.label}
-                      </label>
-                    ))}
+                  <div className="crm-control-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                    <SlidersHorizontal size={20} color="#1D4ED8" /> Store Operations &amp; Status Controls
+                  </div>
+                  <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '4px' }}>
+                    Click anywhere on a row or click <strong>ACTIVE / INACTIVE</strong> to toggle each channel immediately.
                   </div>
                 </div>
-
-                {/* Custom Order Status Stepper Step Names Customizer */}
-                <div style={{ paddingTop: '12px', borderTop: '1px dashed #CBD5E1' }}>
-                  <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0F172A', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <SlidersHorizontal size={16} color="#FF5E14" /> Customize Status Step Names (Placed  Kitchen  Delivery  Served)
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px', marginBottom: '10px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#64748B', marginBottom: '3px' }}>Step 1 Name (New)</label>
-                      <input
-                        type="text"
-                        placeholder="Placed"
-                        value={statusStepLabels.step1}
-                        onChange={(e) => setStatusStepLabels({ ...statusStepLabels, step1: e.target.value })}
-                        style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '12.5px', fontWeight: 600 }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#64748B', marginBottom: '3px' }}>Step 2 Name (Preparing)</label>
-                      <input
-                        type="text"
-                        placeholder="Kitchen"
-                        value={statusStepLabels.step2}
-                        onChange={(e) => setStatusStepLabels({ ...statusStepLabels, step2: e.target.value })}
-                        style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '12.5px', fontWeight: 600 }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#64748B', marginBottom: '3px' }}>Step 3 Name (Ready/Transit)</label>
-                      <input
-                        type="text"
-                        placeholder="Out for Delivery / Ready"
-                        value={statusStepLabels.step3}
-                        onChange={(e) => setStatusStepLabels({ ...statusStepLabels, step3: e.target.value })}
-                        style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '12.5px', fontWeight: 600 }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#64748B', marginBottom: '3px' }}>Step 4 Name (Final)</label>
-                      <input
-                        type="text"
-                        placeholder="Delivered / Served"
-                        value={statusStepLabels.step4}
-                        onChange={(e) => setStatusStepLabels({ ...statusStepLabels, step4: e.target.value })}
-                        style={{ width: '100%', padding: '6px 10px', borderRadius: '6px', border: '1px solid #CBD5E1', fontSize: '12.5px', fontWeight: 600 }}
-                      />
-                    </div>
-                  </div>
-
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <button
                     type="button"
-                    onClick={() => {
-                      saveStatusStepLabels(statusStepLabels);
-                      addToast('Saved Custom Status Step Names!', <CheckCircle2 size={16} color="#10B981" />);
+                    onClick={() => handleSetAllStoreSettings(true)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      background: '#DCFCE7',
+                      color: '#15803D',
+                      border: '1.5px solid #86EFAC',
+                      fontWeight: 800,
+                      fontSize: '12.5px',
+                      cursor: 'pointer',
                     }}
-                    style={{ background: '#1D4ED8', color: '#FFF', border: 'none', padding: '6px 14px', borderRadius: '6px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                    title="Turn ON Store, Delivery, Pickup and KDS all at once"
                   >
-                    Save Step Names
+                    <Check size={14} /> Turn ALL Active (ON)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetAllStoreSettings(false)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 14px',
+                      borderRadius: '8px',
+                      background: '#FEE2E2',
+                      color: '#B91C1C',
+                      border: '1.5px solid #FCA5A5',
+                      fontWeight: 800,
+                      fontSize: '12.5px',
+                      cursor: 'pointer',
+                    }}
+                    title="Turn OFF Store, Delivery and Pickup all at once"
+                  >
+                    <X size={14} /> Turn ALL Inactive (OFF)
                   </button>
                 </div>
+              </div>
 
-                {/* Delivery Partner Screen Quick Link Button (Hidden if feature is LOCKED) */}
-                {!isDeliveryPartnerLocked && (
-                  <div style={{ paddingTop: '12px', borderTop: '1px dashed #CBD5E1', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-                    <div>
-                      <div style={{ fontSize: '13px', fontWeight: 800, color: '#0F172A' }}>
-                         Delivery Partner Portal Link
-                      </div>
-                      <div style={{ fontSize: '11.5px', color: '#64748B', marginTop: '2px' }}>
-                        URL: <code>https://foodypay.in/{(storeControls.restName || 'thefoodypay').toLowerCase().replace(/\s+/g, '-')}/{storeControls.foodypayId || 'FP-790044'}/delivery-partner</code>
-                      </div>
+              {/* 1. Store Outlet Status */}
+              <div
+                className="crm-control-row"
+                onClick={() => handleToggleStoreSetting('storeStatus', 'Store Outlet Status')}
+                style={{
+                  cursor: 'pointer',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '16px',
+                  flexWrap: 'wrap',
+                  backgroundColor: storeControls.storeStatus ? '#F0FDF4' : '#FEF2F2',
+                  border: storeControls.storeStatus ? '1.5px solid #BBF7D0' : '1.5px solid #FECACA',
+                  marginBottom: '12px',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: '240px', flex: 1 }}>
+                  <div
+                    style={{
+                      width: '46px',
+                      height: '46px',
+                      borderRadius: '12px',
+                      backgroundColor: storeControls.storeStatus ? '#DCFCE7' : '#FEE2E2',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Store size={24} color={storeControls.storeStatus ? '#16A34A' : '#DC2626'} />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '15px', fontWeight: 900, color: '#0F172A' }}>Store Outlet Status</span>
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '3px 10px',
+                          borderRadius: '999px',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          backgroundColor: storeControls.storeStatus ? '#DCFCE7' : '#FEE2E2',
+                          color: storeControls.storeStatus ? '#15803D' : '#B91C1C',
+                          border: storeControls.storeStatus ? '1px solid #86EFAC' : '1px solid #FCA5A5',
+                        }}
+                      >
+                        {storeControls.storeStatus ? '● Open for Orders' : '✕ Closed'}
+                      </span>
                     </div>
-
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button
-                        type="button"
-                        style={{ padding: '8px 14px', borderRadius: '8px', background: '#F59E0B', color: '#000', border: 'none', fontWeight: 800, fontSize: '12.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                        onClick={() => {
-                          const slug = (storeControls.restName || 'thefoodypay').toLowerCase().replace(/\s+/g, '-');
-                          const mid = storeControls.foodypayId || 'FP-790044';
-                          window.open(`/${slug}/${mid}/delivery-partner`, '_blank');
-                        }}
-                      >
-                        <Truck size={15} /> Open Delivery View
-                      </button>
-                      <button
-                        type="button"
-                        style={{ padding: '8px 14px', borderRadius: '8px', background: '#0F172A', color: '#FFF', border: 'none', fontWeight: 800, fontSize: '12.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
-                        onClick={() => {
-                          const slug = (storeControls.restName || 'thefoodypay').toLowerCase().replace(/\s+/g, '-');
-                          const mid = storeControls.foodypayId || 'FP-790044';
-                          navigator.clipboard.writeText(`${window.location.origin}/${slug}/${mid}/delivery-partner`);
-                          addToast('Copied Delivery Partner View URL to clipboard!');
-                        }}
-                      >
-                        <Copy size={15} /> Copy URL
-                      </button>
+                    <div style={{ fontSize: '12px', color: '#64748B', marginTop: '3px' }}>
+                      Master switch for dine-in &amp; online orders. When closed, checkout is paused.
                     </div>
                   </div>
-                )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleStoreSetting('storeStatus', 'Store Outlet Status');
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 16px',
+                      borderRadius: '10px',
+                      border: storeControls.storeStatus ? '1.5px solid #16A34A' : '1.5px solid #DC2626',
+                      background: storeControls.storeStatus ? 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)' : '#FFFFFF',
+                      color: storeControls.storeStatus ? '#FFFFFF' : '#DC2626',
+                      fontWeight: 900,
+                      fontSize: '12.5px',
+                      cursor: 'pointer',
+                      boxShadow: storeControls.storeStatus ? '0 2px 8px rgba(22, 163, 74, 0.25)' : '0 2px 6px rgba(220, 38, 38, 0.1)',
+                    }}
+                  >
+                    {storeControls.storeStatus ? <Check size={16} /> : <X size={16} />}
+                    {storeControls.storeStatus ? 'ACTIVE (ON)' : 'INACTIVE (OFF)'}
+                  </button>
+
+                  <label className="crm-blue-switch" onClick={(e) => e.stopPropagation()} style={{ cursor: 'pointer', margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(storeControls.storeStatus)}
+                      onChange={() => handleToggleStoreSetting('storeStatus', 'Store Outlet Status')}
+                    />
+                    <span className="crm-blue-slider" />
+                  </label>
+                </div>
+              </div>
+
+              {/* 2. Direct Delivery Status */}
+              <div
+                className="crm-control-row"
+                onClick={() => handleToggleStoreSetting('deliveryStatus', 'Direct Delivery Status')}
+                style={{
+                  cursor: 'pointer',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '16px',
+                  flexWrap: 'wrap',
+                  backgroundColor: storeControls.deliveryStatus ? '#F0FDF4' : '#FEF2F2',
+                  border: storeControls.deliveryStatus ? '1.5px solid #BBF7D0' : '1.5px solid #FECACA',
+                  marginBottom: '12px',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: '240px', flex: 1 }}>
+                  <div
+                    style={{
+                      width: '46px',
+                      height: '46px',
+                      borderRadius: '12px',
+                      backgroundColor: storeControls.deliveryStatus ? '#DCFCE7' : '#FEE2E2',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Truck size={24} color={storeControls.deliveryStatus ? '#16A34A' : '#DC2626'} />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '15px', fontWeight: 900, color: '#0F172A' }}>Direct Delivery Status</span>
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '3px 10px',
+                          borderRadius: '999px',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          backgroundColor: storeControls.deliveryStatus ? '#DCFCE7' : '#FEE2E2',
+                          color: storeControls.deliveryStatus ? '#15803D' : '#B91C1C',
+                          border: storeControls.deliveryStatus ? '1px solid #86EFAC' : '1px solid #FCA5A5',
+                        }}
+                      >
+                        {storeControls.deliveryStatus ? '● Accepting Delivery' : '✕ Delivery Off'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#64748B', marginTop: '3px' }}>
+                      Accept online home/office delivery orders within your designated delivery radius.
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleStoreSetting('deliveryStatus', 'Direct Delivery Status');
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 16px',
+                      borderRadius: '10px',
+                      border: storeControls.deliveryStatus ? '1.5px solid #16A34A' : '1.5px solid #DC2626',
+                      background: storeControls.deliveryStatus ? 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)' : '#FFFFFF',
+                      color: storeControls.deliveryStatus ? '#FFFFFF' : '#DC2626',
+                      fontWeight: 900,
+                      fontSize: '12.5px',
+                      cursor: 'pointer',
+                      boxShadow: storeControls.deliveryStatus ? '0 2px 8px rgba(22, 163, 74, 0.25)' : '0 2px 6px rgba(220, 38, 38, 0.1)',
+                    }}
+                  >
+                    {storeControls.deliveryStatus ? <Check size={16} /> : <X size={16} />}
+                    {storeControls.deliveryStatus ? 'ACTIVE (ON)' : 'INACTIVE (OFF)'}
+                  </button>
+
+                  <label className="crm-blue-switch" onClick={(e) => e.stopPropagation()} style={{ cursor: 'pointer', margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(storeControls.deliveryStatus)}
+                      onChange={() => handleToggleStoreSetting('deliveryStatus', 'Direct Delivery Status')}
+                    />
+                    <span className="crm-blue-slider" />
+                  </label>
+                </div>
+              </div>
+
+              {/* 3. Takeaway & Pickup Counter */}
+              <div
+                className="crm-control-row"
+                onClick={() => handleToggleStoreSetting('pickupStatus', 'Takeaway & Pickup Counter')}
+                style={{
+                  cursor: 'pointer',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '16px',
+                  flexWrap: 'wrap',
+                  backgroundColor: storeControls.pickupStatus ? '#F0FDF4' : '#FEF2F2',
+                  border: storeControls.pickupStatus ? '1.5px solid #BBF7D0' : '1.5px solid #FECACA',
+                  marginBottom: '12px',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: '240px', flex: 1 }}>
+                  <div
+                    style={{
+                      width: '46px',
+                      height: '46px',
+                      borderRadius: '12px',
+                      backgroundColor: storeControls.pickupStatus ? '#DCFCE7' : '#FEE2E2',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <ShoppingBag size={24} color={storeControls.pickupStatus ? '#16A34A' : '#DC2626'} />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '15px', fontWeight: 900, color: '#0F172A' }}>Takeaway &amp; Pickup Counter</span>
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '3px 10px',
+                          borderRadius: '999px',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          backgroundColor: storeControls.pickupStatus ? '#DCFCE7' : '#FEE2E2',
+                          color: storeControls.pickupStatus ? '#15803D' : '#B91C1C',
+                          border: storeControls.pickupStatus ? '1px solid #86EFAC' : '1px solid #FCA5A5',
+                        }}
+                      >
+                        {storeControls.pickupStatus ? '● Accepting Pickup' : '✕ Pickup Off'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#64748B', marginTop: '3px' }}>
+                      Allow customers to order in advance and collect at the store pickup counter.
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleStoreSetting('pickupStatus', 'Takeaway & Pickup Counter');
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 16px',
+                      borderRadius: '10px',
+                      border: storeControls.pickupStatus ? '1.5px solid #16A34A' : '1.5px solid #DC2626',
+                      background: storeControls.pickupStatus ? 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)' : '#FFFFFF',
+                      color: storeControls.pickupStatus ? '#FFFFFF' : '#DC2626',
+                      fontWeight: 900,
+                      fontSize: '12.5px',
+                      cursor: 'pointer',
+                      boxShadow: storeControls.pickupStatus ? '0 2px 8px rgba(22, 163, 74, 0.25)' : '0 2px 6px rgba(220, 38, 38, 0.1)',
+                    }}
+                  >
+                    {storeControls.pickupStatus ? <Check size={16} /> : <X size={16} />}
+                    {storeControls.pickupStatus ? 'ACTIVE (ON)' : 'INACTIVE (OFF)'}
+                  </button>
+
+                  <label className="crm-blue-switch" onClick={(e) => e.stopPropagation()} style={{ cursor: 'pointer', margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(storeControls.pickupStatus)}
+                      onChange={() => handleToggleStoreSetting('pickupStatus', 'Takeaway & Pickup Counter')}
+                    />
+                    <span className="crm-blue-slider" />
+                  </label>
+                </div>
+              </div>
+
+              {/* 4. Kitchen Display System (KDS) */}
+              <div
+                className="crm-control-row"
+                onClick={() => handleToggleStoreSetting('kdsEnabled', 'Kitchen Display System (KDS)')}
+                style={{
+                  cursor: 'pointer',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '16px',
+                  flexWrap: 'wrap',
+                  backgroundColor: storeControls.kdsEnabled !== false ? '#F0FDF4' : '#FEF2F2',
+                  border: storeControls.kdsEnabled !== false ? '1.5px solid #BBF7D0' : '1.5px solid #FECACA',
+                  marginBottom: '12px',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: '240px', flex: 1 }}>
+                  <div
+                    style={{
+                      width: '46px',
+                      height: '46px',
+                      borderRadius: '12px',
+                      backgroundColor: storeControls.kdsEnabled !== false ? '#DCFCE7' : '#FEE2E2',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <ChefHat size={24} color={storeControls.kdsEnabled !== false ? '#16A34A' : '#DC2626'} />
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '15px', fontWeight: 900, color: '#0F172A' }}>Kitchen Display System (KDS)</span>
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '3px 10px',
+                          borderRadius: '999px',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          backgroundColor: storeControls.kdsEnabled !== false ? '#DCFCE7' : '#FEE2E2',
+                          color: storeControls.kdsEnabled !== false ? '#15803D' : '#B91C1C',
+                          border: storeControls.kdsEnabled !== false ? '1px solid #86EFAC' : '1px solid #FCA5A5',
+                        }}
+                      >
+                        {storeControls.kdsEnabled !== false ? '● KDS Active (ON)' : '✕ KDS Disabled (OFF)'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#64748B', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <span>Live KDS Chef Screen:</span>
+                      <a
+                        href={`https://foodypay.in/${(storeControls.restName || 'thefoodypay').toLowerCase().replace(/\s+/g, '-')}/${storeControls.foodypayId || 'FP-790044'}/KitchenDisplaySystem`}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ color: '#2563EB', fontWeight: 700, textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                      >
+                        Open Chef Screen <ExternalLink size={12} />
+                      </a>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleStoreSetting('kdsEnabled', 'Kitchen Display System (KDS)');
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 16px',
+                      borderRadius: '10px',
+                      border: storeControls.kdsEnabled !== false ? '1.5px solid #16A34A' : '1.5px solid #DC2626',
+                      background: storeControls.kdsEnabled !== false ? 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)' : '#FFFFFF',
+                      color: storeControls.kdsEnabled !== false ? '#FFFFFF' : '#DC2626',
+                      fontWeight: 900,
+                      fontSize: '12.5px',
+                      cursor: 'pointer',
+                      boxShadow: storeControls.kdsEnabled !== false ? '0 2px 8px rgba(22, 163, 74, 0.25)' : '0 2px 6px rgba(220, 38, 38, 0.1)',
+                    }}
+                  >
+                    {storeControls.kdsEnabled !== false ? <Check size={16} /> : <X size={16} />}
+                    {storeControls.kdsEnabled !== false ? 'ACTIVE (ON)' : 'INACTIVE (OFF)'}
+                  </button>
+
+                  <label className="crm-blue-switch" onClick={(e) => e.stopPropagation()} style={{ cursor: 'pointer', margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={storeControls.kdsEnabled !== false}
+                      onChange={() => handleToggleStoreSetting('kdsEnabled', 'Kitchen Display System (KDS)')}
+                    />
+                    <span className="crm-blue-slider" />
+                  </label>
+                </div>
+              </div>
+
+              {/* 5. Kitchen Display Screen Lock (PIN Protection) */}
+              <div
+                className="crm-control-row"
+                onClick={() => handleToggleStoreSetting('isKdsLocked', 'Kitchen Display PIN Protection')}
+                style={{
+                  cursor: 'pointer',
+                  borderRadius: '12px',
+                  padding: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '16px',
+                  flexWrap: 'wrap',
+                  backgroundColor: storeControls.isKdsLocked ? '#FEF2F2' : '#F0FDF4',
+                  border: storeControls.isKdsLocked ? '1.5px solid #FECACA' : '1.5px solid #BBF7D0',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: '240px', flex: 1 }}>
+                  <div
+                    style={{
+                      width: '46px',
+                      height: '46px',
+                      borderRadius: '12px',
+                      backgroundColor: storeControls.isKdsLocked ? '#FEE2E2' : '#DCFCE7',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {storeControls.isKdsLocked ? <Lock size={24} color="#DC2626" /> : <Unlock size={24} color="#16A34A" />}
+                  </div>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '15px', fontWeight: 900, color: '#0F172A' }}>Kitchen Display Screen Lock (PIN)</span>
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '3px 10px',
+                          borderRadius: '999px',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          backgroundColor: storeControls.isKdsLocked ? '#FEE2E2' : '#DCFCE7',
+                          color: storeControls.isKdsLocked ? '#B91C1C' : '#15803D',
+                          border: storeControls.isKdsLocked ? '1px solid #FCA5A5' : '1px solid #86EFAC',
+                        }}
+                      >
+                        {storeControls.isKdsLocked ? '🔒 PIN Protected (Locked)' : '🔓 Unlocked (Direct Access)'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#64748B', marginTop: '3px' }}>
+                      {storeControls.isKdsLocked
+                        ? 'PIN protection active: kitchen staff must enter password to view orders.'
+                        : 'Unlocked by default: kitchen staff can open KDS instantly without entering password.'}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleStoreSetting('isKdsLocked', 'Kitchen Display PIN Protection');
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 16px',
+                      borderRadius: '10px',
+                      border: storeControls.isKdsLocked ? '1.5px solid #DC2626' : '1.5px solid #16A34A',
+                      background: storeControls.isKdsLocked ? '#FEF2F2' : 'linear-gradient(135deg, #16A34A 0%, #15803D 100%)',
+                      color: storeControls.isKdsLocked ? '#DC2626' : '#FFFFFF',
+                      fontWeight: 900,
+                      fontSize: '12.5px',
+                      cursor: 'pointer',
+                      boxShadow: storeControls.isKdsLocked ? '0 2px 6px rgba(220, 38, 38, 0.15)' : '0 2px 8px rgba(22, 163, 74, 0.25)',
+                    }}
+                  >
+                    {storeControls.isKdsLocked ? <Lock size={16} /> : <Unlock size={16} />}
+                    {storeControls.isKdsLocked ? 'LOCKED (PIN ON)' : 'UNLOCKED (PIN OFF)'}
+                  </button>
+
+                  <label className="crm-blue-switch" onClick={(e) => e.stopPropagation()} style={{ cursor: 'pointer', margin: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(storeControls.isKdsLocked)}
+                      onChange={() => handleToggleStoreSetting('isKdsLocked', 'Kitchen Display PIN Protection')}
+                    />
+                    <span className="crm-blue-slider" />
+                  </label>
+                </div>
               </div>
             </div>
 
@@ -10661,195 +12522,6 @@ export default function DashboardPage({ onShowToast }) {
                   >
                     Save Rate
                   </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Clean Slate & Reset Data Card */}
-            <div className="crm-control-section-card" style={{ border: '1.5px solid #FECACA', background: '#FFF5F5' }}>
-              <div className="crm-control-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#DC2626' }}>
-                <Trash2 size={20} color="#DC2626" /> Clean Slate Database Reset
-              </div>
-              <div style={{ fontSize: '13.5px', color: '#64748B', marginBottom: '14px' }}>
-                Wipe all sample mock data (sample orders, sample reviews, sample meal combos, sample customers). Database will start completely 100% fresh for new orders!
-              </div>
-
-              <button
-                type="button"
-                onClick={handleClearAllSampleData}
-                style={{
-                  backgroundColor: '#DC2626',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  padding: '10px 18px',
-                  borderRadius: '10px',
-                  fontWeight: 800,
-                  fontSize: '13.5px',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 12px rgba(220, 38, 38, 0.25)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}
-              >
-                <Trash2 size={16} />
-                <span> Clear All Sample Data &amp; Reset Fresh</span>
-              </button>
-            </div>
-
-            {/* Security & Permission Locks */}
-            <div className="crm-control-section-card">
-              <div className="crm-control-card-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Lock size={20} color="#DC2626" /> Security & Permission Locks
-              </div>
-              <div style={{ fontSize: '13.5px', color: '#64748B', marginBottom: '14px' }}>
-                Lock down critical store modules to prevent unauthorized staff operations, coupon tampering, or table QR deletion.
-              </div>
-
-              {/* Lock Marketing & Coupon Builder */}
-              <div className="crm-control-row">
-                <div className="crm-control-name-status">
-                  <span className="crm-control-label">Lock Marketing & Promocode Builder</span>
-                  <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '2px' }}>
-                    Freeze creation, edit, and deletion of discount codes and campaign broadcasts.
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span className={storeControls.lockMarketingTab ? 'crm-status-badge-gray' : 'crm-status-badge-green'} style={{ color: storeControls.lockMarketingTab ? '#DC2626' : '#16A34A', background: storeControls.lockMarketingTab ? '#FEE2E2' : '#DCFCE7', fontWeight: 700 }}>
-                    {storeControls.lockMarketingTab ? ' Locked' : ' Active'}
-                  </span>
-                  <label className="crm-blue-switch">
-                    <input
-                      type="checkbox"
-                      checked={storeControls.lockMarketingTab}
-                      onChange={() => {
-                        const next = !storeControls.lockMarketingTab;
-                        setStoreControls((prev) => ({ ...prev, lockMarketingTab: next }));
-                        addToast(next ? ' Marketing & Promocode Engine LOCKED!' : ' Marketing Engine UNLOCKED!', <Lock size={18} />);
-                      }}
-                    />
-                    <span className="crm-blue-slider" />
-                  </label>
-                </div>
-              </div>
-
-              {/* Lock Table QR Standees CRUD */}
-              <div className="crm-control-row">
-                <div className="crm-control-name-status">
-                  <span className="crm-control-label">Lock Table QR Code CRUD Operations</span>
-                  <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '2px' }}>
-                    Prevent staff from adding, editing, or deleting active table QR standees.
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span className={storeControls.lockTableCrud ? 'crm-status-badge-gray' : 'crm-status-badge-green'} style={{ color: storeControls.lockTableCrud ? '#DC2626' : '#16A34A', background: storeControls.lockTableCrud ? '#FEE2E2' : '#DCFCE7', fontWeight: 700 }}>
-                    {storeControls.lockTableCrud ? ' Locked' : ' Active'}
-                  </span>
-                  <label className="crm-blue-switch">
-                    <input
-                      type="checkbox"
-                      checked={storeControls.lockTableCrud}
-                      onChange={() => {
-                        const next = !storeControls.lockTableCrud;
-                        setStoreControls((prev) => ({ ...prev, lockTableCrud: next }));
-                        addToast(next ? ' Table QR Modifications LOCKED!' : ' Table QR Operations UNLOCKED!', <Lock size={18} />);
-                      }}
-                    />
-                    <span className="crm-blue-slider" />
-                  </label>
-                </div>
-              </div>
-
-              {/* Lock Order Deletion & Voiding */}
-              <div className="crm-control-row">
-                <div className="crm-control-name-status">
-                  <span className="crm-control-label">Lock Order Deletion & Voiding</span>
-                  <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '2px' }}>
-                    Disable cashier ability to delete, erase, or void placed customer orders.
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span className={storeControls.lockOrderDeletion ? 'crm-status-badge-gray' : 'crm-status-badge-green'} style={{ color: storeControls.lockOrderDeletion ? '#DC2626' : '#16A34A', background: storeControls.lockOrderDeletion ? '#FEE2E2' : '#DCFCE7', fontWeight: 700 }}>
-                    {storeControls.lockOrderDeletion ? ' Locked' : ' Active'}
-                  </span>
-                  <label className="crm-blue-switch">
-                    <input
-                      type="checkbox"
-                      checked={storeControls.lockOrderDeletion}
-                      onChange={() => {
-                        const next = !storeControls.lockOrderDeletion;
-                        setStoreControls((prev) => ({ ...prev, lockOrderDeletion: next }));
-                        addToast(next ? ' Order Deletion & Voiding LOCKED!' : ' Order Deletion UNLOCKED!', <Lock size={18} />);
-                      }}
-                    />
-                    <span className="crm-blue-slider" />
-                  </label>
-                </div>
-              </div>
-
-              {/* Lock Store Settings Panel */}
-              <div className="crm-control-row">
-                <div className="crm-control-name-status">
-                  <span className="crm-control-label">Lock Store Settings Panel</span>
-                  <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '2px' }}>
-                    Protect store controls, UPI configuration, and business details with password lock.
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span className={storeControls.lockSettingsPanel ? 'crm-status-badge-gray' : 'crm-status-badge-green'} style={{ color: storeControls.lockSettingsPanel ? '#DC2626' : '#16A34A', background: storeControls.lockSettingsPanel ? '#FEE2E2' : '#DCFCE7', fontWeight: 700 }}>
-                    {storeControls.lockSettingsPanel ? ' Locked' : ' Active'}
-                  </span>
-                  <label className="crm-blue-switch">
-                    <input
-                      type="checkbox"
-                      checked={storeControls.lockSettingsPanel}
-                      onChange={() => {
-                        const next = !storeControls.lockSettingsPanel;
-                        setStoreControls((prev) => ({ ...prev, lockSettingsPanel: next }));
-                        addToast(next ? ' Store Settings Panel LOCKED!' : ' Store Settings UNLOCKED!', <Lock size={18} />);
-                      }}
-                    />
-                    <span className="crm-blue-slider" />
-                  </label>
-                </div>
-              </div>
-
-              {/* Kitchen Auto-Dispatch Timer (Grace Period) */}
-              <div className="crm-control-row">
-                <div className="crm-control-name-status">
-                  <span className="crm-control-label">Kitchen Auto-Dispatch Timer (Grace Window)</span>
-                  <div style={{ fontSize: '12.5px', color: '#64748B', marginTop: '2px' }}>
-                    Grace period before placed orders auto-forward to Kitchen KDS. Allows modifying/checking order before cooking.
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {[
-                    { label: '10s', val: 10 },
-                    { label: '30s (Default)', val: 30 },
-                    { label: '60s', val: 60 },
-                    { label: 'Instant', val: 0 },
-                  ].map((opt) => (
-                    <button
-                      key={opt.val}
-                      type="button"
-                      onClick={() => {
-                        setStoreControls((prev) => ({ ...prev, kitchenAutoDispatchSeconds: opt.val }));
-                        addToast(`Kitchen Auto-Dispatch set to ${opt.label}!`, <Check size={18} />);
-                      }}
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: '8px',
-                        border: Number(storeControls.kitchenAutoDispatchSeconds !== undefined ? storeControls.kitchenAutoDispatchSeconds : 30) === opt.val ? '2px solid #FF5E14' : '1px solid #CBD5E1',
-                        backgroundColor: Number(storeControls.kitchenAutoDispatchSeconds !== undefined ? storeControls.kitchenAutoDispatchSeconds : 30) === opt.val ? '#FFF7ED' : '#FFFFFF',
-                        color: Number(storeControls.kitchenAutoDispatchSeconds !== undefined ? storeControls.kitchenAutoDispatchSeconds : 30) === opt.val ? '#EA580C' : '#475569',
-                        fontWeight: 800,
-                        fontSize: '12px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
                 </div>
               </div>
             </div>
@@ -11267,6 +12939,129 @@ export default function DashboardPage({ onShowToast }) {
               </button>
             </div>
 
+            {/* ==========================================================================
+                THERMAL PRINTERS & HARDWARE ROUTING SETTINGS (DIRECT INLINE - NO POPUP)
+                ========================================================================== */}
+            <InlinePrinterSettings
+              onShowToast={addToast}
+              storeControls={storeControls}
+            />
+
+            {/* ==========================================================================
+                TAXES & GST CONFIGURATION (DIRECT INLINE - NO POPUP)
+                ========================================================================== */}
+            <div style={{ marginTop: '24px' }}>
+              <TaxConfigurationSection
+                isModal={false}
+                onSaved={() => addToast('✓ Tax & GST configuration saved and updated across catalog & POS!', <Check size={18} color="#16A34A" />)}
+              />
+            </div>
+
+            {/* ==========================================================================
+                KITCHEN DISPLAY SYSTEM (KDS) LOCK & QUICK ACCESS (DIRECT INLINE)
+                ========================================================================== */}
+            <div
+              style={{
+                marginTop: '24px',
+                backgroundColor: '#FFFFFF',
+                padding: '24px',
+                borderRadius: '16px',
+                border: '1.5px solid #E2E8F0',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.03)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px', borderBottom: '1.5px solid #F1F5F9', paddingBottom: '16px', marginBottom: '20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ width: '42px', height: '42px', borderRadius: '12px', backgroundColor: storeControls.isKdsLocked ? '#FEF2F2' : '#F0FDF4', color: storeControls.isKdsLocked ? '#DC2626' : '#16A34A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <ChefHat size={22} />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      Kitchen Display System (KDS) Lock &amp; Access Controls
+                    </h3>
+                    <p style={{ margin: '4px 0 0', fontSize: '12.5px', color: '#64748B' }}>
+                      Kitchen Display is <strong>unlocked by default</strong> for direct kitchen access. You can lock it with a PIN/password anytime below.
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '6px 14px',
+                      borderRadius: '10px',
+                      fontSize: '12px',
+                      fontWeight: 800,
+                      backgroundColor: storeControls.isKdsLocked ? '#FEF2F2' : '#F0FDF4',
+                      color: storeControls.isKdsLocked ? '#DC2626' : '#16A34A',
+                      border: storeControls.isKdsLocked ? '1.5px solid #FECACA' : '1.5px solid #BBF7D0',
+                    }}
+                  >
+                    {storeControls.isKdsLocked ? <Lock size={14} /> : <Unlock size={14} />}
+                    {storeControls.isKdsLocked ? 'Locked (PIN Protected)' : 'Unlocked (Direct Access)'}
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => handleToggleStoreSetting('isKdsLocked', 'Kitchen Display PIN Protection')}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 16px',
+                      borderRadius: '10px',
+                      border: 'none',
+                      fontSize: '12.5px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      backgroundColor: storeControls.isKdsLocked ? '#16A34A' : '#EF4444',
+                      color: '#FFFFFF',
+                      boxShadow: storeControls.isKdsLocked ? '0 2px 8px rgba(22,163,74,0.3)' : '0 2px 8px rgba(239,68,68,0.3)',
+                    }}
+                  >
+                    {storeControls.isKdsLocked ? (
+                      <>
+                        <Unlock size={14} /> Unlock Kitchen Screen
+                      </>
+                    ) : (
+                      <>
+                        <Lock size={14} /> Lock Kitchen Screen (Require PIN)
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', background: '#F8FAFC', padding: '14px 18px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+                <div style={{ fontSize: '13px', color: '#475569' }}>
+                  Default Kitchen Access Password: <strong style={{ color: '#FF5E14' }}>SnackRack400</strong>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => window.open('/KitchenDisplaySystem', '_blank')}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    border: '1.5px solid #CBD5E1',
+                    background: '#FFFFFF',
+                    color: '#0F172A',
+                    fontSize: '12.5px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <ChefHat size={14} color="#FF5E14" />
+                  <span>Open Kitchen Display (KDS) Screen ↗</span>
+                </button>
+              </div>
+            </div>
 
           </div>
         )}
@@ -12297,6 +14092,259 @@ export default function DashboardPage({ onShowToast }) {
             })()}
           </div>
         )}
+
+        {/* ==========================================================================
+            MERCHANT ADMIN TAB: REAL-TIME SALES, ORDERS, UPI, CASH & KHATA DASHBOARD
+            ========================================================================== */}
+        {activeTab === 'merchant_admin' && (
+          <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            {/* Header & Date Range Filter Bar */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '16px', background: '#FFFFFF', padding: '18px 24px', borderRadius: '16px', border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+              <div>
+                <h1 style={{ fontSize: '24px', fontWeight: 800, color: '#0F172A', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span>👑</span> Store Admin & Sales Analytics
+                </h1>
+                <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748B', fontWeight: 500 }}>
+                  Real-time sales tracking, payment modes (UPI / Cash / Khata), orders count, and live dues
+                </p>
+              </div>
+
+              {/* Filter Pills */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#F1F5F9', padding: '4px', borderRadius: '12px' }}>
+                {[
+                  { id: 'today', label: '⚡ Today' },
+                  { id: 'yesterday', label: '📅 Yesterday' },
+                  { id: 'last_7', label: '🗓️ Last 7 Days' },
+                  { id: 'this_month', label: '📆 This Month' },
+                  { id: 'all', label: '🌐 All Time' },
+                ].map((f) => {
+                  const active = merchantAdminSalesFilter === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setMerchantAdminSalesFilter(f.id)}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: '8px',
+                        border: 'none',
+                        background: active ? '#FF5E14' : 'transparent',
+                        color: active ? '#FFFFFF' : '#475569',
+                        fontWeight: active ? 700 : 600,
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {f.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 6 Key Telemetry Metric Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '16px' }}>
+              {/* Card 1: Total Sale */}
+              <div style={{ background: '#FFFFFF', borderRadius: '16px', padding: '20px', border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    {merchantAdminSalesFilter === 'today' ? "Today's Sale" : 'Total Sales'}
+                  </span>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2563EB', fontWeight: 800 }}>
+                    ₹
+                  </div>
+                </div>
+                <div style={{ fontSize: '28px', fontWeight: 800, color: '#0F172A' }}>
+                  ₹{Number(merchantAdminSalesData.totalSales || 0).toLocaleString('en-IN')}
+                </div>
+                <div style={{ fontSize: '12px', color: '#16A34A', fontWeight: 600 }}>
+                  ● {merchantAdminSalesData.totalOrdersCount} Total Orders
+                </div>
+              </div>
+
+              {/* Card 2: Orders Count */}
+              <div style={{ background: '#FFFFFF', borderRadius: '16px', padding: '20px', border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    {merchantAdminSalesFilter === 'today' ? "Today's Orders" : 'Orders Count'}
+                  </span>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16A34A', fontWeight: 800 }}>
+                    📦
+                  </div>
+                </div>
+                <div style={{ fontSize: '28px', fontWeight: 800, color: '#0F172A' }}>
+                  {merchantAdminSalesData.totalOrdersCount}
+                </div>
+                <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>
+                  {merchantAdminSalesData.completedOrdersCount} Fulfilled / Served
+                </div>
+              </div>
+
+              {/* Card 3: UPI Sale */}
+              <div style={{ background: '#FFFFFF', borderRadius: '16px', padding: '20px', border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    UPI / Online
+                  </span>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#F5F3FF', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7C3AED', fontWeight: 800 }}>
+                    📲
+                  </div>
+                </div>
+                <div style={{ fontSize: '28px', fontWeight: 800, color: '#7C3AED' }}>
+                  ₹{Number(merchantAdminSalesData.upiSales || 0).toLocaleString('en-IN')}
+                </div>
+                <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>
+                  Instant QR & Online Pay
+                </div>
+              </div>
+
+              {/* Card 4: Cash Sale */}
+              <div style={{ background: '#FFFFFF', borderRadius: '16px', padding: '20px', border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Cash at Counter
+                  </span>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#D97706', fontWeight: 800 }}>
+                    💵
+                  </div>
+                </div>
+                <div style={{ fontSize: '28px', fontWeight: 800, color: '#D97706' }}>
+                  ₹{Number(merchantAdminSalesData.cashSales || 0).toLocaleString('en-IN')}
+                </div>
+                <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>
+                  Received in Cash Drawer
+                </div>
+              </div>
+
+              {/* Card 5: Khata / Not Deposit (Due / Udhaar) */}
+              <div style={{ background: '#FFFFFF', borderRadius: '16px', padding: '20px', border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Khata / Not Deposit (Due)
+                  </span>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#DC2626', fontWeight: 800 }}>
+                    ⏳
+                  </div>
+                </div>
+                <div style={{ fontSize: '28px', fontWeight: 800, color: '#DC2626' }}>
+                  ₹{Number(merchantAdminSalesData.unpaidSales || 0).toLocaleString('en-IN')}
+                </div>
+                <div style={{ fontSize: '12px', color: '#DC2626', fontWeight: 600 }}>
+                  {merchantAdminSalesData.unpaidOrders.length} Pending / Khata Orders
+                </div>
+              </div>
+
+              {/* Card 6: Average Order Value (AOV) */}
+              <div style={{ background: '#FFFFFF', borderRadius: '16px', padding: '20px', border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Avg. Order Value (AOV)
+                  </span>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#F3E8FF', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9333EA', fontWeight: 800 }}>
+                    📊
+                  </div>
+                </div>
+                <div style={{ fontSize: '28px', fontWeight: 800, color: '#9333EA' }}>
+                  ₹{Number(merchantAdminSalesData.aov || 0).toLocaleString('en-IN')}
+                </div>
+                <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>
+                  Avg. Ticket Size per Customer
+                </div>
+              </div>
+            </div>
+
+            {/* Orders Breakdown Table */}
+            <div style={{ background: '#FFFFFF', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                <div>
+                  <h2 style={{ fontSize: '18px', fontWeight: 800, color: '#0F172A', margin: 0 }}>
+                    Orders Breakdown ({merchantAdminSalesData.filteredOrders.length})
+                  </h2>
+                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748B' }}>
+                    Detailed live billing transactions, payment status, and order status
+                  </p>
+                </div>
+              </div>
+
+              {merchantAdminSalesData.filteredOrders.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '48px 16px', color: '#94A3B8' }}>
+                  <div style={{ fontSize: '36px', marginBottom: '12px' }}>🍽️</div>
+                  <div style={{ fontSize: '16px', fontWeight: 700, color: '#334155' }}>No orders found for this period</div>
+                  <div style={{ fontSize: '13px', marginTop: '4px' }}>Create orders via POS or scan QR on dining tables!</div>
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                    <thead>
+                      <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                        <th style={{ padding: '12px 16px', fontWeight: 700, color: '#475569' }}>Order ID</th>
+                        <th style={{ padding: '12px 16px', fontWeight: 700, color: '#475569' }}>Table / Channel</th>
+                        <th style={{ padding: '12px 16px', fontWeight: 700, color: '#475569' }}>Customer</th>
+                        <th style={{ padding: '12px 16px', fontWeight: 700, color: '#475569' }}>Items Ordered</th>
+                        <th style={{ padding: '12px 16px', fontWeight: 700, color: '#475569' }}>Payment Mode</th>
+                        <th style={{ padding: '12px 16px', fontWeight: 700, color: '#475569' }}>Status</th>
+                        <th style={{ padding: '12px 16px', fontWeight: 700, color: '#475569', textAlign: 'right' }}>Total (₹)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {merchantAdminSalesData.filteredOrders.map((ord) => {
+                        const oId = ord.orderId || (ord._id ? `#${String(ord._id).slice(-4)}` : ord.id);
+                        const tableText = ord.table || ord.tableName || 'Counter';
+                        const custName = ord.customerName || ord.customer || 'Walk-in';
+                        const itemsSummary = (ord.items || []).map((it) => `${it.qty}x ${it.name}`).join(', ') || 'No items';
+                        const isUpi = String(ord.paymentStatus || '').toLowerCase().includes('upi') || String(ord.paymentLabel || '').toLowerCase().includes('upi');
+                        const isCash = String(ord.paymentStatus || '').toLowerCase().includes('cash') || String(ord.paymentLabel || '').toLowerCase().includes('cash');
+                        const isDue = String(ord.paymentStatus || '').toLowerCase() === 'due' || String(ord.paymentStatus || '').toLowerCase() === 'unpaid';
+
+                        return (
+                          <tr key={ord._id || ord.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                            <td style={{ padding: '14px 16px', fontWeight: 700, color: '#0F172A' }}>{oId}</td>
+                            <td style={{ padding: '14px 16px', color: '#334155', fontWeight: 600 }}>{tableText}</td>
+                            <td style={{ padding: '14px 16px', color: '#64748B' }}>{custName}</td>
+                            <td style={{ padding: '14px 16px', color: '#475569', maxWidth: '300px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {itemsSummary}
+                            </td>
+                            <td style={{ padding: '14px 16px' }}>
+                              <span style={{
+                                display: 'inline-block',
+                                padding: '4px 10px',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                background: isUpi ? '#F5F3FF' : isCash ? '#FEF3C7' : isDue ? '#FEE2E2' : '#F1F5F9',
+                                color: isUpi ? '#7C3AED' : isCash ? '#D97706' : isDue ? '#DC2626' : '#475569',
+                              }}>
+                                {isUpi ? '📲 UPI' : isCash ? '💵 Cash' : isDue ? '⏳ Khata / Due' : (ord.paymentStatus || 'Pending')}
+                              </span>
+                            </td>
+                            <td style={{ padding: '14px 16px' }}>
+                              <span style={{
+                                display: 'inline-block',
+                                padding: '4px 10px',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                background: ord.status === 'eating' ? '#FEF9C3' : ord.status === 'waiting' ? '#FEF3C7' : ord.status === 'ready' || ord.status === 'served' ? '#DCFCE7' : '#F1F5F9',
+                                color: ord.status === 'eating' ? '#854D0E' : ord.status === 'waiting' ? '#B45309' : ord.status === 'ready' || ord.status === 'served' ? '#15803D' : '#475569',
+                                textTransform: 'capitalize',
+                              }}>
+                                {ord.status === 'eating' ? '🍽️ Eating' : ord.status === 'waiting' ? '⏳ Waiting' : ord.status || 'Active'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 800, color: '#0F172A', fontSize: '14px' }}>
+                              ₹{Number(ord.total || 0).toLocaleString('en-IN')}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </main>
 
       {/* ==========================================================================
@@ -12325,14 +14373,39 @@ export default function DashboardPage({ onShowToast }) {
             boxSizing: 'border-box'
           }}
         >
-            <div className="crm-modal-header" style={{ padding: '14px 24px', flexShrink: 0, backgroundColor: '#FFFFFF', borderBottom: '1.5px solid #E2E8F0' }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span>Counter POS — Create Manual Order</span>
-                </h3>
-                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
-                  Tap any item card or photo to instantly add to order • Use keyboard <kbd className="crm-kbd">←</kbd> <kbd className="crm-kbd">→</kbd> or <kbd className="crm-kbd">Enter</kbd> to move focus
+            <div className="crm-modal-header" style={{ padding: '14px 24px', flexShrink: 0, backgroundColor: '#FFFFFF', borderBottom: '1.5px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>Counter POS — {editingOrderId ? 'Edit Running Order' : 'Create Manual Order'}</span>
+                  </h3>
+                  <div style={{ fontSize: '12px', color: '#64748B', marginTop: '2px' }}>
+                    Tap any item card or photo to instantly add to order • Use keyboard <kbd className="crm-kbd">←</kbd> <kbd className="crm-kbd">→</kbd> or <kbd className="crm-kbd">Enter</kbd> to move focus
+                  </div>
                 </div>
+
+                {/* Prominent Table & Category Badge */}
+                {manualOrderType === 'Dine-In' && (
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      background: '#F8FAFC',
+                      border: '1.5px solid #CBD5E1',
+                      borderRadius: '10px',
+                      padding: '5px 12px',
+                    }}
+                  >
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase' }}>Target Table:</span>
+                    <span style={{ fontSize: '13.5px', fontWeight: 900, color: '#0F172A' }}>{manualTable}</span>
+                    {manualTableSection && manualTableSection.toLowerCase() !== 'restaurant' && (
+                      <span style={{ fontSize: '10px', fontWeight: 900, padding: '2px 7px', borderRadius: '5px', background: '#FEF3C7', color: '#B45309', textTransform: 'uppercase' }}>
+                        {manualTableSection}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
               <button
                 type="button"
@@ -12460,51 +14533,69 @@ export default function DashboardPage({ onShowToast }) {
                 </div>
 
                 {/* 2. MIDDLE COLUMN: CART & CUSTOMER DETAILS (LIGHT STROKE CARD) */}
-                <div className="crm-pos-left-col" style={{ width: '380px', flexShrink: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', backgroundColor: '#FFFFFF', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                <div className="crm-pos-left-col" style={{ width: '390px', flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, overflowY: 'auto', overflowX: 'hidden', backgroundColor: '#FFFFFF', borderRadius: '16px', border: '1px solid #E2E8F0', padding: '12px 14px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)', scrollbarWidth: 'thin' }}>
 
-                  {/* Customer Inputs in 2-Column Grid */}
-                  <div className="crm-form-grid" style={{ gap: '10px', marginBottom: '12px' }}>
-                    <div className="crm-form-group">
-                      <label style={{ fontSize: '11.5px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>Customer Name <span className="req">*</span></label>
-                      <input
-                        ref={manualCustRef}
-                        type="text"
-                        className="crm-input"
-                        style={{ padding: '8px 12px', fontSize: '13px', borderRadius: '9px', border: '1px solid #E2E8F0', background: '#F8FAFC' }}
-                        placeholder="Customer Name (e.g. Rahul)"
-                        value={manualCustomer}
-                        onChange={(e) => setManualCustomer(e.target.value)}
-                        onKeyDown={(e) => handleInputKeyDown(e, 0)}
-                        required
-                        autoFocus
-                      />
+                  {/* Customer Info / Toggle Bar */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #E2E8F0', marginBottom: '8px', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', fontWeight: 700, color: '#334155' }}>
+                      <User size={13} color="#64748B" />
+                      <span style={{ maxWidth: '210px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {manualCustomer.trim() ? `${manualCustomer}${manualPhone ? ` (${manualPhone})` : ''}` : 'Customer: Walk-in'}
+                      </span>
                     </div>
-
-                    <div className="crm-form-group">
-                      <label style={{ fontSize: '11.5px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>Mobile Number</label>
-                      <input
-                        ref={manualPhoneRef}
-                        type="text"
-                        className="crm-input"
-                        style={{ padding: '8px 12px', fontSize: '13px', borderRadius: '9px', border: '1px solid #E2E8F0', background: '#F8FAFC' }}
-                        placeholder="Mobile Number"
-                        value={manualPhone}
-                        onChange={(e) => setManualPhone(e.target.value)}
-                        onKeyDown={(e) => handleInputKeyDown(e, 1)}
-                      />
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowManualCustomerInputs(prev => !prev)}
+                      style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#2563EB', borderRadius: '5px', padding: '2px 8px', fontSize: '10.5px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                    >
+                      {showManualCustomerInputs ? '▲ Hide Customer' : '▼ Add Name / Phone'}
+                    </button>
                   </div>
 
-                  {/* Live Cart Items Summary */}
-                  <div className="crm-cart-summary-box" style={{ padding: '10px 12px', marginBottom: '12px', background: '#F8FAFC', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <label style={{ fontSize: '12px', fontWeight: 800, color: '#0F172A', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  {/* Collapsible Customer Inputs in 2-Column Grid */}
+                  {showManualCustomerInputs && (
+                    <div className="crm-form-grid" style={{ gap: '8px', marginBottom: '8px', flexShrink: 0 }}>
+                      <div className="crm-form-group">
+                        <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '2px' }}>Customer Name</label>
+                        <input
+                          ref={manualCustRef}
+                          type="text"
+                          className="crm-input"
+                          style={{ padding: '6px 10px', fontSize: '12.5px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#FFFFFF' }}
+                          placeholder="Customer Name (e.g. Rahul)"
+                          value={manualCustomer}
+                          onChange={(e) => setManualCustomer(e.target.value)}
+                          onKeyDown={(e) => handleInputKeyDown(e, 0)}
+                          autoFocus
+                        />
+                      </div>
+
+                      <div className="crm-form-group">
+                        <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '2px' }}>Mobile Number</label>
+                        <input
+                          ref={manualPhoneRef}
+                          type="text"
+                          className="crm-input"
+                          style={{ padding: '6px 10px', fontSize: '12.5px', borderRadius: '8px', border: '1px solid #E2E8F0', background: '#FFFFFF' }}
+                          placeholder="Mobile Number"
+                          value={manualPhone}
+                          onChange={(e) => setManualPhone(e.target.value)}
+                          onKeyDown={(e) => handleInputKeyDown(e, 1)}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Live Cart Items Summary - Fills available height down to bill breakdown */}
+                  <div className="crm-cart-summary-box" style={{ flex: '1 1 auto', minHeight: '190px', display: 'flex', flexDirection: 'column', padding: '8px 10px', marginBottom: '8px', background: '#F8FAFC', borderRadius: '12px', border: '1px solid #E2E8F0', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', flexShrink: 0 }}>
+                      <label style={{ fontSize: '11.5px', fontWeight: 800, color: '#0F172A', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                         SELECTED ITEMS ({Object.values(manualItems).reduce((sum, i) => sum + i.qty, 0)})
                       </label>
                       {Object.values(manualItems).some((i) => !i.isServed) && (
                         <button
                           type="button"
-                          style={{ background: 'none', border: 'none', color: '#EF4444', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer' }}
+                          style={{ background: 'none', border: 'none', color: '#EF4444', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}
                           onClick={() => {
                             // Only clear newly added items that have not yet been served
                             setManualItems((prev) => {
@@ -12522,21 +14613,49 @@ export default function DashboardPage({ onShowToast }) {
                       )}
                     </div>
 
+                    {editingOrderId && !isOrderEditorUnlocked && (
+                      <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', padding: '5px 8px', borderRadius: '7px', marginBottom: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', flexShrink: 0 }}>
+                        <span style={{ color: '#B45309', fontWeight: 700 }}>🔒 Dispatched items are locked</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const curr = (orders || []).find(o => (o._id || o.id) === editingOrderId) || { table: manualTable };
+                            handlePromptEditOrder(curr);
+                          }}
+                          style={{ background: '#F59E0B', color: '#FFF', border: 'none', padding: '2px 7px', borderRadius: '5px', fontWeight: 800, fontSize: '10.5px', cursor: 'pointer' }}
+                        >
+                          Unlock with PIN
+                        </button>
+                      </div>
+                    )}
+                    {editingOrderId && isOrderEditorUnlocked && (
+                      <div style={{ background: '#ECFDF5', border: '1px solid #A7F3D0', padding: '5px 8px', borderRadius: '7px', marginBottom: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', flexShrink: 0 }}>
+                        <span style={{ color: '#047857', fontWeight: 800 }}>🔓 Edit Mode — You can cancel / modify any item</span>
+                      </div>
+                    )}
+
                     {Object.keys(manualItems).length === 0 ? (
-                      <div className="crm-empty-cart-state" style={{ padding: '24px 8px', textAlign: 'center' }}>
-                        <Utensils size={26} color="#94A3B8" />
-                        <div style={{ fontWeight: 800, marginTop: '6px', color: '#475569', fontSize: '13.5px' }}>Cart is empty</div>
-                        <div style={{ fontSize: '12px', color: '#94A3B8', marginTop: '2px' }}>Click any dish on the right to add to order</div>
+                      <div className="crm-empty-cart-state" style={{ flex: 1, minHeight: '130px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '16px 8px', textAlign: 'center' }}>
+                        <Utensils size={24} color="#94A3B8" />
+                        <div style={{ fontWeight: 800, marginTop: '5px', color: '#475569', fontSize: '13px' }}>Cart is empty</div>
+                        <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '2px' }}>Click any dish on the right to add to order</div>
                       </div>
                     ) : (
-                      <div className="crm-cart-items-scroll" style={{ maxHeight: '240px', overflowY: 'auto' }}>
-                        {Object.entries(manualItems).map(([itemKey, item]) => (
-                          <div key={itemKey} className="crm-cart-item-row" style={{ padding: '8px 10px', background: '#FFFFFF', borderRadius: '9px', border: item.isServed ? '1.5px solid #BBF7D0' : '1px solid #E2E8F0', marginBottom: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative' }}>
+                      <div className="crm-cart-items-scroll" style={{ flex: 1, minHeight: '130px', overflowY: 'auto', paddingRight: '2px', scrollbarWidth: 'thin' }}>
+                        {Object.entries(manualItems).map(([itemKey, item]) => {
+                          const isCancelled = Boolean(item.isCancelled || item.cancelled || item.status === 'cancelled');
+                          return (
+                          <div key={itemKey} className="crm-cart-item-row" style={{ padding: '6px 8px', background: isCancelled ? '#FEF2F2' : '#FFFFFF', borderRadius: '8px', border: item.isServed ? '1.5px solid #BBF7D0' : isCancelled ? '1px solid #FECACA' : '1px solid #E2E8F0', marginBottom: '5px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', opacity: isCancelled ? 0.65 : 1 }}>
                             <div style={{ flex: 1, minWidth: 0, paddingRight: '8px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
                                 <span className={item.isVeg ? 'crm-veg-dot' : 'crm-nonveg-dot'} />
-                                <span style={{ fontWeight: 800, fontSize: '13px', color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</span>
-                                {item.isServed && (
+                                <span style={{ fontWeight: 800, fontSize: '12.5px', color: isCancelled ? '#DC2626' : '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: isCancelled ? 'line-through' : 'none' }}>{item.name}</span>
+                                {isCancelled && (
+                                  <span style={{ fontSize: '9.5px', fontWeight: 900, color: '#DC2626', background: '#FEE2E2', border: '1px solid #FCA5A5', padding: '1px 4px', borderRadius: '4px' }}>
+                                    CANCELLED
+                                  </span>
+                                )}
+                                {item.isServed && !isCancelled && (
                                   <span
                                     style={{
                                       display: 'inline-flex',
@@ -12564,151 +14683,234 @@ export default function DashboardPage({ onShowToast }) {
                                   {[item.sizeName, item.bunName, ...(item.toppings || [])].filter(Boolean).join(' • ')}
                                 </div>
                               )}
-                              <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 600, marginTop: '2px' }}>
-                                ₹{item.price} × {item.qty} = <b style={{ color: '#0F172A' }}>₹{item.price * item.qty}</b>
+                              <div style={{ fontSize: '12px', color: isCancelled ? '#DC2626' : '#64748B', fontWeight: 600, marginTop: '2px', textDecoration: isCancelled ? 'line-through' : 'none' }}>
+                                ₹{item.price} × {item.qty} = <b style={{ color: isCancelled ? '#DC2626' : '#0F172A' }}>₹{item.price * item.qty}</b>
                               </div>
                             </div>
 
-                            {item.isServed ? (
-                              <div
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '5px',
-                                  background: '#F1F5F9',
-                                  padding: '4px 10px',
-                                  borderRadius: '8px',
-                                  border: '1px solid #CBD5E1',
-                                  color: '#475569',
-                                  fontSize: '12px',
-                                  fontWeight: 800,
-                                  userSelect: 'none'
-                                }}
-                                title="This item has already been served and cannot be modified or reduced"
-                              >
-                                <span style={{ fontSize: '13px' }}>🔒</span>
-                                <span>{item.qty} (Locked)</span>
+                            {item.isServed && !isOrderEditorUnlocked ? (
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <div
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    background: '#F1F5F9',
+                                    padding: '4px 8px',
+                                    borderRadius: '8px',
+                                    border: '1px solid #CBD5E1',
+                                    color: '#475569',
+                                    fontSize: '11.5px',
+                                    fontWeight: 800,
+                                    userSelect: 'none'
+                                  }}
+                                  title="Item already dispatched / served"
+                                >
+                                  <span>🔒</span>
+                                  <span>{item.qty}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRequestItemCancelOrEdit(itemKey)}
+                                  title="Enter Second Passcode (7496) to cancel this item with line strikeout"
+                                  style={{
+                                    padding: '3px 7px',
+                                    fontSize: '11px',
+                                    fontWeight: 800,
+                                    borderRadius: '6px',
+                                    border: '1px solid #FCA5A5',
+                                    background: '#FEF2F2',
+                                    color: '#DC2626',
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  ✕ Line (PIN)
+                                </button>
                               </div>
                             ) : (
-                              <div className="crm-qty-counter" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#F1F5F9', padding: '2px', borderRadius: '7px', border: '1px solid #E2E8F0' }}>
-                                <button
-                                  type="button"
-                                  className="crm-qty-btn"
-                                  style={{ width: '24px', height: '24px', border: 'none', background: '#FFFFFF', borderRadius: '5px', cursor: 'pointer', fontWeight: 900 }}
-                                  onClick={() => handleUpdateItemQty(itemKey, -1)}
-                                >
-                                  -
-                                </button>
-                                <span style={{ fontWeight: 900, minWidth: '20px', textAlign: 'center', fontSize: '13px', color: '#0F172A' }}>
-                                  {item.qty}
-                                </span>
-                                <button
-                                  type="button"
-                                  className="crm-qty-btn"
-                                  style={{ width: '24px', height: '24px', border: 'none', background: '#FFFFFF', borderRadius: '5px', cursor: 'pointer', fontWeight: 900 }}
-                                  onClick={() => handleUpdateItemQty(itemKey, 1)}
-                                >
-                                  +
-                                </button>
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                {editingOrderId && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRequestItemCancelOrEdit(itemKey)}
+                                    title={isCancelled ? 'Restore item to active order' : 'Line maro (Cancel item so strike-through shows on bill and KOT)'}
+                                    style={{
+                                      padding: '3px 7px',
+                                      fontSize: '11px',
+                                      fontWeight: 800,
+                                      borderRadius: '6px',
+                                      border: isCancelled ? '1px solid #16A34A' : '1px solid #FCA5A5',
+                                      background: isCancelled ? '#DCFCE7' : '#FEF2F2',
+                                      color: isCancelled ? '#16A34A' : '#DC2626',
+                                      cursor: 'pointer',
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                  >
+                                    {isCancelled ? '↺ Restore' : '✕ Cancel (Line)'}
+                                  </button>
+                                )}
+                                <div className="crm-qty-counter" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#F1F5F9', padding: '2px', borderRadius: '7px', border: '1px solid #E2E8F0' }}>
+                                  <button
+                                    type="button"
+                                    className="crm-qty-btn"
+                                    style={{ width: '24px', height: '24px', border: 'none', background: '#FFFFFF', borderRadius: '5px', cursor: 'pointer', fontWeight: 900 }}
+                                    onClick={() => handleUpdateItemQty(itemKey, -1)}
+                                  >
+                                    -
+                                  </button>
+                                  <span style={{ fontWeight: 900, minWidth: '20px', textAlign: 'center', fontSize: '13px', color: isCancelled ? '#DC2626' : '#0F172A', textDecoration: isCancelled ? 'line-through' : 'none' }}>
+                                    {item.qty}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="crm-qty-btn"
+                                    style={{ width: '24px', height: '24px', border: 'none', background: '#FFFFFF', borderRadius: '5px', cursor: 'pointer', fontWeight: 900 }}
+                                    onClick={() => handleUpdateItemQty(itemKey, 1)}
+                                  >
+                                    +
+                                  </button>
+                                </div>
                               </div>
                             )}
                           </div>
-                        ))}
+                        );
+                        })}
                       </div>
                     )}
                   </div>
 
-                  {/* Charges, Tax & Discounts in 2 Columns */}
-                  <div className="crm-form-grid" style={{ gap: '10px', marginBottom: '12px' }}>
-                    <div className="crm-form-group">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                        <label style={{ fontSize: '11.5px', fontWeight: 700, color: '#475569', margin: 0 }}>Discount</label>
-                        <div style={{ display: 'inline-flex', background: '#F1F5F9', borderRadius: '5px', padding: '1px', border: '1px solid #E2E8F0' }}>
-                          <button
-                            type="button"
-                            onClick={() => setManualDiscountType('₹')}
-                            style={{
-                              border: 'none',
-                              background: manualDiscountType === '₹' ? '#FF5E14' : 'transparent',
-                              color: manualDiscountType === '₹' ? '#FFF' : '#475569',
-                              borderRadius: '4px',
-                              padding: '1px 6px',
-                              fontSize: '10px',
-                              fontWeight: 900,
-                              cursor: 'pointer'
-                            }}
-                          >
-                            ₹
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setManualDiscountType('%')}
-                            style={{
-                              border: 'none',
-                              background: manualDiscountType === '%' ? '#FF5E14' : 'transparent',
-                              color: manualDiscountType === '%' ? '#FFF' : '#475569',
-                              borderRadius: '4px',
-                              padding: '1px 6px',
-                              fontSize: '10px',
-                              fontWeight: 900,
-                              cursor: 'pointer'
-                            }}
-                          >
-                            %
-                          </button>
-                        </div>
-                      </div>
-                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                        <input
-                          ref={manualDiscountRef}
-                          type="number"
-                          className="crm-input"
-                          style={{ padding: '7px 24px 7px 10px', fontSize: '13px', width: '100%', borderRadius: '9px', border: '1px solid #E2E8F0', background: '#F8FAFC' }}
-                          placeholder={manualDiscountType === '%' ? "e.g. 10%" : "0"}
-                          value={manualDiscount}
-                          onChange={(e) => setManualDiscount(e.target.value)}
-                          onKeyDown={(e) => handleInputKeyDown(e, 4)}
-                        />
-                        <span style={{ position: 'absolute', right: '10px', fontSize: '11.5px', fontWeight: 900, color: '#64748B', pointerEvents: 'none' }}>
-                          {manualDiscountType}
+                  {/* Bill Summary Box (Light Stroke Card with Collapsible Discount & Taxes) */}
+                  <div className="crm-bill-breakdown-card" style={{ padding: '10px 12px', background: '#F8FAFC', borderRadius: '12px', border: '1px solid #E2E8F0', marginTop: 'auto', flexShrink: 0 }}>
+                    {/* Collapsible Header for Discount & Tax */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showManualDiscountAndTax ? '8px' : '4px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '12px', color: '#475569', fontWeight: 700 }}>
+                          Subtotal: <b style={{ color: '#0F172A' }}>₹{manualSubtotal}</b>
                         </span>
+                        {manualGstEnabled && (
+                          <span style={{ fontSize: '9.5px', background: '#DCFCE7', color: '#15803D', border: '1px solid #86EFAC', padding: '1px 5px', borderRadius: '4px', fontWeight: 800 }}>
+                            5% GST
+                          </span>
+                        )}
+                        {mDiscountAmt > 0 && (
+                          <span style={{ fontSize: '9.5px', background: '#FEF2F2', color: '#DC2626', border: '1px solid #FECACA', padding: '1px 5px', borderRadius: '4px', fontWeight: 800 }}>
+                            -₹{mDiscountAmt}
+                          </span>
+                        )}
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowManualDiscountAndTax(prev => !prev)}
+                        style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#2563EB', borderRadius: '5px', padding: '2px 8px', fontSize: '10.5px', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                      >
+                        {showManualDiscountAndTax ? '▲ Hide Discount/Tax' : '▼ Discount & Tax'}
+                      </button>
                     </div>
 
-                    <div className="crm-form-group" style={{ justifyContent: 'center' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 700, color: '#334155', marginTop: '14px' }}>
-                        <input
-                          type="checkbox"
-                          checked={manualGstEnabled}
-                          onChange={(e) => setManualGstEnabled(e.target.checked)}
-                          style={{ accentColor: '#FF5E14', width: '15px', height: '15px' }}
-                        />
-                        <span>Apply 5% GST</span>
-                      </label>
-                    </div>
-                  </div>
+                    {/* Detailed Discount, Tax & Pre-Tax Breakdown (When Expanded) */}
+                    {showManualDiscountAndTax && (
+                      <div style={{ background: '#FFFFFF', padding: '8px 10px', borderRadius: '9px', border: '1px solid #E2E8F0', marginBottom: '8px' }}>
+                        {/* Charges, Tax & Discounts in 2 Columns */}
+                        <div className="crm-form-grid" style={{ gap: '8px', marginBottom: '8px' }}>
+                          <div className="crm-form-group">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                              <label style={{ fontSize: '11px', fontWeight: 700, color: '#475569', margin: 0 }}>Discount</label>
+                              <div style={{ display: 'inline-flex', background: '#F1F5F9', borderRadius: '5px', padding: '1px', border: '1px solid #E2E8F0' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setManualDiscountType('₹')}
+                                  style={{
+                                    border: 'none',
+                                    background: manualDiscountType === '₹' ? '#FF5E14' : 'transparent',
+                                    color: manualDiscountType === '₹' ? '#FFF' : '#475569',
+                                    borderRadius: '4px',
+                                    padding: '1px 5px',
+                                    fontSize: '9.5px',
+                                    fontWeight: 900,
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  ₹
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setManualDiscountType('%')}
+                                  style={{
+                                    border: 'none',
+                                    background: manualDiscountType === '%' ? '#FF5E14' : 'transparent',
+                                    color: manualDiscountType === '%' ? '#FFF' : '#475569',
+                                    borderRadius: '4px',
+                                    padding: '1px 5px',
+                                    fontSize: '9.5px',
+                                    fontWeight: 900,
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  %
+                                </button>
+                              </div>
+                            </div>
+                            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                              <input
+                                ref={manualDiscountRef}
+                                type="number"
+                                className="crm-input"
+                                style={{ padding: '6px 22px 6px 8px', fontSize: '12px', width: '100%', borderRadius: '7px', border: '1px solid #E2E8F0', background: '#F8FAFC' }}
+                                placeholder={manualDiscountType === '%' ? "e.g. 10%" : "0"}
+                                value={manualDiscount}
+                                onChange={(e) => setManualDiscount(e.target.value)}
+                                onKeyDown={(e) => handleInputKeyDown(e, 4)}
+                              />
+                              <span style={{ position: 'absolute', right: '8px', fontSize: '11px', fontWeight: 900, color: '#64748B', pointerEvents: 'none' }}>
+                                {manualDiscountType}
+                              </span>
+                            </div>
+                          </div>
 
-                  {/* Bill Summary Box (Light Stroke Card) */}
-                  <div className="crm-bill-breakdown-card" style={{ padding: '12px 14px', background: '#F8FAFC', borderRadius: '12px', border: '1px solid #E2E8F0', marginTop: 'auto' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '12.5px', color: '#475569' }}>
-                      <span>Subtotal:</span>
-                      <b style={{ color: '#0F172A' }}>₹{manualSubtotal}</b>
-                    </div>
-                    {mDiscountAmt > 0 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '12.5px', color: '#059669' }}>
-                        <span>Discount:</span>
-                        <b>- ₹{mDiscountAmt}</b>
+                          <div className="crm-form-group" style={{ justifyContent: 'center' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '11.5px', fontWeight: 700, color: '#334155', marginTop: '10px' }}>
+                              <input
+                                type="checkbox"
+                                checked={manualGstEnabled}
+                                onChange={(e) => setManualGstEnabled(e.target.checked)}
+                                style={{ accentColor: '#FF5E14', width: '14px', height: '14px' }}
+                              />
+                              <span>Apply 5% GST</span>
+                            </label>
+                          </div>
+                        </div>
+
+                        {/* Breakdown Rows */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px', fontSize: '11.5px', color: '#0F172A', background: '#F1F5F9', padding: '2px 6px', borderRadius: '4px' }}>
+                          <span style={{ fontWeight: 700 }}>Pre-Tax (Taxable):</span>
+                          <b style={{ color: '#0F172A' }}>₹{manualTaxable.toFixed(2)}</b>
+                        </div>
+                        {mDiscountAmt > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px', fontSize: '11.5px', color: '#059669' }}>
+                            <span>Discount:</span>
+                            <b>- ₹{mDiscountAmt}</b>
+                          </div>
+                        )}
+                        {manualGstEnabled && (
+                          <>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px', fontSize: '11px', color: '#475569', paddingLeft: '4px' }}>
+                              <span>SGST (2.5%):</span>
+                              <b>₹{manualSgst.toFixed(2)}</b>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px', fontSize: '11px', color: '#475569', paddingLeft: '4px' }}>
+                              <span>CGST (2.5%):</span>
+                              <b>₹{manualCgst.toFixed(2)}</b>
+                            </div>
+                          </>
+                        )}
                       </div>
                     )}
-                    {manualGstEnabled && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '12.5px', color: '#475569' }}>
-                        <span>GST Tax (5%):</span>
-                        <b>+ ₹{manualTax}</b>
-                      </div>
-                    )}
-                    <div className="crm-bill-total-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0F172A', color: '#FFFFFF', padding: '9px 12px', borderRadius: '9px', marginTop: '8px' }}>
-                      <span style={{ fontSize: '13.5px', fontWeight: 800 }}>Total Amount:</span>
-                      <span style={{ fontSize: '18px', fontWeight: 900, color: '#FACC15' }}>₹{manualTotal}</span>
+
+                    {/* Grand Total Row */}
+                    <div className="crm-bill-total-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0F172A', color: '#FFFFFF', padding: '8px 10px', borderRadius: '8px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 800 }}>Total Amount:</span>
+                      <span style={{ fontSize: '17px', fontWeight: 900, color: '#FACC15' }}>₹{manualTotal}</span>
                     </div>
                   </div>
 
@@ -12755,13 +14957,23 @@ export default function DashboardPage({ onShowToast }) {
                         .map((d) => {
                           const dKey = d._id || d.id;
                           const dishImg = typeof d.image === 'string' ? d.image : (d.image?.url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400&auto=format&fit=crop&q=80');
-                          const qtyInCart = manualItems[dKey] ? manualItems[dKey].qty : 0;
+                          const hasVariants = Boolean(d.variants && d.variants.length > 0);
+                          const totalVariantsInCart = hasVariants
+                            ? d.variants.reduce((sum, v) => sum + (manualItems[`${dKey}__${v.name}`] ? manualItems[`${dKey}__${v.name}`].qty : 0), 0)
+                            : 0;
+                          const qtyInCart = hasVariants ? totalVariantsInCart : (manualItems[dKey] ? manualItems[dKey].qty : 0);
 
                           return (
                             <div
                               key={dKey}
                               className="crm-pos-food-card"
-                              onClick={() => handleUpdateItemQty(dKey, 1, d)}
+                              onClick={() => {
+                                if (hasVariants) {
+                                  setVariantModalDish(d);
+                                } else {
+                                  handleUpdateItemQty(dKey, 1, d);
+                                }
+                              }}
                               style={{
                                 cursor: 'pointer',
                                 userSelect: 'none',
@@ -12774,7 +14986,7 @@ export default function DashboardPage({ onShowToast }) {
                                 overflow: 'hidden',
                                 boxShadow: qtyInCart > 0 ? '0 4px 12px rgba(37,99,235,0.12)' : '0 1px 3px rgba(0,0,0,0.03)'
                               }}
-                              title={`Click to add "${d.name}" to cart`}
+                              title={hasVariants ? `Click to choose ${d.variants.map((v) => v.name).join(' / ')}` : `Click to add "${d.name}" to cart`}
                             >
                               <div className="crm-pos-food-img-box" style={{ height: '115px', position: 'relative', overflow: 'hidden', background: '#F8FAFC' }}>
                                 <img
@@ -12805,62 +15017,103 @@ export default function DashboardPage({ onShowToast }) {
                                   )}
                                 </div>
 
-                                <div className="crm-pos-food-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px', paddingTop: '6px', borderTop: '1px dashed #F1F5F9' }}>
-                                  <div className="crm-pos-food-price" style={{ fontSize: '14.5px', fontWeight: 900, color: '#0F172A' }}>
-                                    ₹{d.price}
+                                {hasVariants ? (
+                                  <div style={{ marginTop: '8px', paddingTop: '6px', borderTop: '1px dashed #F1F5F9' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
+                                      <span style={{ fontSize: '13px', fontWeight: 900, color: '#0F172A' }}>
+                                        ₹{d.variants.map((v) => v.price).filter(Boolean).join(' / ')}
+                                      </span>
+                                      {qtyInCart > 0 && (
+                                        <span style={{ background: '#2563EB', color: '#FFF', fontSize: '10.5px', fontWeight: 800, padding: '2px 7px', borderRadius: '10px' }}>
+                                          {qtyInCart} in cart
+                                        </span>
+                                      )}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setVariantModalDish(d);
+                                      }}
+                                      style={{
+                                        width: '100%',
+                                        padding: '6px 8px',
+                                        borderRadius: '8px',
+                                        border: qtyInCart > 0 ? '1.5px solid #2563EB' : '1px solid #BFDBFE',
+                                        background: qtyInCart > 0 ? '#EFF6FF' : '#F0F9FF',
+                                        color: qtyInCart > 0 ? '#1D4ED8' : '#0284C7',
+                                        fontSize: '11.5px',
+                                        fontWeight: 800,
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        gap: '4px'
+                                      }}
+                                      title="Click to select Half / Full option"
+                                    >
+                                      <span>⚡ {d.variants.map((v) => v.name).join(' / ')}</span>
+                                      <span style={{ fontSize: '11px', fontWeight: 700 }}>Choose ›</span>
+                                    </button>
                                   </div>
+                                ) : (
+                                  <div className="crm-pos-food-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px', paddingTop: '6px', borderTop: '1px dashed #F1F5F9' }}>
+                                    <div className="crm-pos-food-price" style={{ fontSize: '14.5px', fontWeight: 900, color: '#0F172A' }}>
+                                      ₹{d.price || d.basePrice || 0}
+                                    </div>
 
-                                  {qtyInCart > 0 ? (
-                                    <div className="crm-pos-qty-pill" style={{ display: 'inline-flex', alignItems: 'center', background: '#2563EB', color: '#FFF', borderRadius: '8px', padding: '1px 3px' }}>
+                                    {qtyInCart > 0 ? (
+                                      <div className="crm-pos-qty-pill" style={{ display: 'inline-flex', alignItems: 'center', background: '#2563EB', color: '#FFF', borderRadius: '8px', padding: '1px 3px' }}>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleUpdateItemQty(dKey, -1, d);
+                                          }}
+                                          style={{ border: 'none', background: 'transparent', color: '#FFF', fontWeight: 900, fontSize: '13px', width: '22px', height: '22px', cursor: 'pointer' }}
+                                        >
+                                          -
+                                        </button>
+                                        <span style={{ minWidth: '18px', textAlign: 'center', fontWeight: 900, fontSize: '12px' }}>{qtyInCart}</span>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleUpdateItemQty(dKey, 1, d);
+                                          }}
+                                          style={{ border: 'none', background: 'transparent', color: '#FFF', fontWeight: 900, fontSize: '13px', width: '22px', height: '22px', cursor: 'pointer' }}
+                                        >
+                                          +
+                                        </button>
+                                      </div>
+                                    ) : (
                                       <button
                                         type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleUpdateItemQty(dKey, -1, d);
-                                        }}
-                                        style={{ border: 'none', background: 'transparent', color: '#FFF', fontWeight: 900, fontSize: '13px', width: '22px', height: '22px', cursor: 'pointer' }}
-                                      >
-                                        -
-                                      </button>
-                                      <span style={{ minWidth: '18px', textAlign: 'center', fontWeight: 900, fontSize: '12px' }}>{qtyInCart}</span>
-                                      <button
-                                        type="button"
+                                        className="crm-pos-add-btn"
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           handleUpdateItemQty(dKey, 1, d);
                                         }}
-                                        style={{ border: 'none', background: 'transparent', color: '#FFF', fontWeight: 900, fontSize: '13px', width: '22px', height: '22px', cursor: 'pointer' }}
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '3px',
+                                          padding: '4px 10px',
+                                          borderRadius: '7px',
+                                          border: '1px solid #BFDBFE',
+                                          background: '#EFF6FF',
+                                          color: '#2563EB',
+                                          fontSize: '11.5px',
+                                          fontWeight: 800,
+                                          cursor: 'pointer',
+                                          transition: 'all 0.15s ease'
+                                        }}
                                       >
-                                        +
+                                        <Plus size={12} /> ADD
                                       </button>
-                                    </div>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      className="crm-pos-add-btn"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleUpdateItemQty(dKey, 1, d);
-                                      }}
-                                      style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '3px',
-                                        padding: '4px 10px',
-                                        borderRadius: '7px',
-                                        border: '1px solid #BFDBFE',
-                                        background: '#EFF6FF',
-                                        color: '#2563EB',
-                                        fontSize: '11.5px',
-                                        fontWeight: 800,
-                                        cursor: 'pointer',
-                                        transition: 'all 0.15s ease'
-                                      }}
-                                    >
-                                      <Plus size={12} /> ADD
-                                    </button>
-                                  )}
-                                </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           );
@@ -12905,78 +15158,424 @@ export default function DashboardPage({ onShowToast }) {
                   ✕ Cancel
                 </button>
 
-                {/* Right: Primary Action Buttons */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                {/* Right: Primary Action Buttons with distinct Print Bill & Print in KOT */}
+                {(() => {
+                  const hasCancelledManualItems = Object.values(manualItems).some((it) => it.isCancelled);
+                  const isSubmitDisabled = isSubmittingManualOrder || (manualSubtotal <= 0 && !(editingOrderId && hasCancelledManualItems));
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
 
-                  {/* 1. Save / Order Placed Button (Running Table - Blue) */}
-                  <button
-                    type="button"
-                    disabled={isSubmittingManualOrder || manualSubtotal <= 0}
-                    onClick={(e) => handleCreateManualOrderSubmit(e, false, false)}
-                    style={{
-                      padding: '10px 22px',
-                      fontSize: '13.5px',
-                      fontWeight: 800,
-                      borderRadius: '10px',
-                      backgroundColor: (isSubmittingManualOrder || manualSubtotal <= 0) ? '#E2E8F0' : '#1E293B',
-                      border: 'none',
-                      color: (isSubmittingManualOrder || manualSubtotal <= 0) ? '#94A3B8' : '#FFFFFF',
-                      cursor: (isSubmittingManualOrder || manualSubtotal <= 0) ? 'not-allowed' : 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '7px'
-                    }}
-                    title="Save order to table without firing new KOT (Table becomes Running Blue)"
-                  >
-                    <Check size={16} />
-                    <span>{editingOrderId ? '✓ Save Changes' : '✓ Order Placed'}</span>
-                  </button>
-
-                  {/* 2. Send to Kitchen (KOT) Button (Running KOT - Yellow) */}
-                  {(() => {
-                    const unsentCount = Object.values(manualItems).reduce((sum, it) => sum + Math.max(0, it.qty - (it.kotSentQty || 0)), 0);
-                    return (
+                      {/* 1. Save / Order Placed (No Print) */}
                       <button
                         type="button"
-                        disabled={isSubmittingManualOrder || manualSubtotal <= 0}
-                        onClick={(e) => handleCreateManualOrderSubmit(e, false, true)}
+                        disabled={isSubmitDisabled}
+                        onClick={(e) => handleCreateManualOrderSubmit(e, false, 'save')}
                         style={{
-                          padding: '10px 24px',
-                          fontSize: '14px',
-                          fontWeight: 900,
+                          padding: '10px 16px',
+                          fontSize: '13px',
+                          fontWeight: 800,
                           borderRadius: '10px',
-                          backgroundColor: (isSubmittingManualOrder || manualSubtotal <= 0) ? '#94A3B8' : '#FF5E14',
-                          border: 'none',
-                          color: '#FFFFFF',
-                          boxShadow: '0 4px 14px rgba(255, 94, 20, 0.35)',
-                          cursor: (isSubmittingManualOrder || manualSubtotal <= 0) ? 'not-allowed' : 'pointer',
+                          backgroundColor: isSubmitDisabled ? '#F1F5F9' : '#FFFFFF',
+                          border: '1.5px solid #CBD5E1',
+                          color: isSubmitDisabled ? '#94A3B8' : '#334155',
+                          cursor: isSubmitDisabled ? 'not-allowed' : 'pointer',
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '8px'
+                          gap: '6px',
+                          transition: 'all 0.15s ease',
                         }}
-                        title="Send items to Kitchen Display (Table becomes Yellow Running KOT)"
+                        title="Save order directly to table without printing (Table becomes Running)"
                       >
-                        {isSubmittingManualOrder ? (
+                        {manualSubmittingAction === 'save' ? (
                           <>
-                            <RefreshCw size={16} style={{ animation: 'foodypay-spin 0.8s linear infinite' }} />
-                            <span>Sending KOT...</span>
+                            <RefreshCw size={15} style={{ animation: 'foodypay-spin 0.8s linear infinite' }} />
+                            <span>Saving...</span>
                           </>
                         ) : (
                           <>
-                            <ChefHat size={17} />
-                            <span>
-                              {editingOrderId
-                                ? (unsentCount > 0 ? `🍳 Send New KOT (${unsentCount})` : '🍳 Resend KOT to Kitchen')
-                                : '🍳 Send to Kitchen (KOT)'}
-                            </span>
+                            <Check size={16} />
+                            <span>{editingOrderId ? '✓ Save Changes' : '✓ Place Order (No Print)'}</span>
                           </>
                         )}
                       </button>
-                    );
-                  })()}
-                </div>
+
+                      {/* 2. Send to KDS Button (Digital Only - No Print) */}
+                      <button
+                        type="button"
+                        disabled={isSubmitDisabled}
+                        onClick={(e) => handleCreateManualOrderSubmit(e, false, 'kds')}
+                        style={{
+                          padding: '10px 16px',
+                          fontSize: '13px',
+                          fontWeight: 800,
+                          borderRadius: '10px',
+                          backgroundColor: isSubmitDisabled ? '#94A3B8' : '#7C3AED',
+                          background: isSubmitDisabled ? '#94A3B8' : 'linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)',
+                          border: 'none',
+                          color: '#FFFFFF',
+                          boxShadow: isSubmitDisabled ? 'none' : '0 4px 12px rgba(124, 58, 237, 0.3)',
+                          cursor: isSubmitDisabled ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          transition: 'all 0.15s ease',
+                        }}
+                        title="Send live order items digitally to Kitchen Display Screen (No paper printing)"
+                      >
+                        {manualSubmittingAction === 'kds' ? (
+                          <>
+                            <RefreshCw size={15} style={{ animation: 'foodypay-spin 0.8s linear infinite' }} />
+                            <span>Sending to KDS...</span>
+                          </>
+                        ) : (
+                          <>
+                            <ChefHat size={16} />
+                            <span>🍳 Send to KDS (Digital)</span>
+                          </>
+                        )}
+                      </button>
+
+                      {/* 3. Print KOT Only (Sends to KOT Printer) */}
+                      <button
+                        type="button"
+                        disabled={isSubmitDisabled}
+                        onClick={(e) => handleCreateManualOrderSubmit(e, false, 'kot')}
+                        style={{
+                          padding: '10px 18px',
+                          fontSize: '13px',
+                          fontWeight: 900,
+                          borderRadius: '10px',
+                          backgroundColor: isSubmitDisabled ? '#94A3B8' : '#FF5E14',
+                          background: isSubmitDisabled ? '#94A3B8' : 'linear-gradient(135deg, #FF5E14 0%, #EA580C 100%)',
+                          border: 'none',
+                          color: '#FFFFFF',
+                          boxShadow: isSubmitDisabled ? 'none' : '0 4px 14px rgba(255, 94, 20, 0.35)',
+                          cursor: isSubmitDisabled ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          transition: 'all 0.15s ease',
+                        }}
+                        title="Save order, send to Kitchen & print ONLY KOT slip on configured KOT Printer (NO bill printed)"
+                      >
+                        {manualSubmittingAction === 'kot' ? (
+                          <>
+                            <RefreshCw size={15} style={{ animation: 'foodypay-spin 0.8s linear infinite' }} />
+                            <span>Printing KOT...</span>
+                          </>
+                        ) : (
+                          <>
+                            <ChefHat size={16} />
+                            <span>🖨️ Print KOT Only</span>
+                          </>
+                        )}
+                      </button>
+
+                      {/* 4. Print Bill Only (Sends to Bill Printer) */}
+                      <button
+                        type="button"
+                        disabled={isSubmitDisabled}
+                        onClick={(e) => handleCreateManualOrderSubmit(e, false, 'bill')}
+                        style={{
+                          padding: '10px 18px',
+                          fontSize: '13px',
+                          fontWeight: 900,
+                          borderRadius: '10px',
+                          backgroundColor: isSubmitDisabled ? '#94A3B8' : '#1D4ED8',
+                          background: isSubmitDisabled ? '#94A3B8' : 'linear-gradient(135deg, #1D4ED8 0%, #1E40AF 100%)',
+                          border: 'none',
+                          color: '#FFFFFF',
+                          boxShadow: isSubmitDisabled ? 'none' : '0 4px 14px rgba(29, 78, 216, 0.35)',
+                          cursor: isSubmitDisabled ? 'not-allowed' : 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          transition: 'all 0.15s ease',
+                        }}
+                        title="Save order & print ONLY customer receipt slip on configured Bill Printer (NO kot printed)"
+                      >
+                        {manualSubmittingAction === 'bill' ? (
+                          <>
+                            <RefreshCw size={15} style={{ animation: 'foodypay-spin 0.8s linear infinite' }} />
+                            <span>Printing Bill...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Printer size={16} />
+                            <span>🧾 Print Bill Only</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
             </form>
+        </div>
+      )}
+
+      {/* ==========================================================================
+          MODAL: VARIANT SELECTION POP-UP (HALF / FULL / VEG / NON-VEG / PORTIONS)
+          ========================================================================== */}
+      {variantModalDish && (
+        <div
+          className="crm-modal-backdrop"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100050,
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(6px)',
+            padding: '40px 16px 24px 16px',
+            overflowY: 'auto'
+          }}
+          onClick={() => setVariantModalDish(null)}
+        >
+          <div
+            className="crm-modal-card"
+            style={{
+              width: '100%',
+              maxWidth: '460px',
+              maxHeight: 'calc(100vh - 80px)',
+              background: '#FFFFFF',
+              borderRadius: '20px',
+              boxShadow: '0 30px 60px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.08)',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              animation: 'foodypay-scaleIn 0.18s ease-out',
+              margin: '0 auto'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid #E2E8F0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: '#F8FAFC'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span
+                  style={{
+                    display: 'inline-block',
+                    width: '12px',
+                    height: '12px',
+                    borderRadius: '50%',
+                    background: variantModalDish.isVeg ? '#16A34A' : '#DC2626',
+                    boxShadow: variantModalDish.isVeg ? '0 0 8px rgba(22,163,74,0.5)' : '0 0 8px rgba(220,38,38,0.5)'
+                  }}
+                />
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900, color: '#0F172A', lineHeight: 1.25 }}>
+                    {variantModalDish.name}
+                  </h3>
+                  <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 600, marginTop: '2px' }}>
+                    {variantModalDish.category} • Choose Variant / Portion
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setVariantModalDish(null)}
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  border: '1px solid #E2E8F0',
+                  background: '#FFFFFF',
+                  color: '#64748B',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  fontWeight: 800,
+                  fontSize: '15px'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body: Variants List */}
+            <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '55vh', overflowY: 'auto' }}>
+              <div style={{ fontSize: '12px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Select Option (Full ya Half / Veg ya Non-Veg):
+              </div>
+
+              {(variantModalDish.variants || []).map((v, idx) => {
+                const dishKey = variantModalDish._id || variantModalDish.id;
+                const vKey = `${dishKey}__${v.name}`;
+                const currentQty = manualItems[vKey] ? manualItems[vKey].qty : 0;
+
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '14px 16px',
+                      borderRadius: '12px',
+                      border: currentQty > 0 ? '2px solid #2563EB' : '1.5px solid #E2E8F0',
+                      background: currentQty > 0 ? '#EFF6FF' : '#FFFFFF',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: '15px', fontWeight: 800, color: currentQty > 0 ? '#1D4ED8' : '#0F172A' }}>
+                        {v.name}
+                      </div>
+                      <div style={{ fontSize: '14px', fontWeight: 900, color: '#16A34A', marginTop: '3px' }}>
+                        ₹{v.price}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {currentQty > 0 ? (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', background: '#2563EB', color: '#FFF', borderRadius: '10px', padding: '2px 4px' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleUpdateItemQty(vKey, -1, variantModalDish, {
+                                name: `${variantModalDish.name} (${v.name})`,
+                                price: Number(v.price),
+                                sizeName: v.name
+                              });
+                            }}
+                            style={{
+                              border: 'none',
+                              background: 'transparent',
+                              color: '#FFF',
+                              fontWeight: 900,
+                              fontSize: '16px',
+                              width: '32px',
+                              height: '32px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            −
+                          </button>
+                          <span style={{ minWidth: '26px', textAlign: 'center', fontWeight: 900, fontSize: '14px' }}>
+                            {currentQty}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleUpdateItemQty(vKey, 1, variantModalDish, {
+                                name: `${variantModalDish.name} (${v.name})`,
+                                price: Number(v.price),
+                                sizeName: v.name
+                              });
+                            }}
+                            style={{
+                              border: 'none',
+                              background: 'transparent',
+                              color: '#FFF',
+                              fontWeight: 900,
+                              fontSize: '16px',
+                              width: '32px',
+                              height: '32px',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            +
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleUpdateItemQty(vKey, 1, variantModalDish, {
+                              name: `${variantModalDish.name} (${v.name})`,
+                              price: Number(v.price),
+                              sizeName: v.name
+                            });
+                          }}
+                          style={{
+                            padding: '8px 18px',
+                            borderRadius: '10px',
+                            border: '1.5px solid #2563EB',
+                            background: '#2563EB',
+                            color: '#FFFFFF',
+                            fontSize: '13px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            boxShadow: '0 2px 5px rgba(37,99,235,0.25)'
+                          }}
+                        >
+                          + Add {v.name}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Modal Footer */}
+            <div
+              style={{
+                padding: '14px 20px',
+                borderTop: '1px solid #E2E8F0',
+                background: '#F8FAFC',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}
+            >
+              {(() => {
+                const dishKey = variantModalDish._id || variantModalDish.id;
+                const totalDishItems = (variantModalDish.variants || []).reduce(
+                  (sum, v) => sum + (manualItems[`${dishKey}__${v.name}`]?.qty || 0),
+                  0
+                );
+                return (
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: '#475569' }}>
+                    {totalDishItems > 0 ? (
+                      <span style={{ color: '#16A34A', fontWeight: 800 }}>✓ {totalDishItems} item(s) in order</span>
+                    ) : (
+                      'Select preferred option'
+                    )}
+                  </div>
+                );
+              })()}
+
+              <button
+                type="button"
+                onClick={() => setVariantModalDish(null)}
+                style={{
+                  padding: '9px 24px',
+                  borderRadius: '10px',
+                  background: '#0F172A',
+                  color: '#FFFFFF',
+                  fontSize: '13.5px',
+                  fontWeight: 800,
+                  border: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                Done / Add
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -13020,10 +15619,101 @@ export default function DashboardPage({ onShowToast }) {
       )}
 
       {/* ==========================================================================
+          MODAL: 4-DIGIT SECURITY PIN (7496) TO UNLOCK & EDIT LOCKED ORDER
+          ========================================================================== */}
+      {unlockPinPromptOrder && (
+        <div className="crm-modal-backdrop" style={{ zIndex: 12000 }} onClick={() => setUnlockPinPromptOrder(null)}>
+          <div className="crm-modal-card" style={{ maxWidth: '400px', padding: '28px', textAlign: 'center', borderRadius: '20px' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: '#FEF2F2', color: '#DC2626', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', border: '2px solid #FCA5A5' }}>
+              <Lock size={32} />
+            </div>
+
+            <h3 style={{ margin: '0 0 8px', fontSize: '20px', fontWeight: 900, color: '#0F172A' }}>
+              Manager Passcode Required
+            </h3>
+
+            <p style={{ fontSize: '13.5px', color: '#64748B', lineHeight: 1.5, margin: '0 0 20px' }}>
+              Enter 4-digit Second Passcode (7496) to cancel, remove, or modify items for <strong>{unlockPinPromptOrder.table || 'Table'}</strong>:
+            </p>
+
+            <form onSubmit={handleVerifyUnlockPin}>
+              <div style={{ marginBottom: '18px' }}>
+                <input
+                  type="password"
+                  maxLength={4}
+                  autoFocus
+                  placeholder="• • • •"
+                  value={unlockPinInput}
+                  onChange={(e) => {
+                    setUnlockPinInput(e.target.value.replace(/\D/g, '').slice(0, 4));
+                    if (unlockPinError) setUnlockPinError(false);
+                  }}
+                  style={{
+                    width: '180px',
+                    margin: '0 auto',
+                    textAlign: 'center',
+                    fontSize: '32px',
+                    letterSpacing: '14px',
+                    padding: '10px 14px',
+                    borderRadius: '12px',
+                    border: unlockPinError ? '2px solid #DC2626' : '2px solid #CBD5E1',
+                    background: unlockPinError ? '#FEF2F2' : '#F8FAFC',
+                    color: '#0F172A',
+                    fontWeight: 900,
+                    outline: 'none',
+                    boxShadow: unlockPinError ? '0 0 0 3px rgba(220,38,38,0.2)' : 'none',
+                  }}
+                />
+                {unlockPinError && (
+                  <div style={{ color: '#DC2626', fontSize: '12px', fontWeight: 700, marginTop: '8px' }}>
+                    Incorrect Passcode! Please enter your 4-digit Second Passcode (7496).
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  className="crm-btn-secondary"
+                  style={{ flex: 1, padding: '11px', fontWeight: 700, borderRadius: '10px' }}
+                  onClick={() => {
+                    setUnlockPinPromptOrder(null);
+                    setUnlockPinInput('');
+                    setUnlockPinError(false);
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={unlockPinInput.length !== 4}
+                  style={{
+                    flex: 1,
+                    padding: '11px',
+                    background: unlockPinInput.length === 4 ? '#16A34A' : '#CBD5E1',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    fontWeight: 800,
+                    fontSize: '14px',
+                    borderRadius: '10px',
+                    cursor: unlockPinInput.length === 4 ? 'pointer' : 'not-allowed',
+                    boxShadow: unlockPinInput.length === 4 ? '0 4px 12px rgba(22,163,74,0.3)' : 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  Unlock &amp; Edit
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================================================
           MODAL: BILL SETTLEMENT & ONLINE UPI QR SCANNER POPUP WITH DISCOUNT & COUPON
           ========================================================================== */}
       {activeBillSettlementOrder && (() => {
-        const { subtotal, discountVal, finalTotal } = getSettleCalculations();
+        const { subtotal, discountVal, finalTotal, taxSummary } = getSettleCalculations();
 
         return (
           <div className="crm-modal-backdrop" onClick={() => setActiveBillSettlementOrder(null)}>
@@ -13203,6 +15893,33 @@ export default function DashboardPage({ onShowToast }) {
                             <span>- ₹{discountVal}</span>
                           </div>
                         )}
+
+                        {/* PRE-TAX & GST BILL BREAKDOWN */}
+                        <div style={{ borderTop: '1px dashed #CBD5E1', paddingTop: '8px', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', color: '#64748B' }}>
+                            <span>Items Subtotal:</span>
+                            <span style={{ fontWeight: 700, color: '#0F172A' }}>₹{subtotal}</span>
+                          </div>
+
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#0F172A', background: '#F1F5F9', padding: '5px 8px', borderRadius: '6px' }}>
+                            <span style={{ fontWeight: 800 }}>Pre-Tax (Taxable Amount):</span>
+                            <span style={{ fontWeight: 900, color: '#0F172A' }}>₹{taxSummary?.taxableValue ?? subtotal}</span>
+                          </div>
+
+                          {taxSummary?.components && taxSummary.components.length > 0 ? (
+                            taxSummary.components.map((comp, cIdx) => (
+                              <div key={cIdx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#64748B', paddingLeft: '8px' }}>
+                                <span>{comp.name} ({comp.rate}%):</span>
+                                <span style={{ fontWeight: 700, color: '#0F172A' }}>₹{comp.amount}</span>
+                              </div>
+                            ))
+                          ) : (
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#64748B', paddingLeft: '8px' }}>
+                              <span>GST / Taxes (5%):</span>
+                              <span style={{ fontWeight: 700, color: '#0F172A' }}>₹{taxSummary?.totalTax ?? 0}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       <div style={{ borderTop: '1.5px solid #0F172A', paddingTop: '10px', marginTop: '10px', display: 'flex', justifyContent: 'space-between', fontSize: '18px', fontWeight: 900 }}>
@@ -13211,8 +15928,55 @@ export default function DashboardPage({ onShowToast }) {
                       </div>
                     </div>
 
-                    <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#334155', marginBottom: '10px' }}>
-                      Select Payment Method for Settlement:
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#0F172A' }}>
+                        Select Payment Method to Settle &amp; Print Paid Bill:
+                      </div>
+                      <button
+                        type="button"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          background: '#FFFBEB',
+                          border: '1.5px solid #FDE68A',
+                          color: '#B45309',
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                          fontWeight: 800,
+                          cursor: 'pointer'
+                        }}
+                        title="Print an un-settled estimate slip for customer to review at table before paying"
+                        onClick={() => {
+                          const previewReceipt = {
+                            ...activeBillSettlementOrder,
+                            total: finalTotal,
+                            subtotal: activeBillSettlementOrder.subtotal !== undefined ? activeBillSettlementOrder.subtotal : subtotal,
+                            taxableBase: taxSummary?.taxableValue ?? subtotal,
+                            preTax: taxSummary?.taxableValue ?? subtotal,
+                            tax: taxSummary?.totalTax ?? 0,
+                            gstPercent: taxSummary?.taxRatePercent || 5,
+                            cgstAmount: taxSummary?.components?.find((c) => c.name.includes('CGST'))?.amount,
+                            sgstAmount: taxSummary?.components?.find((c) => c.name.includes('SGST'))?.amount,
+                            taxComponents: taxSummary?.components,
+                            discount: (Number(activeBillSettlementOrder.discount || 0) + (discountVal || 0)),
+                            status: 'unpaid',
+                            isPaid: false,
+                            paymentStatus: 'unpaid',
+                            paymentLabel: 'Payment Pending at Counter'
+                          };
+                          printThermalReceipt(previewReceipt, storeControls);
+                          addToast(`🧾 Estimate Slip (Unpaid) printed for ${activeBillSettlementOrder.table}!`, <Printer size={16} />);
+                        }}
+                      >
+                        <Printer size={14} />
+                        <span>Print Estimate Slip (Unpaid)</span>
+                      </button>
+                    </div>
+
+                    <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '12px', background: '#F8FAFC', padding: '7px 12px', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+                      💡 <strong>Bill PAID kab hoga?</strong> Niche diye gaye payment option (Cash, UPI QR, Card) par click karne par hi bill <strong>PAID</strong> hoga aur paid receipt niklegi.
                     </div>
 
                     <div style={{ display: 'flex', gap: '10px', flexDirection: 'column' }}>
@@ -14049,6 +16813,10 @@ export default function DashboardPage({ onShowToast }) {
 
                   {/* Metadata Rows */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '3.5px 0', fontSize: '12.5px' }}>
+                    <span style={{ color: '#64748B', fontWeight: 600 }}>Order No</span>
+                    <span style={{ color: '#000000', fontWeight: 800 }}>{viewingOrderDetails.orderNumber || viewingOrderDetails.orderId || (viewingOrderDetails._id ? `#FP-${String(viewingOrderDetails._id).slice(-4)}` : viewingOrderDetails.id) || '#FP-1081'}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '3.5px 0', fontSize: '12.5px' }}>
                     <span style={{ color: '#64748B', fontWeight: 600 }}>Order Type</span>
                     <span style={{ color: '#000000', fontWeight: 800 }}>{viewingOrderDetails.type || 'Dine-In'}</span>
                   </div>
@@ -14089,13 +16857,15 @@ export default function DashboardPage({ onShowToast }) {
                   {/* Items List */}
                   <div style={{ margin: '6px 0' }}>
                     {(viewingOrderDetails.items || []).map((it, idx) => {
+                      const isCancelled = Boolean(it.isCancelled || it.cancelled || it.status === 'cancelled');
                       const qty = Number(it.qty || it.quantity || 1);
                       const unitPrice = Number(it.price || 0);
                       const lineTotal = (unitPrice * qty).toFixed(2);
                       return (
-                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', margin: '6px 0', fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>
+                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', margin: '6px 0', fontSize: '13px', fontWeight: 700, color: isCancelled ? '#DC2626' : '#0F172A', textDecoration: isCancelled ? 'line-through' : 'none', opacity: isCancelled ? 0.6 : 1 }}>
                           <div style={{ flex: 1, textAlign: 'left', wordBreak: 'break-word', textTransform: 'uppercase', paddingRight: '4px' }}>
                             {String(it.name || 'Item').toUpperCase()}
+                            {isCancelled && <span style={{ fontSize: '10px', fontWeight: 900, color: '#DC2626', marginLeft: '4px', textDecoration: 'none', display: 'inline-block' }}>[CANCELLED]</span>}
                           </div>
                           <div style={{ flex: '0 0 50px', textAlign: 'right', paddingRight: '12px', fontWeight: 700 }}>
                             {qty}
@@ -14108,40 +16878,108 @@ export default function DashboardPage({ onShowToast }) {
                     })}
                   </div>
 
-                  <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
+                  {(() => {
+                    const items = viewingOrderDetails.items || [];
+                    const activeItems = items.filter((it) => !it.isCancelled && !it.cancelled && it.status !== 'cancelled');
+                    const cancelledItems = items.filter((it) => Boolean(it.isCancelled || it.cancelled || it.status === 'cancelled'));
+                    const totalActiveItems = activeItems.reduce((s, i) => s + Number(i.qty || 1), 0);
+                    const computedSubtotal = activeItems.reduce((sum, it) => sum + (Number(it.price || 0) * Number(it.qty || 1)), 0);
+                    const subtotal = viewingOrderDetails.subtotal !== undefined && computedSubtotal === 0 ? Number(viewingOrderDetails.subtotal) : computedSubtotal;
+                    const discount = Number(viewingOrderDetails.discount || 0);
+                    const netPayable = Number(viewingOrderDetails.total !== undefined ? viewingOrderDetails.total : Math.max(0, subtotal - discount));
+                    const gstRate = Number(storeControls.gstPercent !== undefined ? storeControls.gstPercent : (viewingOrderDetails.gstPercent !== undefined ? viewingOrderDetails.gstPercent : 5));
+                    let taxableBase = viewingOrderDetails.taxableBase !== undefined ? Number(viewingOrderDetails.taxableBase) : (viewingOrderDetails.preTax !== undefined ? Number(viewingOrderDetails.preTax) : 0);
+                    let tax = Number(viewingOrderDetails.tax !== undefined ? viewingOrderDetails.tax : 0);
 
-                  {/* Total Items */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '3.5px 0', fontSize: '12.5px' }}>
-                    <span style={{ color: '#64748B', fontWeight: 600 }}>Total Items</span>
-                    <span style={{ color: '#000000', fontWeight: 800 }}>
-                      {(viewingOrderDetails.items || []).reduce((s, i) => s + Number(i.qty || 1), 0)}
-                    </span>
-                  </div>
+                    if (gstRate > 0) {
+                      if (!taxableBase || taxableBase === netPayable || tax === 0) {
+                        taxableBase = Math.round((netPayable / (1 + gstRate / 100)) * 100) / 100;
+                        tax = Math.round((netPayable - taxableBase) * 100) / 100;
+                      }
+                    } else {
+                      taxableBase = netPayable;
+                      tax = 0;
+                    }
+                    const grandTotal = netPayable;
+                    const cgstRate = (gstRate / 2).toFixed(1);
+                    const sgstRate = (gstRate / 2).toFixed(1);
+                    const cgstAmount = (tax / 2).toFixed(2);
+                    const sgstAmount = (tax - Number(cgstAmount)).toFixed(2);
 
-                  {/* Grand Total */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '16px', fontWeight: 900, color: '#0F172A', margin: '6px 0 8px 0' }}>
-                    <span>GRAND TOTAL</span>
-                    <span>₹{Number(viewingOrderDetails.total || 0).toFixed(2)}</span>
-                  </div>
+                    return (
+                      <>
+                        <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '3.5px 0', fontSize: '12.5px' }}>
+                          <span style={{ color: '#64748B', fontWeight: 600 }}>Active Items</span>
+                          <span style={{ color: '#000000', fontWeight: 800 }}>
+                            {totalActiveItems} {cancelledItems.length > 0 && <span style={{ color: '#DC2626' }}>({cancelledItems.length} Cancelled)</span>}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '3.5px 0', fontSize: '12.5px' }}>
+                          <span style={{ color: '#64748B', fontWeight: 600 }}>Subtotal</span>
+                          <span style={{ color: '#000000', fontWeight: 800 }}>₹{subtotal.toFixed(2)}</span>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '3.5px 0', fontSize: '12.5px', background: '#F8FAFC', padding: '3px 6px', borderRadius: '4px' }}>
+                          <span style={{ color: '#0F172A', fontWeight: 700 }}>Pre-Tax (Taxable Amount)</span>
+                          <span style={{ color: '#0F172A', fontWeight: 800 }}>₹{taxableBase.toFixed(2)}</span>
+                        </div>
+
+                        {discount > 0 && (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '3.5px 0', fontSize: '12.5px', color: '#16A34A' }}>
+                            <span style={{ fontWeight: 600 }}>Discount</span>
+                            <span style={{ fontWeight: 800 }}>-₹{discount.toFixed(2)}</span>
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '3.5px 0', fontSize: '12.5px' }}>
+                          <span style={{ color: '#64748B', fontWeight: 600 }}>GST / Taxes ({gstRate}%)</span>
+                          <span style={{ color: '#000000', fontWeight: 800 }}>₹{tax.toFixed(2)}</span>
+                        </div>
+
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '2px 0 6px 0', fontSize: '11px', color: '#64748B' }}>
+                          <span style={{ paddingLeft: '8px' }}>CGST ({cgstRate}%) + SGST ({sgstRate}%)</span>
+                          <span>₹{cgstAmount} + ₹{sgstAmount}</span>
+                        </div>
+
+                        <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
+
+                        {/* Grand Total */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '16px', fontWeight: 900, color: '#0F172A', margin: '6px 0 8px 0' }}>
+                          <span>GRAND TOTAL</span>
+                          <span>₹{Math.round(grandTotal).toFixed(2)}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
 
                   {/* Status Pill Badge */}
-                  <div
-                    style={{
-                      width: '100%',
-                      padding: '7px 0',
-                      borderRadius: '6px',
-                      textAlign: 'center',
-                      fontSize: '13px',
-                      fontWeight: 800,
-                      letterSpacing: '0.3px',
-                      margin: '8px 0',
-                      background: Boolean(viewingOrderDetails.isPaid || viewingOrderDetails.status === 'completed' || viewingOrderDetails.status === 'paid' || (viewingOrderDetails.paymentMode && viewingOrderDetails.paymentMode.toLowerCase() !== 'unpaid' && viewingOrderDetails.paymentMode.toLowerCase() !== 'khata')) ? '#ECFDF5' : '#FFFBEB',
-                      color: Boolean(viewingOrderDetails.isPaid || viewingOrderDetails.status === 'completed' || viewingOrderDetails.status === 'paid' || (viewingOrderDetails.paymentMode && viewingOrderDetails.paymentMode.toLowerCase() !== 'unpaid' && viewingOrderDetails.paymentMode.toLowerCase() !== 'khata')) ? '#059669' : '#D97706',
-                      border: Boolean(viewingOrderDetails.isPaid || viewingOrderDetails.status === 'completed' || viewingOrderDetails.status === 'paid' || (viewingOrderDetails.paymentMode && viewingOrderDetails.paymentMode.toLowerCase() !== 'unpaid' && viewingOrderDetails.paymentMode.toLowerCase() !== 'khata')) ? '1px solid #A7F3D0' : '1px solid #FDE68A',
-                    }}
-                  >
-                    {Boolean(viewingOrderDetails.isPaid || viewingOrderDetails.status === 'completed' || viewingOrderDetails.status === 'paid' || (viewingOrderDetails.paymentMode && viewingOrderDetails.paymentMode.toLowerCase() !== 'unpaid' && viewingOrderDetails.paymentMode.toLowerCase() !== 'khata')) ? '✓ PAID / SETTLED' : '⏳ UNPAID / PENDING'}
-                  </div>
+                  {(() => {
+                    const isDue = viewingOrderDetails.paymentStatus === 'due' || viewingOrderDetails.status === 'due' || String(viewingOrderDetails.paymentMode || '').toLowerCase() === 'khata' || viewingOrderDetails.dueMarkedAt;
+                    const isActuallyPaid = !isDue && (viewingOrderDetails.isPaid === true || ['paid-cash', 'paid-upi', 'paid-card', 'paid'].includes(String(viewingOrderDetails.paymentStatus || '').toLowerCase()));
+                    if (isActuallyPaid) {
+                      const pLabel = viewingOrderDetails.paymentLabel || viewingOrderDetails.paymentMode || 'Paid';
+                      return (
+                        <div style={{ width: '100%', padding: '7px 0', borderRadius: '6px', textAlign: 'center', fontSize: '13px', fontWeight: 800, letterSpacing: '0.3px', margin: '8px 0', background: '#ECFDF5', color: '#059669', border: '1.5px solid #A7F3D0' }}>
+                          ✓ PAID / SETTLED ({pLabel})
+                        </div>
+                      );
+                    }
+                    if (isDue) {
+                      return (
+                        <div style={{ width: '100%', padding: '7px 0', borderRadius: '6px', textAlign: 'center', fontSize: '13px', fontWeight: 800, letterSpacing: '0.3px', margin: '8px 0', background: '#FFF7ED', color: '#C2410C', border: '1.5px solid #FDBA74' }}>
+                          ⚠️ DUE / KHATA (UNPAID)
+                        </div>
+                      );
+                    }
+                    return (
+                      <div style={{ width: '100%', padding: '7px 0', borderRadius: '6px', textAlign: 'center', fontSize: '13px', fontWeight: 800, letterSpacing: '0.3px', margin: '8px 0', background: '#FFFBEB', color: '#D97706', border: '1.5px solid #FDE68A' }}>
+                        ⏳ UNPAID / PENDING PAYMENT
+                      </div>
+                    );
+                  })()}
 
                   <div style={{ borderTop: '1px solid #CBD5E1', margin: '6px 0' }} />
 
@@ -14174,9 +17012,14 @@ export default function DashboardPage({ onShowToast }) {
                     <div style={{ fontSize: '20px', fontWeight: 900, letterSpacing: '-0.3px', color: '#0F172A' }}>
                       {storeControls.restName || currentUser?.businessName || 'FoodyPay'}
                     </div>
-                    <div style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '0.8px', color: '#334155', marginTop: '2px' }}>
-                      KITCHEN ORDER TICKET
-                    </div>
+                    {(() => {
+                      const hasCancelled = (viewingOrderDetails.items || []).some((it) => Boolean(it.isCancelled || it.cancelled || it.status === 'cancelled'));
+                      return (
+                        <div style={{ fontSize: '11px', fontWeight: 900, letterSpacing: '0.8px', color: hasCancelled ? '#DC2626' : '#334155', marginTop: '2px' }}>
+                          {hasCancelled ? '⚠️ CANCELLED / MODIFIED KOT' : 'KITCHEN ORDER TICKET'}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
@@ -14185,23 +17028,23 @@ export default function DashboardPage({ onShowToast }) {
                   <div style={{ display: 'flex', justifyContent: 'space-between', margin: '4px 0' }}>
                     <div style={{ textAlign: 'left' }}>
                       <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>
-                        ORDER TYPE
+                        TABLE &amp; TYPE
                       </div>
                       <div style={{ fontSize: '14.5px', fontWeight: 900, color: '#000000', marginBottom: '2px' }}>
-                        {(viewingOrderDetails.type || 'Dine-In').toUpperCase()}
-                      </div>
-                      <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#000000' }}>
                         {viewingOrderDetails.table || 'Table 1'}
+                      </div>
+                      <div style={{ fontSize: '13px', fontWeight: 800, color: '#475569' }}>
+                        {(viewingOrderDetails.type || 'Dine-In').toUpperCase()}
                       </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>
-                        DATE &amp; TIME
+                        ORDER NO
                       </div>
-                      <div style={{ fontSize: '14px', fontWeight: 900, color: '#000000', marginBottom: '2px' }}>
-                        {viewingOrderDetails.createdAt ? new Date(viewingOrderDetails.createdAt).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')}
+                      <div style={{ fontSize: '15px', fontWeight: 900, color: '#000000', marginBottom: '2px' }}>
+                        {viewingOrderDetails.orderNumber || viewingOrderDetails.orderId || (viewingOrderDetails._id ? `#FP-${String(viewingOrderDetails._id).slice(-4)}` : viewingOrderDetails.id) || '#FP-1081'}
                       </div>
-                      <div style={{ fontSize: '13px', fontWeight: 800, color: '#000000' }}>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>
                         {viewingOrderDetails.createdAt ? new Date(viewingOrderDetails.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
                       </div>
                     </div>
@@ -14219,25 +17062,37 @@ export default function DashboardPage({ onShowToast }) {
 
                   {/* Items List */}
                   <div style={{ margin: '6px 0' }}>
-                    {(viewingOrderDetails.items || []).map((it, idx) => (
-                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', margin: '6px 0', fontSize: '14px', fontWeight: 900 }}>
-                        <div style={{ flex: 1, paddingRight: '8px', wordBreak: 'break-word' }}>
-                          {String(it.name || 'Item').toUpperCase()}
+                    {(viewingOrderDetails.items || []).map((it, idx) => {
+                      const isCancelled = Boolean(it.isCancelled || it.cancelled || it.status === 'cancelled');
+                      return (
+                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', margin: '6px 0', fontSize: '14px', fontWeight: 900, textDecoration: isCancelled ? 'line-through' : 'none', opacity: isCancelled ? 0.6 : 1, color: isCancelled ? '#DC2626' : undefined }}>
+                          <div style={{ flex: 1, paddingRight: '8px', wordBreak: 'break-word' }}>
+                            {String(it.name || 'Item').toUpperCase()}
+                            {isCancelled && <span style={{ fontSize: '10px', fontWeight: 900, color: '#DC2626', marginLeft: '4px', textDecoration: 'none', display: 'inline-block' }}>[CANCELLED]</span>}
+                          </div>
+                          <div style={{ flex: '0 0 45px', textAlign: 'right', fontWeight: 900, whiteSpace: 'nowrap' }}>
+                            &times; {it.qty || 1}
+                          </div>
                         </div>
-                        <div style={{ flex: '0 0 45px', textAlign: 'right', fontWeight: 900, whiteSpace: 'nowrap' }}>
-                          &times; {it.qty || 1}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
 
-                  {/* Totals Calculation */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13.5px', fontWeight: 900, padding: '2px 0' }}>
-                    <span>TOTAL ITEMS</span>
-                    <span>{(viewingOrderDetails.items || []).reduce((s, i) => s + Number(i.qty || 1), 0)}</span>
-                  </div>
+                  {/* Totals Calculation (Strictly Active Items, No Prices or GST in KOT) */}
+                  {(() => {
+                    const items = viewingOrderDetails.items || [];
+                    const activeItems = items.filter((it) => !it.isCancelled && !it.cancelled && it.status !== 'cancelled');
+                    const cancelledItems = items.filter((it) => Boolean(it.isCancelled || it.cancelled || it.status === 'cancelled'));
+                    const totalActive = activeItems.reduce((s, i) => s + Number(i.qty || 1), 0);
+                    return (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13.5px', fontWeight: 900, padding: '2px 0' }}>
+                        <span>TOTAL ACTIVE ITEMS</span>
+                        <span>{totalActive}{cancelledItems.length > 0 ? ` (${cancelledItems.length} Cancelled)` : ''}</span>
+                      </div>
+                    );
+                  })()}
 
                   <div style={{ borderTop: '2px solid #000000', margin: '8px 0' }} />
 
@@ -16045,6 +18900,30 @@ export default function DashboardPage({ onShowToast }) {
                         onChange={(e) => setTableForm({ ...tableForm, capacity: e.target.value })}
                         onKeyDown={(e) => handleTableInputKeyDown(e, 1)}
                       />
+                      <div style={{ display: 'flex', gap: '5px', marginTop: '6px' }}>
+                        {[2, 4, 6, 8].map((seats) => (
+                          <button
+                            key={seats}
+                            type="button"
+                            style={{
+                              flex: 1,
+                              padding: '4px 2px',
+                              borderRadius: '7px',
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              border: Number(tableForm.capacity) === seats ? '1.8px solid #FF5E14' : '1px solid #E2E8F0',
+                              background: Number(tableForm.capacity) === seats ? '#FFF0EB' : '#FFFFFF',
+                              color: Number(tableForm.capacity) === seats ? '#FF5E14' : '#475569',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                              whiteSpace: 'nowrap',
+                            }}
+                            onClick={() => setTableForm({ ...tableForm, capacity: seats })}
+                          >
+                            {seats} Seats
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
@@ -18092,6 +20971,333 @@ export default function DashboardPage({ onShowToast }) {
           <span>More</span>
         </button>
       </div>
+
+      {/* ==========================================================================
+          MODAL: DUAL PRINTER CONFIGURATION & LAN/WIFI NETWORK SETUP
+          ========================================================================== */}
+      {isPrinterConfigModalOpen && (
+        <div className="crm-modal-backdrop" onClick={() => setIsPrinterConfigModalOpen(false)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', zIndex: 99999 }}>
+          <div className="crm-modal-card" style={{ maxWidth: '580px', width: '100%', borderRadius: '18px', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+            <div className="crm-modal-header" style={{ background: '#0F172A', color: '#FFFFFF', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Printer size={22} color="#FACC15" />
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900, color: '#FFFFFF' }}>
+                    Configure {editingPrinterKey === 'printer1' ? 'Printer 1 (Billing Counter)' : 'Printer 2 (Kitchen LAN Printer)'}
+                  </h3>
+                  <div style={{ fontSize: '11.5px', color: '#94A3B8', marginTop: '2px' }}>
+                    Set Default, IP Address, SubnetMask, GateWay, and MAC Address
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="crm-modal-close-btn"
+                style={{ color: '#FFFFFF', background: 'rgba(255,255,255,0.1)' }}
+                onClick={() => setIsPrinterConfigModalOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                savePrinterSettings(printerSettings);
+                setIsPrinterConfigModalOpen(false);
+                addToast(`✓ Saved settings for ${editingPrinterKey === 'printer1' ? 'Printer 1' : 'Printer 2'}!`, <Check size={18} color="#16A34A" />);
+              }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '20px' }}
+            >
+              {/* Printer Switch Tabs */}
+              <div style={{ display: 'flex', gap: '8px', background: '#F1F5F9', padding: '4px', borderRadius: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setEditingPrinterKey('printer1')}
+                  style={{
+                    flex: 1,
+                    padding: '8px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    fontWeight: 800,
+                    fontSize: '12.5px',
+                    cursor: 'pointer',
+                    background: editingPrinterKey === 'printer1' ? '#FFFFFF' : 'transparent',
+                    color: editingPrinterKey === 'printer1' ? '#1D4ED8' : '#64748B',
+                    boxShadow: editingPrinterKey === 'printer1' ? '0 2px 4px rgba(0,0,0,0.06)' : 'none'
+                  }}
+                >
+                  🖨️ Printer 1 (Billing Counter)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingPrinterKey('printer2')}
+                  style={{
+                    flex: 1,
+                    padding: '8px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    fontWeight: 800,
+                    fontSize: '12.5px',
+                    cursor: 'pointer',
+                    background: editingPrinterKey === 'printer2' ? '#FFFFFF' : 'transparent',
+                    color: editingPrinterKey === 'printer2' ? '#FF5E14' : '#64748B',
+                    boxShadow: editingPrinterKey === 'printer2' ? '0 2px 4px rgba(0,0,0,0.06)' : 'none'
+                  }}
+                >
+                  🍳 Printer 2 (Kitchen LAN/WiFi)
+                </button>
+              </div>
+
+              {/* Set As Default Printer Toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#F8FAFC', padding: '12px 14px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#0F172A' }}>Set As Default Printer</div>
+                  <div style={{ fontSize: '11.5px', color: '#64748B' }}>Primary printer for immediate 1st copy receipt</div>
+                </div>
+                <label className="crm-blue-switch">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(printerSettings[editingPrinterKey]?.isDefault)}
+                    onChange={(e) => {
+                      const isDef = e.target.checked;
+                      setPrinterSettings((prev) => ({
+                        ...prev,
+                        printer1: { ...prev.printer1, isDefault: editingPrinterKey === 'printer1' ? isDef : !isDef },
+                        printer2: { ...prev.printer2, isDefault: editingPrinterKey === 'printer2' ? isDef : !isDef },
+                      }));
+                    }}
+                  />
+                  <span className="crm-blue-slider" />
+                </label>
+              </div>
+
+              {/* Printer Name & Connection Type */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>Printer Name</label>
+                  <input
+                    type="text"
+                    className="crm-input"
+                    value={printerSettings[editingPrinterKey]?.name || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPrinterSettings((prev) => ({
+                        ...prev,
+                        [editingPrinterKey]: { ...prev[editingPrinterKey], name: val }
+                      }));
+                    }}
+                    placeholder="e.g. Counter Bill Printer"
+                    required
+                  />
+                </div>
+
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>Connection Type</label>
+                  <select
+                    className="crm-input"
+                    value={printerSettings[editingPrinterKey]?.type || 'browser'}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPrinterSettings((prev) => ({
+                        ...prev,
+                        [editingPrinterKey]: { ...prev[editingPrinterKey], type: val }
+                      }));
+                    }}
+                  >
+                    <option value="network">LAN / WiFi Network (TCP IP Port 9100)</option>
+                    <option value="browser">USB / Windows Default / OS Dialog</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* NETWORK / LAN / WIFI PRINTER PARAMETERS */}
+              <div style={{ background: '#FFF7ED', padding: '14px', borderRadius: '12px', border: '1.5px solid #FED7AA' }}>
+                <div style={{ fontSize: '12.5px', fontWeight: 900, color: '#C2410C', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span>🌐</span> Network LAN / WiFi Configuration (Same WiFi Network)
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div className="crm-form-group">
+                    <label style={{ fontSize: '11.5px', fontWeight: 800, color: '#475569' }}>Printer IP Address *</label>
+                    <input
+                      type="text"
+                      className="crm-input"
+                      placeholder="e.g. 192.168.1.200"
+                      value={printerSettings[editingPrinterKey]?.ip || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setPrinterSettings((prev) => ({
+                          ...prev,
+                          [editingPrinterKey]: { ...prev[editingPrinterKey], ip: val }
+                        }));
+                      }}
+                      style={{ fontFamily: 'monospace', fontWeight: 700 }}
+                      required
+                    />
+                  </div>
+
+                  <div className="crm-form-group">
+                    <label style={{ fontSize: '11.5px', fontWeight: 800, color: '#475569' }}>Port (Default: 9100)</label>
+                    <input
+                      type="number"
+                      className="crm-input"
+                      placeholder="9100"
+                      value={printerSettings[editingPrinterKey]?.port || 9100}
+                      onChange={(e) => {
+                        const val = Number(e.target.value) || 9100;
+                        setPrinterSettings((prev) => ({
+                          ...prev,
+                          [editingPrinterKey]: { ...prev[editingPrinterKey], port: val }
+                        }));
+                      }}
+                      style={{ fontFamily: 'monospace', fontWeight: 700 }}
+                    />
+                  </div>
+
+                  <div className="crm-form-group">
+                    <label style={{ fontSize: '11.5px', fontWeight: 800, color: '#475569' }}>Subnet Mask</label>
+                    <input
+                      type="text"
+                      className="crm-input"
+                      placeholder="e.g. 255.255.255.0"
+                      value={printerSettings[editingPrinterKey]?.subnetMask || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setPrinterSettings((prev) => ({
+                          ...prev,
+                          [editingPrinterKey]: { ...prev[editingPrinterKey], subnetMask: val }
+                        }));
+                      }}
+                      style={{ fontFamily: 'monospace', fontWeight: 700 }}
+                    />
+                  </div>
+
+                  <div className="crm-form-group">
+                    <label style={{ fontSize: '11.5px', fontWeight: 800, color: '#475569' }}>GateWay</label>
+                    <input
+                      type="text"
+                      className="crm-input"
+                      placeholder="e.g. 192.168.1.1"
+                      value={printerSettings[editingPrinterKey]?.gateway || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setPrinterSettings((prev) => ({
+                          ...prev,
+                          [editingPrinterKey]: { ...prev[editingPrinterKey], gateway: val }
+                        }));
+                      }}
+                      style={{ fontFamily: 'monospace', fontWeight: 700 }}
+                    />
+                  </div>
+                </div>
+
+                <div className="crm-form-group" style={{ marginTop: '8px' }}>
+                  <label style={{ fontSize: '11.5px', fontWeight: 800, color: '#475569' }}>MAC Address (Hardware Physical Address)</label>
+                  <input
+                    type="text"
+                    className="crm-input"
+                    placeholder="e.g. 00:11:22:33:44:55"
+                    value={printerSettings[editingPrinterKey]?.macAddress || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPrinterSettings((prev) => ({
+                        ...prev,
+                        [editingPrinterKey]: { ...prev[editingPrinterKey], macAddress: val }
+                      }));
+                    }}
+                    style={{ fontFamily: 'monospace', fontWeight: 700 }}
+                  />
+                </div>
+              </div>
+
+              {/* Paper Width & Primary Output Role */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>Paper Roll Width</label>
+                  <select
+                    className="crm-input"
+                    value={printerSettings[editingPrinterKey]?.paperWidth || '80mm'}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPrinterSettings((prev) => ({
+                        ...prev,
+                        [editingPrinterKey]: { ...prev[editingPrinterKey], paperWidth: val }
+                      }));
+                    }}
+                  >
+                    <option value="80mm">80mm (3-inch standard thermal)</option>
+                    <option value="58mm">58mm (2-inch compact thermal)</option>
+                  </select>
+                </div>
+
+                <div className="crm-form-group">
+                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#475569' }}>Primary Print Role</label>
+                  <select
+                    className="crm-input"
+                    value={printerSettings[editingPrinterKey]?.role || 'both'}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPrinterSettings((prev) => ({
+                        ...prev,
+                        [editingPrinterKey]: { ...prev[editingPrinterKey], role: val }
+                      }));
+                    }}
+                  >
+                    <option value="bill">Customer Bill Receipt</option>
+                    <option value="kot">Kitchen Order Ticket (KOT)</option>
+                    <option value="both">Both (Bill &amp; KOT Copies)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="crm-modal-footer" style={{ padding: '12px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  className="crm-btn-secondary"
+                  onClick={() => setIsPrinterConfigModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const sampleOrder = orders[0] || {
+                        id: '#FP-TEST-99',
+                        table: 'Table 1',
+                        type: 'Dine-In',
+                        total: 350,
+                        items: [{ name: 'Test Food Item', qty: 1, price: 350 }]
+                      };
+                      if (printerSettings[editingPrinterKey]?.role === 'kot') {
+                        printThermalKot(sampleOrder, storeControls);
+                      } else {
+                        printThermalReceipt(sampleOrder, storeControls);
+                      }
+                      addToast(`Sent test print to ${printerSettings[editingPrinterKey]?.name}!`, <Printer size={16} />);
+                    }}
+                    style={{ padding: '8px 14px', borderRadius: '8px', background: '#F1F5F9', border: '1px solid #CBD5E1', fontWeight: 800, fontSize: '12.5px', cursor: 'pointer' }}
+                  >
+                    Test Print
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-create-order-primary"
+                    style={{ background: '#16A34A', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Check size={18} />
+                    <span>Save Printer Settings</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
+

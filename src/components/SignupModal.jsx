@@ -143,7 +143,7 @@ export default function SignupModal({ isOpen, onClose, onSwitchToLogin }) {
       let fbRes = null;
       try {
         fbRes = await loginWithFirebaseGoogle();
-      } catch (e) {}
+      } catch  {}
 
       const gUser = fbRes?.user;
       const gEmail = gUser?.email || email.trim() || 'merchant@foodypay.in';
@@ -165,7 +165,7 @@ export default function SignupModal({ isOpen, onClose, onSwitchToLogin }) {
       let res = null;
       try {
         res = await firebaseAuthApi(googlePayload);
-      } catch (e1) {
+      } catch  {
         res = await googleAuthApi(googlePayload);
       }
 
