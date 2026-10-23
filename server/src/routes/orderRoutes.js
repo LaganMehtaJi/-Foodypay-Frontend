@@ -4,7 +4,10 @@ import {
   getOrderStats,
   createOrder,
   createPublicOrder,
+  updatePublicOrder,
+  deletePublicOrder,
   getPublicOrders,
+  syncPosTableStatus,
   updateOrder,
   updateOrderStatus,
   markOrderSeen,
@@ -14,9 +17,12 @@ import { protect } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
-// Public route for QR code table ordering and Kitchen KDS
+// Public route for QR code table ordering, Waiter App, and Merchant POS Sync
 router.get('/public', getPublicOrders);
 router.post('/public', createPublicOrder);
+router.put('/public/:id', updatePublicOrder);
+router.delete('/public/:id', deletePublicOrder);
+router.post('/pos/sync-table-status', syncPosTableStatus);
 
 router.use(protect);
 

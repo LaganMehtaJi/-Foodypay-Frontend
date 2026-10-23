@@ -4,7 +4,6 @@ import User from '../models/userModel.js';
 import generateToken from '../utils/generateToken.js';
 import { uploadToCloudinary } from '../utils/cloudinaryUpload.js';
 import { OAuth2Client } from 'google-auth-library';
-import { db, isFirestoreReady } from '../config/firebase.js';
 
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -46,8 +45,35 @@ export const registerUser = async (req, res, next) => {
     // Check if user already exists
     const userExists = await User.findOne({ email: cleanEmail });
     if (userExists) {
+      if (!userExists.password || userExists.authProvider === 'google') {
+        userExists.password = password;
+        userExists.authProvider = 'local';
+        if (name && name.trim()) userExists.name = name.trim();
+        if (businessName && businessName.trim()) userExists.businessName = businessName.trim();
+        if (contactNo && contactNo.trim()) userExists.contactNo = contactNo.trim();
+        if (!userExists.foodypayId) {
+          userExists.foodypayId = 'FP-' + Math.floor(100000 + Math.random() * 900000);
+        }
+        await userExists.save();
+
+        const token = generateToken(userExists._id);
+        return res.status(200).json({
+          success: true,
+          message: 'Account linked and password set successfully.',
+          data: {
+            _id: userExists._id,
+            foodypayId: userExists.foodypayId,
+            name: userExists.name,
+            email: userExists.email,
+            businessName: userExists.businessName,
+            contactNo: userExists.contactNo,
+            logo: userExists.logo,
+            token,
+          },
+        });
+      }
       res.status(400);
-      throw new Error('An account already exists with this email address.');
+      throw new Error('An account already exists with this email address. Please sign in with your password.');
     }
 
     // Safely upload logo to Cloudinary if provided
@@ -88,40 +114,6 @@ export const registerUser = async (req, res, next) => {
       lockReason: finalLockReason,
       subscriptionPrice: finalPrice,
     });
-
-    // 1. PRIMARY STORAGE: Save into Cloud Firestore Business_Users collection
-    if (isFirestoreReady()) {
-      try {
-        await db.collection('Business_Users').doc(foodypayId).set({
-          uniqueId: foodypayId,
-          businessId: foodypayId,
-          id: foodypayId,
-          foodypayId: foodypayId,
-          businessName: finalBusinessName,
-          name: name.trim(),
-          ownerName: name.trim(),
-          email: cleanEmail,
-          phone: finalContactNo,
-          contactNo: finalContactNo,
-          plan: planName,
-          subscriptionPlan: planName,
-          startingDate: startDate,
-          expireDate: expiryDate,
-          subscriptionExpiry: expiryDate,
-          status: userStatus,
-          subscriptionStatus: userStatus,
-          isLocked: userIsLocked,
-          lockReason: finalLockReason,
-          subscriptionPrice: finalPrice,
-          logoUrl: logoData.url || '',
-          authProvider: 'local',
-          createdAt: startDate,
-          updatedAt: new Date().toISOString(),
-        }, { merge: true });
-      } catch (fsErr) {
-        console.warn('⚠️ Firestore Business_Users save warning:', fsErr.message);
-      }
-    }
 
     if (user) {
       const token = generateToken(user._id);
@@ -169,12 +161,7 @@ export const loginUser = async (req, res, next) => {
 
     if (!user) {
       res.status(401);
-      throw new Error('Invalid email or password');
-    }
-
-    if (user.authProvider === 'google' && !user.password) {
-      res.status(400);
-      throw new Error('This email is registered via Google Login. Please sign in with Google.');
+      throw new Error('No account found with this email. Please click "Register" below.');
     }
 
     if (user.isLocked) {
@@ -182,33 +169,42 @@ export const loginUser = async (req, res, next) => {
       throw new Error(`Account Locked: ${user.lockReason || 'Active subscription required. Please contact Admin.'}`);
     }
 
-    const isMatch = await user.matchPassword(password);
-
-    if (user && isMatch) {
+    // If user was created without password (Google/OAuth), allow setting password now
+    if (!user.password) {
+      user.password = password;
+      user.authProvider = 'local';
       if (!user.foodypayId) {
         user.foodypayId = 'FP-' + Math.floor(100000 + Math.random() * 900000);
-        await user.save();
       }
-
-      const token = generateToken(user._id);
-
-      res.json({
-        success: true,
-        data: {
-          _id: user._id,
-          foodypayId: user.foodypayId,
-          name: user.name,
-          email: user.email,
-          businessName: user.businessName,
-          contactNo: user.contactNo,
-          logo: user.logo,
-          token,
-        },
-      });
+      await user.save();
     } else {
-      res.status(401);
-      throw new Error('Invalid email or password');
+      const isMatch = await user.matchPassword(password);
+      if (!isMatch) {
+        res.status(401);
+        throw new Error('Invalid email or password');
+      }
     }
+
+    if (!user.foodypayId) {
+      user.foodypayId = 'FP-' + Math.floor(100000 + Math.random() * 900000);
+      await user.save();
+    }
+
+    const token = generateToken(user._id);
+
+    res.json({
+      success: true,
+      data: {
+        _id: user._id,
+        foodypayId: user.foodypayId,
+        name: user.name,
+        email: user.email,
+        businessName: user.businessName,
+        contactNo: user.contactNo,
+        logo: user.logo,
+        token,
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -311,100 +307,6 @@ export const googleAuth = async (req, res, next) => {
 };
 
 /**
- * @desc    Authenticate / Register via Firebase ID Token or Firebase User Object
- * @route   POST /api/auth/firebase
- * @access  Public
- */
-export const firebaseAuth = async (req, res, next) => {
-  try {
-    const { firebaseToken, uid, email, name, picture, emailVerified, businessName, contactNo, providerId } = req.body;
-
-    if (!email && !uid) {
-      res.status(400);
-      throw new Error('Firebase email or UID is required.');
-    }
-
-    const cleanEmail = (email || '').toLowerCase().trim();
-    let user = null;
-
-    if (uid) {
-      user = await User.findOne({ firebaseUid: uid });
-    }
-    if (!user && cleanEmail) {
-      user = await User.findOne({ email: cleanEmail });
-    }
-
-    if (user) {
-      let modified = false;
-      if (!user.firebaseUid && uid) {
-        user.firebaseUid = uid;
-        modified = true;
-      }
-      if (emailVerified !== undefined && user.isEmailVerified !== emailVerified) {
-        user.isEmailVerified = Boolean(emailVerified);
-        modified = true;
-      }
-      if (businessName && businessName.trim() && user.businessName !== businessName.trim()) {
-        user.businessName = businessName.trim();
-        modified = true;
-      }
-      if (contactNo && contactNo.trim() && user.contactNo !== contactNo.trim()) {
-        user.contactNo = contactNo.trim();
-        modified = true;
-      }
-      if (picture && (!user.logo || !user.logo.url)) {
-        user.logo = { url: picture, public_id: 'firebase_avatar' };
-        modified = true;
-      }
-      if (!user.foodypayId) {
-        user.foodypayId = 'FP-' + Math.floor(100000 + Math.random() * 900000);
-        modified = true;
-      }
-      if (modified) await user.save();
-    } else {
-      const foodypayId = 'FP-' + Math.floor(100000 + Math.random() * 900000);
-      const defaultName = name || (cleanEmail ? cleanEmail.split('@')[0] : 'Merchant');
-      const finalBusinessName = businessName && businessName.trim() ? businessName.trim() : `${defaultName}'s Business`;
-
-      user = await User.create({
-        name: defaultName,
-        email: cleanEmail,
-        firebaseUid: uid || null,
-        isEmailVerified: Boolean(emailVerified),
-        foodypayId,
-        businessName: finalBusinessName,
-        contactNo: contactNo && contactNo.trim() ? contactNo.trim() : '+91 98000 00000',
-        logo: {
-          url: picture || '',
-          public_id: 'firebase_avatar',
-        },
-        authProvider: providerId === 'google.com' ? 'google' : 'firebase',
-      });
-    }
-
-    const token = generateToken(user._id);
-
-    res.json({
-      success: true,
-      data: {
-        _id: user._id,
-        foodypayId: user.foodypayId,
-        name: user.name,
-        email: user.email,
-        businessName: user.businessName,
-        contactNo: user.contactNo,
-        logo: user.logo,
-        firebaseUid: user.firebaseUid,
-        isEmailVerified: user.isEmailVerified,
-        token,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
  * @desc    Get current user profile
  * @route   GET /api/auth/me
  * @access  Private
@@ -440,68 +342,24 @@ export const getAllUsers = async (req, res, next) => {
     } catch (err) {
       console.warn('MongoDB User find note:', err.message);
     }
-
-    // Merge with Cloud Firestore Business_Users
-    const userMap = new Map();
-
-    users.forEach((u) => {
-      const key = (u.foodypayId || u.email || String(u._id)).toLowerCase();
-      userMap.set(key, {
-        ...u,
-        _id: u._id,
-        foodypayId: u.foodypayId,
-        uniqueId: u.foodypayId,
-        plan: u.subscriptionPlan || 'L1',
-        subscriptionPlan: u.subscriptionPlan || 'L1',
-        startingDate: u.createdAt,
-        expireDate: u.subscriptionExpiry,
-        subscriptionExpiry: u.subscriptionExpiry,
-        status: u.subscriptionStatus || (u.isLocked ? 'Locked' : 'Active'),
-        subscriptionStatus: u.subscriptionStatus || (u.isLocked ? 'Locked' : 'Active'),
-      });
-    });
-
-    if (isFirestoreReady()) {
-      try {
-        const snap = await db.collection('Business_Users').get();
-        snap.forEach((doc) => {
-          const fu = doc.data();
-          const key = (fu.foodypayId || fu.uniqueId || doc.id || fu.email || '').toLowerCase();
-          if (!userMap.has(key)) {
-            userMap.set(key, {
-              _id: doc.id,
-              foodypayId: fu.foodypayId || fu.uniqueId || doc.id,
-              uniqueId: fu.uniqueId || doc.id,
-              name: fu.name || fu.ownerName || '',
-              businessName: fu.businessName || '',
-              email: fu.email || '',
-              contactNo: fu.phone || fu.contactNo || '',
-              phone: fu.phone || fu.contactNo || '',
-              plan: fu.plan || fu.subscriptionPlan || 'L1',
-              subscriptionPlan: fu.plan || fu.subscriptionPlan || 'L1',
-              startingDate: fu.startingDate || fu.createdAt,
-              expireDate: fu.expireDate || fu.subscriptionExpiry,
-              subscriptionExpiry: fu.expireDate || fu.subscriptionExpiry,
-              status: fu.status || fu.subscriptionStatus || (fu.isLocked ? 'Locked' : 'Active'),
-              subscriptionStatus: fu.status || fu.subscriptionStatus || (fu.isLocked ? 'Locked' : 'Active'),
-              isLocked: Boolean(fu.isLocked || fu.status === 'Locked'),
-              lockReason: fu.lockReason || 'Subscription Payment Required',
-              subscriptionPrice: fu.subscriptionPrice || 0,
-              createdAt: fu.createdAt || fu.startingDate || new Date().toISOString(),
-            });
-          }
-        });
-      } catch (fsErr) {
-        console.warn('Firestore getAllUsers sync note:', fsErr.message);
-      }
-    }
-
-    const mergedList = Array.from(userMap.values());
+    const formattedList = users.map((u) => ({
+      ...u,
+      _id: u._id,
+      foodypayId: u.foodypayId,
+      uniqueId: u.foodypayId,
+      plan: u.subscriptionPlan || 'L1',
+      subscriptionPlan: u.subscriptionPlan || 'L1',
+      startingDate: u.createdAt,
+      expireDate: u.subscriptionExpiry,
+      subscriptionExpiry: u.subscriptionExpiry,
+      status: u.subscriptionStatus || (u.isLocked ? 'Locked' : 'Active'),
+      subscriptionStatus: u.subscriptionStatus || (u.isLocked ? 'Locked' : 'Active'),
+    }));
 
     res.json({
       success: true,
-      count: mergedList.length,
-      data: mergedList,
+      count: formattedList.length,
+      data: formattedList,
     });
   } catch (error) {
     next(error);
@@ -529,22 +387,9 @@ export const deleteUserById = async (req, res, next) => {
     }
 
     let deletedEmail = user ? user.email : rawId;
-    let targetFoodypayId = user ? user.foodypayId : rawId;
 
     if (user) {
       await User.findByIdAndDelete(user._id);
-    }
-
-    // Delete from Firestore Business_Users
-    if (isFirestoreReady()) {
-      try {
-        if (targetFoodypayId) {
-          await db.collection('Business_Users').doc(targetFoodypayId).delete();
-        }
-        await db.collection('Business_Users').doc(rawId).delete();
-      } catch (fsErr) {
-        console.warn('Firestore delete note:', fsErr.message);
-      }
     }
 
     res.json({
@@ -567,25 +412,9 @@ export const deleteUserByEmail = async (req, res, next) => {
   try {
     const targetEmail = req.params.email.toLowerCase().trim();
     const user = await User.findOne({ email: targetEmail });
-    let foodypayId = user ? user.foodypayId : null;
 
     if (user) {
       await User.findOneAndDelete({ email: targetEmail });
-    }
-
-    // Cloud Firestore deletion
-    if (isFirestoreReady()) {
-      try {
-        if (foodypayId) {
-          await db.collection('Business_Users').doc(foodypayId).delete();
-        }
-        const snap = await db.collection('Business_Users').where('email', '==', targetEmail).get();
-        snap.forEach(async (doc) => {
-          await doc.ref.delete();
-        });
-      } catch (fsErr) {
-        console.warn('Firestore email delete note:', fsErr.message);
-      }
     }
 
     res.json({
@@ -716,22 +545,6 @@ export const toggleUserLock = async (req, res, next) => {
       await user.save();
     }
 
-    // Sync to Cloud Firestore Business_Users
-    if (isFirestoreReady()) {
-      try {
-        const fsDocId = (user && user.foodypayId) ? user.foodypayId : rawId;
-        await db.collection('Business_Users').doc(fsDocId).set({
-          isLocked: finalLocked,
-          status: finalStatus,
-          subscriptionStatus: finalStatus,
-          lockReason: finalReason,
-          updatedAt: new Date().toISOString(),
-        }, { merge: true });
-      } catch (fsErr) {
-        console.warn('Firestore toggle lock note:', fsErr.message);
-      }
-    }
-
     res.json({
       success: true,
       message: `User account is now ${finalLocked ? 'LOCKED' : 'UNLOCKED'}.`,
@@ -794,37 +607,6 @@ export const updateUserSubscription = async (req, res, next) => {
       }
 
       await user.save();
-    }
-
-    // Cloud Firestore Sync
-    if (isFirestoreReady()) {
-      try {
-        const fsDocId = (user && user.foodypayId) ? user.foodypayId : rawId;
-        const updates = {
-          updatedAt: new Date().toISOString(),
-        };
-        if (subscriptionPrice !== undefined) updates.subscriptionPrice = Number(subscriptionPrice) || 0;
-        if (finalPlan) {
-          updates.plan = finalPlan;
-          updates.subscriptionPlan = finalPlan;
-        }
-        if (finalStatus) {
-          updates.status = finalStatus;
-          updates.subscriptionStatus = finalStatus;
-          updates.isLocked = finalStatus === 'Locked' || finalStatus === 'Expired';
-        }
-        if (finalExpiry) {
-          updates.expireDate = new Date(finalExpiry).toISOString();
-          updates.subscriptionExpiry = new Date(finalExpiry).toISOString();
-        }
-        if (startingDate) {
-          updates.startingDate = new Date(startingDate).toISOString();
-        }
-
-        await db.collection('Business_Users').doc(fsDocId).set(updates, { merge: true });
-      } catch (fsErr) {
-        console.warn('Firestore subscription update note:', fsErr.message);
-      }
     }
 
     res.json({

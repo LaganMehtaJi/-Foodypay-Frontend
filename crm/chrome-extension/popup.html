@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>FoodyPay Silent Print</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      margin: 0;
+      padding: 14px;
+      width: 320px;
+      background: #f8fafc;
+      color: #1e293b;
+      font-size: 13px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e2e8f0;
+      margin-bottom: 12px;
+    }
+    .title {
+      font-weight: 700;
+      font-size: 15px;
+      color: #e11d48;
+    }
+    .sub {
+      font-size: 11px;
+      color: #64748b;
+    }
+    .status-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 99px;
+    }
+    .badge.green { background: #dcfce7; color: #15803d; }
+    .badge.red { background: #fee2e2; color: #b91c1c; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; }
+    .dot.green { background: #22c55e; }
+    .dot.red { background: #ef4444; }
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #64748b;
+      margin: 10px 0 6px;
+    }
+    select, button {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: inherit;
+      border: 1px solid #cbd5e1;
+      margin-bottom: 8px;
+    }
+    button {
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.15s;
+    }
+    button.primary {
+      background: #e11d48;
+      border-color: #e11d48;
+      color: #fff;
+    }
+    button.primary:hover {
+      background: #be123c;
+    }
+    button.secondary {
+      background: #fff;
+      color: #334155;
+    }
+    button.secondary:hover {
+      background: #f1f5f9;
+    }
+    .btn-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .msg {
+      font-size: 11px;
+      padding: 6px;
+      border-radius: 6px;
+      margin-top: 6px;
+      text-align: center;
+      display: none;
+    }
+    .msg.success { background: #dcfce7; color: #166534; display: block; }
+    .msg.error { background: #fee2e2; color: #991b1b; display: block; }
+    .footer {
+      margin-top: 12px;
+      padding-top: 8px;
+      border-top: 1px solid #e2e8f0;
+      text-align: center;
+      font-size: 11px;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div style="font-size:24px">🖨️</div>
+    <div>
+      <div class="title">FoodyPay Silent Printer</div>
+      <div class="sub">Dual Device KOT & Bill Printing</div>
+    </div>
+  </div>
+
+  <div class="status-card">
+    <div class="status-row">
+      <span>Chrome Extension:</span>
+      <span class="badge green"><span class="dot green"></span> Active</span>
+    </div>
+    <div class="status-row">
+      <span>Print Bridge (19999):</span>
+      <span id="bridgeStatus" class="badge red"><span class="dot red"></span> Checking...</span>
+    </div>
+  </div>
+
+  <div class="section-title">Connected Devices</div>
+  <div style="margin-bottom: 4px;">
+    <label style="font-size:11px; color:#475569;">🍳 KOT Printer Device:</label>
+    <select id="kotPrinterSelect"><option>Loading printers...</option></select>
+  </div>
+  <div style="margin-bottom: 8px;">
+    <label style="font-size:11px; color:#475569;">🧾 Bill Printer Device:</label>
+    <select id="billPrinterSelect"><option>Loading printers...</option></select>
+  </div>
+
+  <button id="savePrintersBtn" class="primary">💾 Save Device Configuration</button>
+
+  <div class="section-title">Quick Test Prints</div>
+  <div class="btn-group">
+    <button id="testKotBtn" class="secondary">🧪 Test KOT</button>
+    <button id="testBillBtn" class="secondary">🧪 Test Bill</button>
+  </div>
+
+  <div id="statusMsg" class="msg"></div>
+
+  <div class="footer">
+    Bina dialog box ke instant thermal print • Powered by <b>FoodyPay</b>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

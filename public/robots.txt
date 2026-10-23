@@ -1,3 +1,0 @@
-User-agent: *
-Allow: /
-Sitemap: https://foodypay.in/sitemap.xml

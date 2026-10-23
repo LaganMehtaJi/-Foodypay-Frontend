@@ -1,0 +1,1951 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>FoodyPay — Admin Portal & Sales Dashboard</title>
+  <meta name="description" content="Admin Dashboard to view all users with their Gmail accounts, stores, and complete sales details.">
+  
+  <script src="api/server-api.js"></script>
+
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --tx: #0f172a;
+      --mu: #64748b;
+      --bd: #e2e8f0;
+      --pri: #e11d48;
+      --pri-hover: #be123c;
+      --pri-light: #ffe4e6;
+      --sec: #0284c7;
+      --suc: #16a34a;
+      --wrn: #d97706;
+      --dan: #dc2626;
+      --dark: #0f172a;
+      --dark-card: #1e293b;
+      --sh: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+      --sh-md: 0 4px 6px -1px rgba(0,0,0,0.08), 0 2px 4px -2px rgba(0,0,0,0.05);
+      --sh-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.08);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--tx);
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    header {
+      background: #0f172a;
+      color: #fff;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      flex-wrap: wrap;
+    }
+
+    .brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: #fff;
+    }
+
+    .brand-logo {
+      font-size: 24px;
+      background: linear-gradient(135deg, #e11d48, #f43f5e);
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 8px rgba(225,29,72,0.4);
+    }
+
+    .brand-text h1 {
+      font-size: 17px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-text small {
+      color: #94a3b8;
+      font-size: 11px;
+      display: block;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* Buttons */
+    button, .btn {
+      font: inherit;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--bd);
+      background: #fff;
+      color: var(--tx);
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+
+    button:hover, .btn:hover {
+      background: #f1f5f9;
+      border-color: #cbd5e1;
+    }
+
+    button.primary, .btn.primary {
+      background: var(--pri);
+      border-color: var(--pri);
+      color: #fff;
+      box-shadow: 0 2px 4px rgba(225,29,72,0.3);
+    }
+    button.primary:hover, .btn.primary:hover {
+      background: var(--pri-hover);
+    }
+
+    button.sec, .btn.sec {
+      background: #0284c7;
+      border-color: #0284c7;
+      color: #fff;
+    }
+    button.sec:hover, .btn.sec:hover { background: #0369a1; }
+
+    button.dark-btn {
+      background: rgba(255,255,255,0.12);
+      border-color: rgba(255,255,255,0.22);
+      color: #fff;
+    }
+    button.dark-btn:hover {
+      background: rgba(255,255,255,0.22);
+      color: #fff;
+    }
+
+    button.sm { padding: 4px 10px; font-size: 12px; border-radius: 6px; }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      max-width: 1400px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    /* Top Stats Bar */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 14px;
+      margin-bottom: 22px;
+    }
+
+    .kpi-card {
+      background: #fff;
+      border: 1px solid var(--bd);
+      border-radius: 12px;
+      padding: 16px 18px;
+      box-shadow: var(--sh);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .kpi-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background: var(--pri);
+    }
+    .kpi-card.green::before { background: var(--suc); }
+    .kpi-card.blue::before { background: var(--sec); }
+    .kpi-card.purple::before { background: #8b5cf6; }
+    .kpi-card.amber::before { background: var(--wrn); }
+
+    .kpi-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--mu);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .kpi-val {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--tx);
+      margin: 6px 0 2px;
+      letter-spacing: -0.5px;
+    }
+
+    .kpi-sub {
+      font-size: 11.5px;
+      color: var(--mu);
+    }
+
+    /* Tabs Navigation */
+    .view-tabs {
+      display: flex;
+      gap: 8px;
+      border-bottom: 2px solid var(--bd);
+      margin-bottom: 20px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+
+    .view-tab {
+      background: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -4px;
+      border-radius: 0;
+      padding: 10px 18px;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--mu);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .view-tab:hover {
+      background: none;
+      color: var(--tx);
+    }
+
+    .view-tab.active {
+      color: var(--pri);
+      border-bottom-color: var(--pri);
+      background: none;
+    }
+
+    .view-tab .badge {
+      background: #e2e8f0;
+      color: #334155;
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 99px;
+      font-weight: 700;
+    }
+
+    .view-tab.active .badge {
+      background: var(--pri-light);
+      color: var(--pri);
+    }
+
+    /* Cards & Containers */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--bd);
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: var(--sh);
+      margin-bottom: 20px;
+    }
+
+    .card-hd {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    .card-hd h2 {
+      font-size: 17px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Filters Bar */
+    .filter-bar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      background: #f1f5f9;
+      padding: 12px;
+      border-radius: 10px;
+      margin-bottom: 16px;
+      border: 1px solid #e2e8f0;
+    }
+
+    .filter-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .filter-group label {
+      font-size: 12px;
+      font-weight: 700;
+      color: #475569;
+      white-space: nowrap;
+    }
+
+    select, input[type="text"], input[type="date"], input[type="email"], input[type="password"] {
+      background: #fff;
+      border: 1.5px solid var(--bd);
+      border-radius: 8px;
+      padding: 7px 10px;
+      font: inherit;
+      font-size: 13px;
+      color: var(--tx);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    select:focus, input:focus {
+      border-color: var(--pri);
+      box-shadow: 0 0 0 3px rgba(225,29,72,0.15);
+    }
+
+    /* Tables */
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      border: 1px solid var(--bd);
+      border-radius: 10px;
+      background: #fff;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 13px;
+    }
+
+    th {
+      background: #f8fafc;
+      color: #475569;
+      font-weight: 700;
+      padding: 11px 14px;
+      border-bottom: 1.5px solid var(--bd);
+      white-space: nowrap;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--bd);
+      vertical-align: middle;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background: #f8fafc;
+    }
+
+    .r { text-align: right; }
+    .c { text-align: center; }
+
+    /* Badges & Chips */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .badge.paid { background: #dcfce7; color: #166534; }
+    .badge.unpaid { background: #fee2e2; color: #991b1b; }
+    .badge.cash { background: #fef3c7; color: #92400e; }
+    .badge.upi { background: #e0f2fe; color: #075985; }
+    .badge.card { background: #f3e8ff; color: #6b21a8; }
+    .badge.dine { background: #e0e7ff; color: #3730a3; }
+    .badge.del { background: #ffedd5; color: #9a3412; }
+    .badge.pick { background: #ccfbf1; color: #115e59; }
+    .badge.cloud { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+
+    /* User Row Avatar */
+    .user-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #e11d48, #fb7185);
+      color: #fff;
+      font-weight: 800;
+      font-size: 15px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .user-info-cell {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .user-name-title {
+      font-weight: 700;
+      color: var(--tx);
+      font-size: 13.5px;
+    }
+
+    .user-email-text {
+      color: #0284c7;
+      font-family: monospace;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(2px);
+      z-index: 999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .modal-box {
+      background: #fff;
+      border-radius: 16px;
+      width: 100%;
+      max-width: 650px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2), 0 8px 10px -6px rgba(0,0,0,0.1);
+      padding: 24px;
+    }
+
+    .modal-hd {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--bd);
+    }
+
+    .modal-hd h3 {
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    /* Bill Receipt Styled Preview */
+    .receipt-box {
+      background: #fff;
+      border: 1px dashed #cbd5e1;
+      border-radius: 10px;
+      padding: 18px;
+      font-family: monospace;
+      color: #000;
+      line-height: 1.4;
+      font-size: 13px;
+    }
+
+    .receipt-hd {
+      text-align: center;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px dashed #000;
+    }
+
+    .receipt-hd h4 {
+      font-size: 16px;
+      font-weight: 800;
+      margin-bottom: 2px;
+    }
+
+    .receipt-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .receipt-divider {
+      border-top: 1px dashed #000;
+      margin: 8px 0;
+    }
+
+    /* Loading spinner */
+    .spinner {
+      border: 3px solid rgba(0,0,0,0.1);
+      border-top-color: var(--pri);
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 0.8s linear infinite;
+      display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Toast Notification */
+    #adminToast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 99999;
+      background: #0f172a;
+      color: #fff;
+      padding: 12px 18px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      box-shadow: var(--sh-lg);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    #adminToast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+      header { flex-direction: column; align-items: stretch; gap: 10px; }
+      .header-actions { justify-content: space-between; }
+      main { padding: 12px; }
+      .kpi-grid { grid-template-columns: 1fr 1fr; }
+      .filter-bar { flex-direction: column; align-items: stretch; }
+      .filter-group { width: 100%; justify-content: space-between; }
+      .filter-group select, .filter-group input { flex: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Admin Top Bar -->
+  <header>
+    <a href="admin.html" class="brand-wrap">
+      <div class="brand-logo">👑</div>
+      <div class="brand-text">
+        <h1>FoodyPay Admin <span style="font-size:10px;font-weight:700;background:#e11d48;padding:2px 7px;border-radius:99px;text-transform:uppercase">Cloud Portal</span></h1>
+        <small>Multi-Store CRM • All Users &amp; Real-Time Sales</small>
+      </div>
+    </a>
+
+    <div class="header-actions">
+      <!-- Sync Status Pill -->
+      <div id="hdrStatusPill" style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.1);padding:6px 12px;border-radius:8px;font-size:12px">
+        <span id="hdrStatusDot" style="width:8px;height:8px;border-radius:50%;background:#4ade80"></span>
+        <span id="hdrStatusTxt">Connecting...</span>
+      </div>
+
+      <!-- Refresh Button -->
+      <button onclick="refreshAllData(true)" class="dark-btn sm" title="Reload all Firestore users and sales">
+        <span id="refreshIcon">🔄</span> Refresh
+      </button>
+
+      <!-- Back to POS Button -->
+      <a href="index.html" class="btn dark-btn sm" title="Open POS Billing & Tables">
+        🍽️ Open POS Terminal
+      </a>
+
+      <!-- Auth User / Login Button -->
+      <button id="adminAuthBtn" onclick="openAuthModal()" class="btn primary sm">
+        🔒 Sign In
+      </button>
+    </div>
+  </header>
+
+  <!-- Main View -->
+  <main>
+
+    <!-- Top KPI Overview Cards -->
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-title">
+          <span>Total Sales Revenue</span>
+          <span>💰</span>
+        </div>
+        <div class="kpi-val" id="kpiTotalRev">₹0</div>
+        <div class="kpi-sub" id="kpiTotalRevSub">Across all registered stores</div>
+      </div>
+
+      <div class="kpi-card green">
+        <div class="kpi-title">
+          <span>Total Orders Placed</span>
+          <span>🧾</span>
+        </div>
+        <div class="kpi-val" id="kpiTotalOrders">0</div>
+        <div class="kpi-sub" id="kpiTotalOrdersSub">Completed and recorded bills</div>
+      </div>
+
+      <div class="kpi-card blue">
+        <div class="kpi-title">
+          <span>Active Users &amp; Gmails</span>
+          <span>👥</span>
+        </div>
+        <div class="kpi-val" id="kpiTotalUsers">0</div>
+        <div class="kpi-sub" id="kpiTotalUsersSub">MongoDB registered merchants</div>
+      </div>
+
+      <div class="kpi-card purple">
+        <div class="kpi-title">
+          <span>Average Order Value</span>
+          <span>📈</span>
+        </div>
+        <div class="kpi-val" id="kpiAOV">₹0</div>
+        <div class="kpi-sub" id="kpiAOVSub">Platform-wide average ticket</div>
+      </div>
+
+      <div class="kpi-card amber">
+        <div class="kpi-title">
+          <span>Payment Split</span>
+          <span>💳</span>
+        </div>
+        <div class="kpi-val" style="font-size:17px;margin:9px 0 5px" id="kpiPaySplit">Cash 0% • UPI 0%</div>
+        <div class="kpi-sub" id="kpiPaySplitSub">Card &amp; Unpaid due tracked</div>
+      </div>
+    </div>
+
+    <!-- Navigation View Tabs -->
+    <div class="view-tabs">
+      <button class="view-tab active" data-view="users" onclick="switchView('users')">
+        👥 All Users &amp; Gmails <span class="badge" id="tabUsersBadge">0</span>
+      </button>
+      <button class="view-tab" data-view="sales" onclick="switchView('sales')">
+        📜 All Sales &amp; Bills <span class="badge" id="tabSalesBadge">0</span>
+      </button>
+      <button class="view-tab" data-view="user-deepdive" id="tabDeepDive" onclick="switchView('user-deepdive')">
+        🔍 User Sales Deep-Dive <span class="badge" id="tabUserSelectedBadge" style="display:none">1</span>
+      </button>
+      <button class="view-tab" data-view="dishes" onclick="switchView('dishes')">
+        🍲 Top Dishes &amp; Items
+      </button>
+      <button class="view-tab" data-view="json" onclick="switchView('json')">
+        { } Raw Firestore Data
+      </button>
+    </div>
+
+    <!-- VIEW 1: ALL USERS DIRECTORY -->
+    <div id="viewUsers" class="tab-content">
+      <div class="card">
+        <div class="card-hd">
+          <div>
+            <h2>👥 Registered Users with Gmail &amp; Stores</h2>
+            <p style="color:var(--mu);font-size:12.5px;margin-top:2px">
+              View every merchant account, their Gmail address, store branding, lifetime revenue, and total sales.
+            </p>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button onclick="promptDirectEmailLookup()" class="btn sm" style="border-color:#0284c7;color:#0284c7">
+              🔍 Look Up by Gmail
+            </button>
+            <button onclick="exportUsersCSV()" class="btn sm">
+              📥 Export Users CSV
+            </button>
+          </div>
+        </div>
+
+        <!-- Filter & Search Users -->
+        <div class="filter-bar">
+          <div class="filter-group" style="flex:1">
+            <label>🔎 Search:</label>
+            <input type="text" id="userSearchInput" placeholder="Filter by Gmail, store name, UID..." oninput="renderUsersTable()" style="width:100%">
+          </div>
+          <div class="filter-group">
+            <label>Sort By:</label>
+            <select id="userSortSelect" onchange="renderUsersTable()">
+              <option value="revenue_desc">Highest Revenue</option>
+              <option value="orders_desc">Most Orders</option>
+              <option value="email_asc">Gmail (A-Z)</option>
+              <option value="recent_sync">Recently Synced</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Users Table -->
+        <div class="table-container">
+          <table id="usersTable">
+            <thead>
+              <tr>
+                <th>Merchant &amp; Gmail</th>
+                <th>Store / System</th>
+                <th class="r">Lifetime Revenue</th>
+                <th class="r">Total Bills</th>
+                <th class="r">Today's Sales</th>
+                <th>Last Cloud Sync</th>
+                <th class="c">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="usersTableBody">
+              <tr>
+                <td colspan="7" style="text-align:center;padding:30px;color:var(--mu)">
+                  <div class="spinner"></div><br><br>Loading users from MongoDB database...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW 2: ALL SALES CONSOLIDATED -->
+    <div id="viewSales" class="tab-content" style="display:none">
+      <div class="card">
+        <div class="card-hd">
+          <div>
+            <h2>📜 All Sales &amp; Bills History</h2>
+            <p style="color:var(--mu);font-size:12.5px;margin-top:2px">
+              Consolidated real-time feed of all sales from all users and stores. Click any row to inspect the full receipt.
+            </p>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button onclick="exportSalesCSV()" class="btn sm" style="border-color:#16a34a;color:#16a34a">
+              📥 Export Sales CSV
+            </button>
+            <button onclick="window.print()" class="btn sm">
+              🖨️ Print Sales Report
+            </button>
+          </div>
+        </div>
+
+        <!-- Filters Bar for Sales -->
+        <div class="filter-bar">
+          <div class="filter-group">
+            <label>Merchant / Gmail:</label>
+            <select id="salesFilterUser" onchange="renderSalesTable()">
+              <option value="ALL">All Users / All Stores</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label>Date Filter:</label>
+            <select id="salesFilterDatePreset" onchange="handleDatePresetChange()">
+              <option value="ALL">All Time</option>
+              <option value="TODAY">Today</option>
+              <option value="YESTERDAY">Yesterday</option>
+              <option value="WEEK">Last 7 Days</option>
+              <option value="MONTH">This Month</option>
+              <option value="CUSTOM">Custom Date Range</option>
+            </select>
+          </div>
+
+          <div class="filter-group" id="customDateRangeWrap" style="display:none">
+            <input type="date" id="salesFilterDateFrom" onchange="renderSalesTable()">
+            <span style="font-size:11px;color:var(--mu)">to</span>
+            <input type="date" id="salesFilterDateTo" onchange="renderSalesTable()">
+          </div>
+
+          <div class="filter-group">
+            <label>Payment Mode:</label>
+            <select id="salesFilterMode" onchange="renderSalesTable()">
+              <option value="ALL">All Modes</option>
+              <option value="Cash">Cash</option>
+              <option value="UPI">UPI</option>
+              <option value="Card">Card</option>
+              <option value="UNPAID">Unpaid / Due</option>
+              <option value="Cancelled">Cancelled</option>
+            </select>
+          </div>
+
+          <div class="filter-group" style="flex:1">
+            <label>Search:</label>
+            <input type="text" id="salesSearchInput" placeholder="Search bill ID, customer name, phone, item..." oninput="renderSalesTable()" style="width:100%">
+          </div>
+        </div>
+
+        <!-- Current Filter Summary Banner -->
+        <div id="salesFilterSummaryBar" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:12.5px;color:#1e40af;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <span>Showing <b>0</b> sales matching criteria</span>
+          <span style="font-weight:700">Total Filtered Revenue: ₹0</span>
+        </div>
+
+        <!-- Sales Table -->
+        <div class="table-container">
+          <table id="salesTable">
+            <thead>
+              <tr>
+                <th>Bill ID</th>
+                <th>Date &amp; Time</th>
+                <th>Merchant (Gmail)</th>
+                <th>Table / Order</th>
+                <th>Customer</th>
+                <th>Items Summary</th>
+                <th>Payment</th>
+                <th class="r">Total</th>
+                <th class="c">Receipt</th>
+              </tr>
+            </thead>
+            <tbody id="salesTableBody">
+              <tr>
+                <td colspan="9" style="text-align:center;padding:30px;color:var(--mu)">
+                  Loading sales data...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW 3: USER DEEP-DIVE -->
+    <div id="viewUserDeepDive" class="tab-content" style="display:none">
+      <div class="card" id="deepDiveBanner">
+        <div class="card-hd">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div class="user-avatar" id="ddAvatar" style="width:48px;height:48px;font-size:20px">U</div>
+            <div>
+              <h2 id="ddTitle">Select a user to view detailed store sales</h2>
+              <div id="ddSubtitle" style="color:var(--mu);font-size:13px;display:flex;align-items:center;gap:8px">
+                <span id="ddEmail" style="color:#0284c7;font-family:monospace;font-weight:600">No user selected</span>
+                <span id="ddUid" class="badge cloud">UID: --</span>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <select id="ddUserPicker" onchange="onDeepDiveUserChange(this.value)" style="min-width:220px">
+              <option value="">-- Choose User / Gmail --</option>
+            </select>
+            <button onclick="refreshCurrentDeepDiveUser()" class="btn sm">
+              🔄 Reload User Data
+            </button>
+          </div>
+        </div>
+
+        <!-- User Specific KPI Mini Cards -->
+        <div class="kpi-grid" style="margin-bottom:14px">
+          <div class="kpi-card" style="padding:12px 14px">
+            <div class="kpi-title">User Lifetime Revenue</div>
+            <div class="kpi-val" id="ddTotalRev" style="font-size:20px">₹0</div>
+          </div>
+          <div class="kpi-card green" style="padding:12px 14px">
+            <div class="kpi-title">Total Bills Recorded</div>
+            <div class="kpi-val" id="ddTotalBills" style="font-size:20px">0</div>
+          </div>
+          <div class="kpi-card blue" style="padding:12px 14px">
+            <div class="kpi-title">Cash vs Online UPI</div>
+            <div class="kpi-val" id="ddCashUpi" style="font-size:15px;margin:8px 0 2px">₹0 / ₹0</div>
+          </div>
+          <div class="kpi-card amber" style="padding:12px 14px">
+            <div class="kpi-title">Unpaid / Due Amount</div>
+            <div class="kpi-val" id="ddDueTotal" style="font-size:20px;color:var(--dan)">₹0</div>
+          </div>
+        </div>
+
+        <!-- User's Individual Sales Table -->
+        <div class="card-hd" style="margin-top:18px">
+          <h3>🧾 Complete Sales Ledger for this User</h3>
+          <button onclick="exportCurrentUserSalesCSV()" class="btn sm">
+            📥 Download User Sales CSV
+          </button>
+        </div>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Bill ID</th>
+                <th>Date &amp; Time</th>
+                <th>Table / Mode</th>
+                <th>Customer</th>
+                <th>Items Breakdown</th>
+                <th>Status</th>
+                <th class="r">Discount</th>
+                <th class="r">Total Amount</th>
+                <th class="c">Full Bill</th>
+              </tr>
+            </thead>
+            <tbody id="ddSalesTableBody">
+              <tr>
+                <td colspan="9" style="text-align:center;padding:30px;color:var(--mu)">
+                  Select a user from the dropdown or click "View Sales" on any user from the All Users tab.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW 4: DISHES & MENU PERFORMANCE -->
+    <div id="viewDishes" class="tab-content" style="display:none">
+      <div class="card">
+        <div class="card-hd">
+          <div>
+            <h2>🍲 Platform Top Dishes &amp; Product Performance</h2>
+            <p style="color:var(--mu);font-size:12.5px;margin-top:2px">
+              Aggregated dish-level quantities sold and gross revenue across all sales history.
+            </p>
+          </div>
+          <button onclick="exportDishesCSV()" class="btn sm">
+            📥 Export Dishes CSV
+          </button>
+        </div>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th># Rank</th>
+                <th>Dish / Item Name</th>
+                <th class="r">Quantity Sold</th>
+                <th class="r">Total Revenue</th>
+                <th class="r">Share of Sales</th>
+              </tr>
+            </thead>
+            <tbody id="dishesTableBody">
+              <tr>
+                <td colspan="5" style="text-align:center;padding:30px;color:var(--mu)">
+                  Calculating top items...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW 5: RAW FIRESTORE DATA INSPECTOR -->
+    <div id="viewJson" class="tab-content" style="display:none">
+      <div class="card">
+        <div class="card-hd">
+          <div>
+            <h2>{ } Raw Cloud MongoDB Inspector</h2>
+            <p style="color:var(--mu);font-size:12.5px;margin-top:2px">
+              View raw documents stored in MongoDB for auditing and data verification.
+            </p>
+          </div>
+          <button onclick="copyRawJson()" class="btn sm">
+            📋 Copy JSON to Clipboard
+          </button>
+        </div>
+
+        <pre id="rawJsonViewer" style="background:#0f172a;color:#38bdf8;padding:18px;border-radius:10px;font-family:monospace;font-size:12px;overflow:auto;max-height:550px">Loading JSON data...</pre>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- RECEIPT MODAL -->
+  <div id="receiptModal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)closeReceiptModal()">
+    <div class="modal-box">
+      <div class="modal-hd">
+        <h3>🧾 Bill &amp; Order Details</h3>
+        <button onclick="closeReceiptModal()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--mu)">✕</button>
+      </div>
+
+      <div class="receipt-box" id="receiptContent">
+        <!-- Injected dynamically -->
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px">
+        <button onclick="printReceiptContent()" class="btn primary">
+          🖨️ Print Receipt
+        </button>
+        <button onclick="closeReceiptModal()" class="btn">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AUTH / SIGN IN MODAL -->
+  <div id="authModal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)closeAuthModal()">
+    <div class="modal-box" style="max-width:380px">
+      <div class="modal-hd">
+        <h3>👑 Admin Sign In</h3>
+        <button onclick="closeAuthModal()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--mu)">✕</button>
+      </div>
+
+      <div id="authModalMsg" style="display:none;padding:10px;border-radius:8px;font-size:12.5px;margin-bottom:14px"></div>
+
+      <form onsubmit="handleAdminLogin(event)">
+        <div style="margin-bottom:12px">
+          <label style="display:block;font-size:12px;font-weight:700;color:#475569;margin-bottom:5px">Admin / User Gmail</label>
+          <input type="email" id="authEmail" required placeholder="admin@gmail.com" style="width:100%" autocomplete="email">
+        </div>
+        <div style="margin-bottom:16px">
+          <label style="display:block;font-size:12px;font-weight:700;color:#475569;margin-bottom:5px">Password</label>
+          <input type="password" id="authPassword" required placeholder="••••••••" style="width:100%" autocomplete="current-password">
+        </div>
+        <button type="submit" id="authSubmitBtn" class="btn primary" style="width:100%;padding:10px">
+          Sign In to Admin Portal
+        </button>
+      </form>
+
+      <p style="font-size:11.5px;color:var(--mu);text-align:center;margin-top:14px">
+        Use your FoodyPay admin credentials to authenticate and access merchant accounts and sales data.
+      </p>
+    </div>
+  </div>
+
+  <!-- DIRECT GMAIL LOOKUP MODAL -->
+  <div id="lookupModal" class="modal-backdrop" style="display:none" onclick="if(event.target===this)closeLookupModal()">
+    <div class="modal-box" style="max-width:440px">
+      <div class="modal-hd">
+        <h3>🔍 Look Up Specific Merchant</h3>
+        <button onclick="closeLookupModal()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--mu)">✕</button>
+      </div>
+      <p style="font-size:13px;color:var(--mu);margin-bottom:14px">
+        Enter any merchant's email address or FoodyPay ID to inspect their account details and sales records:
+      </p>
+      <div style="margin-bottom:14px">
+        <input type="email" id="lookupEmailInput" placeholder="merchant@gmail.com" style="width:100%" onkeydown="if(event.key==='Enter')executeDirectLookup()">
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button onclick="closeLookupModal()" class="btn">Cancel</button>
+        <button onclick="executeDirectLookup()" class="btn primary">Query Sales</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="adminToast">Notification message</div>
+
+  <!-- Application Logic -->
+  <script>
+    // Global State
+    let adminAuthUser = null;
+    let allUsers = [];            // Array of user objects
+    let allSales = [];            // Consolidated array of all sales records
+    let selectedUserId = null;    // UID or Gmail for deep-dive
+    let rawFirestoreExport = {};
+
+    const money = n => '₹' + (+n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    function showToast(msg, type = 'info') {
+      const t = document.getElementById('adminToast');
+      if (!t) return;
+      t.textContent = msg;
+      t.style.background = type === 'error' ? '#dc2626' : type === 'success' ? '#16a34a' : '#0f172a';
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 3500);
+    }
+
+    /* ─── NODE.JS & MONGODB AUTH STATE ─── */
+    function initAdmin() {
+      if (!window.FPC) {
+        setTimeout(initAdmin, 300);
+        return;
+      }
+
+      const user = window.FPC.currentUser;
+      adminAuthUser = user;
+      updateAuthUI(user);
+      refreshAllData(false);
+    }
+
+    function updateAuthUI(user) {
+      const btn = document.getElementById('adminAuthBtn');
+      const statusTxt = document.getElementById('hdrStatusTxt');
+      const statusDot = document.getElementById('hdrStatusDot');
+
+      if (user) {
+        statusTxt.textContent = 'Connected: ' + (user.email || user.name || 'Admin');
+        statusDot.style.background = '#4ade80';
+        btn.textContent = '🚪 Sign Out';
+        btn.className = 'btn dark-btn sm';
+        btn.onclick = () => {
+          if (window.FPC_Auth?._logout) window.FPC_Auth._logout();
+          else if (window.FPC?.logout) window.FPC.logout();
+          localStorage.removeItem('fp_auth_token');
+          localStorage.removeItem('fp_auth_user');
+          if (window.FPC) window.FPC.currentUser = null;
+          adminAuthUser = null;
+          updateAuthUI(null);
+          showToast('Signed out of admin portal.', 'info');
+        };
+      } else {
+        statusTxt.textContent = 'Not Signed In';
+        statusDot.style.background = '#f87171';
+        btn.textContent = '🔒 Sign In';
+        btn.className = 'btn primary sm';
+        btn.onclick = openAuthModal;
+      }
+    }
+
+    /* ─── FETCH ALL USERS & SALES FROM MONGODB / NODE.JS ─── */
+    async function refreshAllData(showToasts = true) {
+      const refreshIcon = document.getElementById('refreshIcon');
+      if (refreshIcon) refreshIcon.style.display = 'inline-block';
+      if (refreshIcon) refreshIcon.classList.add('spinner');
+
+      if (showToasts) showToast('☁️ Fetching latest sales and users from MongoDB...', 'info');
+
+      const usersMap = new Map();
+      const consolidatedSales = [];
+
+      try {
+        // Source 1: Registered Users from Node.js /api/auth/users
+        try {
+          const res = await window.FPC.apiFetch('/api/auth/users');
+          const usersList = res.data || res.users || (Array.isArray(res) ? res : []);
+          usersList.forEach(u => {
+            const email = (u.email || '').toLowerCase().trim();
+            const key = email || u.foodypayId || u._id;
+            if (!key) return;
+            usersMap.set(key, {
+              id: u.foodypayId || u._id,
+              email: email,
+              name: u.businessName || u.name || 'FoodyPay Store',
+              phone: u.contactNo || u.phone || '',
+              allTimeRevenue: +u.allTimeRevenue || 0,
+              allTimeOrdersCount: +u.allTimeOrdersCount || 0,
+              todayRevenue: +u.todayRevenue || 0,
+              todayOrdersCount: +u.todayOrdersCount || 0,
+              lastSyncedAt: u.updatedAt || u.createdAt || '',
+              source: 'MongoDB_Users'
+            });
+          });
+        } catch (e) {
+          console.warn('[Admin] MongoDB Users fetch error:', e);
+        }
+
+        // Source 2: Cloud Orders from /api/orders/public
+        try {
+          const ordRes = await window.FPC.apiFetch('/api/orders/public?limit=500');
+          const orders = ordRes.data || (Array.isArray(ordRes) ? ordRes : []);
+          orders.forEach(ord => {
+            const emailKey = (ord.businessId || ord.userEmail || '').toLowerCase();
+            const timeVal = ord.createdAt ? new Date(ord.createdAt).getTime() : Date.now();
+            consolidatedSales.push({
+              id: ord.orderId || ord._id,
+              total: +ord.total || 0,
+              subtotal: +ord.subtotal || 0,
+              discount: +ord.discount || 0,
+              tax: +ord.tax || 0,
+              start: timeVal,
+              end: timeVal,
+              mode: ord.paymentMode || 'Counter',
+              status: ord.status || 'completed',
+              userEmail: emailKey,
+              storeName: ord.storeName || '',
+              items: ord.items || []
+            });
+          });
+        } catch (e) {
+          console.warn('[Admin] MongoDB Orders fetch error:', e);
+        }
+
+        // Source 5: Local POS rpos_v1 data fallback / merge
+        try {
+          const rawLocal = localStorage.getItem('rpos_v1');
+          if (rawLocal) {
+            const S = JSON.parse(rawLocal);
+            const currentAuthEmail = (window.FPC?.auth?.currentUser?.email) || 'current.pos@local';
+            const localSales = (S.history || []).filter(h => h && h.mode !== 'Cancelled');
+            const localTotal = localSales.reduce((acc, h) => acc + (+h.total || 0), 0);
+
+            if (!usersMap.has(currentAuthEmail)) {
+              usersMap.set(currentAuthEmail, {
+                id: localStorage.getItem('fp_system_code') || 'LOCAL-POS',
+                email: currentAuthEmail,
+                name: S.name || 'Local Snack Rack POS',
+                phone: S.phone || '',
+                allTimeRevenue: localTotal,
+                allTimeOrdersCount: localSales.length,
+                todayRevenue: localSales.filter(h => {
+                  try { return new Date(h.end).toISOString().split('T')[0] === new Date().toISOString().split('T')[0]; }
+                  catch(e) { return false; }
+                }).reduce((a, b) => a + (+b.total || 0), 0),
+                todayOrdersCount: 0,
+                lastSyncedAt: new Date().toISOString(),
+                source: 'local'
+              });
+            }
+
+            // Merge local sales
+            localSales.forEach(s => {
+              consolidatedSales.push({ ...s, userEmail: currentAuthEmail, storeName: S.name });
+            });
+          }
+        } catch (e) {
+          console.warn('[Admin] Local storage parse notice:', e);
+        }
+
+        // Deduplicate sales by (id + userEmail)
+        const salesDedupMap = new Map();
+        consolidatedSales.forEach(s => {
+          if (!s) return;
+          const key = (s.id || s.start || Math.random()) + '_' + (s.userEmail || '');
+          if (!salesDedupMap.has(key)) {
+            salesDedupMap.set(key, s);
+          }
+        });
+
+        allSales = Array.from(salesDedupMap.values()).sort((a,b) => (b.end || b.start || 0) - (a.end || a.start || 0));
+        allUsers = Array.from(usersMap.values());
+
+        // Recalculate each user's exact sales count & total from deduplicated allSales
+        allUsers.forEach(u => {
+          const userSpecificSales = allSales.filter(s => s.userEmail === u.email || s.userEmail === u.id);
+          if (userSpecificSales.length > 0) {
+            u.allTimeOrdersCount = userSpecificSales.length;
+            u.allTimeRevenue = userSpecificSales.reduce((sum, s) => sum + (+s.total || 0), 0);
+          }
+        });
+
+        // Store raw snapshot for inspector
+        rawFirestoreExport = {
+          timestamp: new Date().toISOString(),
+          usersCount: allUsers.length,
+          salesCount: allSales.length,
+          users: allUsers,
+          sampleSales: allSales.slice(0, 50)
+        };
+
+        // Render UI
+        updateKpiCards();
+        renderUsersTable();
+        populateUserFilters();
+        renderSalesTable();
+        renderDishesTable();
+        renderJsonViewer();
+
+        if (showToasts) showToast(`✅ Data refreshed! Found ${allUsers.length} users & ${allSales.length} sales.`, 'success');
+      } catch (err) {
+        console.error('[Admin] Refresh error:', err);
+        if (showToasts) showToast('Failed to load data: ' + err.message, 'error');
+      } finally {
+        if (refreshIcon) {
+          refreshIcon.classList.remove('spinner');
+          refreshIcon.textContent = '🔄';
+        }
+      }
+    }
+
+    /* ─── UPDATE KPI METRICS ─── */
+    function updateKpiCards() {
+      const grandTotalRevenue = allSales.reduce((acc, s) => acc + (+s.total || 0), 0);
+      const grandTotalOrders = allSales.length;
+      const aov = grandTotalOrders ? (grandTotalRevenue / grandTotalOrders) : 0;
+
+      const cashTotal = allSales.filter(s => s.mode === 'Cash').reduce((a,b) => a + (+b.total||0), 0);
+      const upiTotal = allSales.filter(s => s.mode === 'UPI').reduce((a,b) => a + (+b.total||0), 0);
+      const cardTotal = allSales.filter(s => s.mode === 'Card').reduce((a,b) => a + (+b.total||0), 0);
+
+      const cashPct = grandTotalRevenue ? Math.round((cashTotal / grandTotalRevenue) * 100) : 0;
+      const upiPct = grandTotalRevenue ? Math.round((upiTotal / grandTotalRevenue) * 100) : 0;
+
+      document.getElementById('kpiTotalRev').textContent = money(grandTotalRevenue);
+      document.getElementById('kpiTotalOrders').textContent = grandTotalOrders.toLocaleString('en-IN');
+      document.getElementById('kpiTotalUsers').textContent = allUsers.length;
+      document.getElementById('kpiAOV').textContent = money(aov);
+      document.getElementById('kpiPaySplit').textContent = `Cash ${cashPct}% • UPI ${upiPct}%`;
+
+      document.getElementById('tabUsersBadge').textContent = allUsers.length;
+      document.getElementById('tabSalesBadge').textContent = grandTotalOrders;
+    }
+
+    /* ─── RENDER USERS DIRECTORY ─── */
+    function renderUsersTable() {
+      const tbody = document.getElementById('usersTableBody');
+      const search = (document.getElementById('userSearchInput')?.value || '').toLowerCase().trim();
+      const sort = document.getElementById('userSortSelect')?.value || 'revenue_desc';
+
+      let filtered = allUsers.filter(u => {
+        return (u.email || '').toLowerCase().includes(search) ||
+               (u.name || '').toLowerCase().includes(search) ||
+               (u.id || '').toLowerCase().includes(search);
+      });
+
+      // Sort
+      filtered.sort((a, b) => {
+        if (sort === 'revenue_desc') return (b.allTimeRevenue || 0) - (a.allTimeRevenue || 0);
+        if (sort === 'orders_desc') return (b.allTimeOrdersCount || 0) - (a.allTimeOrdersCount || 0);
+        if (sort === 'email_asc') return (a.email || '').localeCompare(b.email || '');
+        if (sort === 'recent_sync') return new Date(b.lastSyncedAt || 0) - new Date(a.lastSyncedAt || 0);
+        return 0;
+      });
+
+      if (!filtered.length) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--mu)">No users found matching "${esc(search)}".</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(u => {
+        const initial = (u.email || u.name || 'U').charAt(0).toUpperCase();
+        const syncDate = u.lastSyncedAt ? new Date(u.lastSyncedAt).toLocaleString() : '<span style="color:var(--mu)">Pending sync</span>';
+        
+        return `
+          <tr>
+            <td>
+              <div class="user-info-cell">
+                <div class="user-avatar">${esc(initial)}</div>
+                <div>
+                  <div class="user-email-text" title="Gmail Account">
+                    ✉️ <b>${esc(u.email)}</b>
+                  </div>
+                  <small style="color:var(--mu);font-size:11px">UID: ${esc(String(u.id).slice(0, 14))}...</small>
+                </div>
+              </div>
+            </td>
+            <td>
+              <div class="user-name-title">${esc(u.name || 'Store')}</div>
+              <small style="color:var(--mu)">${esc(u.phone || 'No phone')}</small>
+            </td>
+            <td class="r" style="font-weight:700;color:var(--pri)">
+              ${money(u.allTimeRevenue)}
+            </td>
+            <td class="r" style="font-weight:700">
+              ${u.allTimeOrdersCount} bills
+            </td>
+            <td class="r" style="color:var(--suc);font-weight:600">
+              ${money(u.todayRevenue || 0)}
+            </td>
+            <td style="font-size:12px;color:var(--mu)">
+              ${syncDate}
+            </td>
+            <td class="c">
+              <button onclick="inspectUserDeepDive('${esc(u.email || u.id)}')" class="btn primary sm" style="padding:4px 9px">
+                🔍 View Sales &amp; Details
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    /* ─── POPULATE USER DROPDOWNS ─── */
+    function populateUserFilters() {
+      const salesSelect = document.getElementById('salesFilterUser');
+      const ddSelect = document.getElementById('ddUserPicker');
+
+      const userOptions = allUsers.map(u => `<option value="${esc(u.email)}">${esc(u.email)} (${esc(u.name || 'Store')})</option>`).join('');
+
+      if (salesSelect) {
+        salesSelect.innerHTML = `<option value="ALL">All Users / All Stores (${allUsers.length})</option>` + userOptions;
+      }
+
+      if (ddSelect) {
+        ddSelect.innerHTML = `<option value="">-- Choose User / Gmail --</option>` + userOptions;
+        if (selectedUserId) ddSelect.value = selectedUserId;
+      }
+    }
+
+    /* ─── RENDER SALES TABLE ─── */
+    function renderSalesTable() {
+      const tbody = document.getElementById('salesTableBody');
+      const summaryBar = document.getElementById('salesFilterSummaryBar');
+      const filterUser = document.getElementById('salesFilterUser')?.value || 'ALL';
+      const filterMode = document.getElementById('salesFilterMode')?.value || 'ALL';
+      const filterDatePreset = document.getElementById('salesFilterDatePreset')?.value || 'ALL';
+      const search = (document.getElementById('salesSearchInput')?.value || '').toLowerCase().trim();
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+
+      let filtered = allSales.filter(s => {
+        // User filter
+        if (filterUser !== 'ALL' && s.userEmail !== filterUser) return false;
+
+        // Payment Mode filter
+        if (filterMode === 'UNPAID' && s.status !== 'UNPAID') return false;
+        if (filterMode !== 'ALL' && filterMode !== 'UNPAID' && s.mode !== filterMode) return false;
+
+        // Date filter
+        const sDate = s.end ? new Date(s.end) : (s.start ? new Date(s.start) : null);
+        const sDateStr = sDate ? sDate.toISOString().split('T')[0] : '';
+
+        if (filterDatePreset === 'TODAY' && sDateStr !== todayStr) return false;
+        if (filterDatePreset === 'YESTERDAY' && sDateStr !== yesterdayStr) return false;
+        if (filterDatePreset === 'WEEK' && (!sDate || sDate < weekAgo)) return false;
+        if (filterDatePreset === 'MONTH' && sDateStr.slice(0,7) !== todayStr.slice(0,7)) return false;
+        if (filterDatePreset === 'CUSTOM') {
+          const from = document.getElementById('salesFilterDateFrom')?.value;
+          const to = document.getElementById('salesFilterDateTo')?.value;
+          if (from && sDateStr < from) return false;
+          if (to && sDateStr > to) return false;
+        }
+
+        // Text search
+        if (search) {
+          const billId = String(s.id || '').toLowerCase();
+          const custName = String(s.cust?.name || '').toLowerCase();
+          const custPhone = String(s.cust?.phone || '').toLowerCase();
+          const tbl = String(s.table || '').toLowerCase();
+          const itemsStr = (s.items || []).map(i => i.name).join(' ').toLowerCase();
+          const userStr = String(s.userEmail || '').toLowerCase();
+
+          if (!billId.includes(search) &&
+              !custName.includes(search) &&
+              !custPhone.includes(search) &&
+              !tbl.includes(search) &&
+              !itemsStr.includes(search) &&
+              !userStr.includes(search)) {
+            return false;
+          }
+        }
+
+        return true;
+      });
+
+      const totalFilteredRev = filtered.reduce((a,b) => a + (+b.total || 0), 0);
+      if (summaryBar) {
+        summaryBar.innerHTML = `
+          <span>Showing <b>${filtered.length}</b> bills matching criteria</span>
+          <span style="font-weight:700">Filtered Total Revenue: ${money(totalFilteredRev)}</span>
+        `;
+      }
+
+      if (!filtered.length) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--mu)">No sales match the selected filters.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(s => {
+        const timeStr = s.end ? new Date(s.end).toLocaleString('en-IN') : 'Recent';
+        const modeClass = s.mode === 'Cash' ? 'cash' : s.mode === 'UPI' ? 'upi' : s.mode === 'Card' ? 'card' : '';
+        const orderTypeBadge = s.orderType === 'Delivery' ? '<span class="badge del">🛵 Delivery</span>' : s.orderType === 'Pickup' ? '<span class="badge pick">📦 Pickup</span>' : '<span class="badge dine">🍽️ Dine-In</span>';
+        const statusBadge = s.status === 'UNPAID' ? '<span class="badge unpaid">DUE</span>' : '<span class="badge paid">PAID</span>';
+        const itemsBrief = (s.items || []).map(i => `${esc(i.name)} x${i.qty}`).join(', ') || '<span style="color:var(--mu)">No items</span>';
+
+        return `
+          <tr onclick="viewSaleReceipt('${esc(s.id || s.start)}')" style="cursor:pointer">
+            <td><code style="font-weight:700;color:#0284c7">#${esc(String(s.id || s.start).slice(0, 8))}</code></td>
+            <td style="font-size:12px;color:var(--mu);white-space:nowrap">${timeStr}</td>
+            <td>
+              <div style="font-weight:600;font-size:12px;color:#0f172a">${esc(s.storeName || 'Store')}</div>
+              <div style="font-family:monospace;font-size:11px;color:#0284c7">${esc(s.userEmail || '')}</div>
+            </td>
+            <td>
+              <div><b>${esc(s.table || 'Table')}</b></div>
+              ${orderTypeBadge}
+            </td>
+            <td>
+              ${s.cust?.name ? `<b>${esc(s.cust.name)}</b><br>` : ''}
+              ${s.cust?.phone ? `<small style="color:var(--mu)">${esc(s.cust.phone)}</small>` : '<span style="color:var(--mu)">Walk-in</span>'}
+            </td>
+            <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(itemsBrief)}">
+              ${itemsBrief}
+            </td>
+            <td>
+              <span class="badge ${modeClass}">${esc(s.mode || 'Cash')}</span>
+              ${statusBadge}
+            </td>
+            <td class="r" style="font-weight:800;font-size:14px;color:var(--tx)">
+              ${money(s.total)}
+            </td>
+            <td class="c">
+              <button onclick="event.stopPropagation();viewSaleReceipt('${esc(s.id || s.start)}')" class="btn sm" style="padding:4px 8px">
+                👁️ View
+              </button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    /* ─── DATE PRESET TOGGLE ─── */
+    function handleDatePresetChange() {
+      const preset = document.getElementById('salesFilterDatePreset')?.value;
+      const wrap = document.getElementById('customDateRangeWrap');
+      if (wrap) wrap.style.display = preset === 'CUSTOM' ? 'inline-flex' : 'none';
+      renderSalesTable();
+    }
+
+    /* ─── USER DEEP-DIVE INSPECTOR ─── */
+    function inspectUserDeepDive(userEmailOrId) {
+      selectedUserId = userEmailOrId;
+      switchView('user-deepdive');
+      renderDeepDiveUser();
+    }
+
+    function onDeepDiveUserChange(val) {
+      if (!val) return;
+      selectedUserId = val;
+      renderDeepDiveUser();
+    }
+
+    function refreshCurrentDeepDiveUser() {
+      if (!selectedUserId) {
+        showToast('Please select a user first.', 'error');
+        return;
+      }
+      renderDeepDiveUser();
+      showToast('User data reloaded.', 'success');
+    }
+
+    function renderDeepDiveUser() {
+      const ddSelect = document.getElementById('ddUserPicker');
+      if (ddSelect && selectedUserId) ddSelect.value = selectedUserId;
+
+      const user = allUsers.find(u => u.email === selectedUserId || u.id === selectedUserId);
+      if (!user) return;
+
+      document.getElementById('ddTitle').textContent = user.name || 'Store Account';
+      document.getElementById('ddEmail').textContent = user.email || 'No email';
+      document.getElementById('ddUid').textContent = 'UID: ' + String(user.id).slice(0, 16);
+      document.getElementById('ddAvatar').textContent = (user.email || user.name || 'U').charAt(0).toUpperCase();
+
+      const userSales = allSales.filter(s => s.userEmail === user.email || s.userEmail === user.id);
+      const totalRev = userSales.reduce((a,b) => a + (+b.total || 0), 0);
+      const cashRev = userSales.filter(s => s.mode === 'Cash').reduce((a,b) => a + (+b.total || 0), 0);
+      const upiRev = userSales.filter(s => s.mode === 'UPI').reduce((a,b) => a + (+b.total || 0), 0);
+      const dueRev = userSales.filter(s => s.status === 'UNPAID').reduce((a,b) => a + (+b.total || 0), 0);
+
+      document.getElementById('ddTotalRev').textContent = money(totalRev);
+      document.getElementById('ddTotalBills').textContent = userSales.length;
+      document.getElementById('ddCashUpi').textContent = `${money(cashRev)} / ${money(upiRev)}`;
+      document.getElementById('ddDueTotal').textContent = money(dueRev);
+
+      const tbody = document.getElementById('ddSalesTableBody');
+      if (!userSales.length) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--mu)">No recorded sales for this merchant yet.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = userSales.map(s => {
+        const timeStr = s.end ? new Date(s.end).toLocaleString('en-IN') : 'Recent';
+        const itemsDetail = (s.items || []).map(i => `${esc(i.name)}${i.var ? ` (${esc(i.var)})` : ''} x${i.qty} = ${money((+i.qty||1)*(+i.price||0))}`).join('<br>');
+        
+        return `
+          <tr onclick="viewSaleReceipt('${esc(s.id || s.start)}')" style="cursor:pointer">
+            <td><code style="font-weight:700;color:#0284c7">#${esc(String(s.id || s.start).slice(0, 8))}</code></td>
+            <td style="font-size:12px;color:var(--mu);white-space:nowrap">${timeStr}</td>
+            <td>
+              <b>${esc(s.table || 'Table')}</b> (${esc(s.orderType || 'Dine-In')})<br>
+              <span class="badge ${s.mode==='Cash'?'cash':s.mode==='UPI'?'upi':''}">${esc(s.mode)}</span>
+            </td>
+            <td>
+              ${s.cust?.name ? `<b>${esc(s.cust.name)}</b><br>` : ''}
+              ${s.cust?.phone ? `<small style="color:var(--mu)">${esc(s.cust.phone)}</small>` : '<span style="color:var(--mu)">Walk-in</span>'}
+            </td>
+            <td style="font-size:12px">${itemsDetail || 'None'}</td>
+            <td>${s.status === 'UNPAID' ? '<span class="badge unpaid">UNPAID</span>' : '<span class="badge paid">PAID</span>'}</td>
+            <td class="r" style="color:var(--mu)">${s.disc ? money(s.disc) : '₹0'}</td>
+            <td class="r" style="font-weight:800;font-size:14px">${money(s.total)}</td>
+            <td class="c">
+              <button onclick="event.stopPropagation();viewSaleReceipt('${esc(s.id || s.start)}')" class="btn sm">👁️ Bill</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    /* ─── RENDER DISH PERFORMANCE TABLE ─── */
+    function renderDishesTable() {
+      const tbody = document.getElementById('dishesTableBody');
+      const dishMap = new Map();
+
+      allSales.forEach(s => {
+        (s.items || []).forEach(it => {
+          const name = it.name + (it.var ? ` (${it.var})` : '');
+          const existing = dishMap.get(name) || { qty: 0, revenue: 0 };
+          const qty = +it.qty || 1;
+          const lineTotal = qty * (+it.price || 0);
+
+          dishMap.set(name, {
+            qty: existing.qty + qty,
+            revenue: existing.revenue + lineTotal
+          });
+        });
+      });
+
+      const dishes = Array.from(dishMap.entries()).sort((a,b) => b[1].revenue - a[1].revenue);
+      const grandTotalSales = allSales.reduce((a,b) => a + (+b.total || 0), 0);
+
+      if (!dishes.length) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:30px;color:var(--mu)">No dishes recorded across sales.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = dishes.map(([name, data], idx) => {
+        const share = grandTotalSales ? ((data.revenue / grandTotalSales) * 100).toFixed(1) : 0;
+        return `
+          <tr>
+            <td><b style="color:var(--mu)">#${idx + 1}</b></td>
+            <td><b>${esc(name)}</b></td>
+            <td class="r" style="font-weight:700">${data.qty.toLocaleString('en-IN')} portions</td>
+            <td class="r" style="font-weight:800;color:var(--pri)">${money(data.revenue)}</td>
+            <td class="r"><span class="badge cloud">${share}%</span></td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    /* ─── RENDER RAW JSON VIEW ─── */
+    function renderJsonViewer() {
+      const el = document.getElementById('rawJsonViewer');
+      if (el) {
+        el.textContent = JSON.stringify(rawFirestoreExport, null, 2);
+      }
+    }
+
+    function copyRawJson() {
+      navigator.clipboard.writeText(JSON.stringify(rawFirestoreExport, null, 2)).then(() => {
+        showToast('Raw JSON copied to clipboard!', 'success');
+      });
+    }
+
+    /* ─── VIEW SALE RECEIPT MODAL ─── */
+    function viewSaleReceipt(saleId) {
+      const sale = allSales.find(s => String(s.id) === String(saleId) || String(s.start) === String(saleId));
+      if (!sale) return;
+
+      const user = allUsers.find(u => u.email === sale.userEmail);
+      const storeName = sale.storeName || (user?.name) || 'Food Store';
+      const userEmail = sale.userEmail || (user?.email) || 'N/A';
+      const dateStr = sale.end ? new Date(sale.end).toLocaleString('en-IN') : new Date().toLocaleString('en-IN');
+
+      let itemsHtml = (sale.items || []).map(it => {
+        const qty = +it.qty || 1;
+        const price = +it.price || 0;
+        const total = qty * price;
+        return `
+          <div class="receipt-row">
+            <span>${esc(it.name)}${it.var ? ` (${esc(it.var)})` : ''} x ${qty}</span>
+            <span>${money(total)}</span>
+          </div>
+        `;
+      }).join('') || '<div style="color:var(--mu)">No items</div>';
+
+      const html = `
+        <div class="receipt-hd">
+          <h4>${esc(storeName)}</h4>
+          <div>User: <b>${esc(userEmail)}</b></div>
+          <div style="font-size:11px;color:var(--mu)">Date: ${esc(dateStr)}</div>
+        </div>
+
+        <div class="receipt-row">
+          <span>Bill No: <b>#${esc(String(sale.id || sale.start).slice(0, 10))}</b></span>
+          <span>Table: <b>${esc(sale.table || 'N/A')}</b> (${esc(sale.orderType || 'Dine-In')})</span>
+        </div>
+
+        ${sale.cust?.name || sale.cust?.phone ? `
+          <div class="receipt-row">
+            <span>Customer: ${esc(sale.cust?.name || 'Guest')}</span>
+            <span>Phone: ${esc(sale.cust?.phone || '')}</span>
+          </div>
+        ` : ''}
+
+        <div class="receipt-divider"></div>
+        <div style="margin:8px 0">
+          ${itemsHtml}
+        </div>
+        <div class="receipt-divider"></div>
+
+        ${sale.disc ? `
+          <div class="receipt-row">
+            <span>Subtotal:</span>
+            <span>${money((+sale.total || 0) + (+sale.disc || 0))}</span>
+          </div>
+          <div class="receipt-row" style="color:#dc2626">
+            <span>Discount:</span>
+            <span>-${money(sale.disc)}</span>
+          </div>
+        ` : ''}
+
+        <div class="receipt-row" style="font-size:16px;font-weight:800;margin-top:6px">
+          <span>GRAND TOTAL:</span>
+          <span style="color:#e11d48">${money(sale.total)}</span>
+        </div>
+
+        <div class="receipt-divider"></div>
+        <div class="receipt-row" style="font-size:12px">
+          <span>Payment Mode: <b>${esc(sale.mode || 'Cash')}</b></span>
+          <span>Status: <b>${esc(sale.status || 'PAID')}</b></span>
+        </div>
+        ${sale.note ? `<div style="font-size:11.5px;color:var(--mu);margin-top:4px">Note: ${esc(sale.note)}</div>` : ''}
+      `;
+
+      document.getElementById('receiptContent').innerHTML = html;
+      document.getElementById('receiptModal').style.display = 'flex';
+    }
+
+    function closeReceiptModal() {
+      document.getElementById('receiptModal').style.display = 'none';
+    }
+
+    function printReceiptContent() {
+      const content = document.getElementById('receiptContent').innerHTML;
+      const win = window.open('', '_blank', 'width=380,height=550');
+      win.document.write(`
+        <html><head><title>Receipt Print</title>
+        <style>
+          body { font-family: monospace; padding: 15px; font-size: 13px; line-height: 1.4; color: #000; }
+          .receipt-hd { text-align: center; margin-bottom: 12px; border-bottom: 1px dashed #000; padding-bottom: 8px; }
+          .receipt-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+          .receipt-divider { border-top: 1px dashed #000; margin: 8px 0; }
+        </style>
+        </head><body>${content}</body></html>
+      `);
+      win.document.close();
+      win.focus();
+      setTimeout(() => { win.print(); win.close(); }, 350);
+    }
+
+    /* ─── TAB VIEW SWITCHING ─── */
+    function switchView(viewName) {
+      document.querySelectorAll('.view-tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.view === viewName);
+      });
+
+      document.getElementById('viewUsers').style.display = viewName === 'users' ? 'block' : 'none';
+      document.getElementById('viewSales').style.display = viewName === 'sales' ? 'block' : 'none';
+      document.getElementById('viewUserDeepDive').style.display = viewName === 'user-deepdive' ? 'block' : 'none';
+      document.getElementById('viewDishes').style.display = viewName === 'dishes' ? 'block' : 'none';
+      document.getElementById('viewJson').style.display = viewName === 'json' ? 'block' : 'none';
+
+      if (viewName === 'users') renderUsersTable();
+      if (viewName === 'sales') renderSalesTable();
+      if (viewName === 'user-deepdive') renderDeepDiveUser();
+      if (viewName === 'dishes') renderDishesTable();
+      if (viewName === 'json') renderJsonViewer();
+    }
+
+    /* ─── AUTH MODAL & LOGIN ─── */
+    function openAuthModal() {
+      document.getElementById('authModal').style.display = 'flex';
+      document.getElementById('authModalMsg').style.display = 'none';
+    }
+
+    function closeAuthModal() {
+      document.getElementById('authModal').style.display = 'none';
+    }
+
+    async function handleAdminLogin(e) {
+      e.preventDefault();
+      const email = document.getElementById('authEmail').value.trim();
+      const password = document.getElementById('authPassword').value;
+      const msg = document.getElementById('authModalMsg');
+      const btn = document.getElementById('authSubmitBtn');
+
+      if (!email || !password) return;
+      btn.disabled = true;
+      btn.textContent = 'Verifying...';
+
+      try {
+        const res = await window.FPC.apiFetch('/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email, password })
+        });
+        const user = res.user || res.data || res;
+        const token = res.token || res.accessToken;
+        if (token) {
+          localStorage.setItem('fp_auth_token', token);
+          localStorage.setItem('fp_auth_user', JSON.stringify(user));
+        }
+        window.FPC.currentUser = user;
+        adminAuthUser = user;
+        updateAuthUI(user);
+        closeAuthModal();
+        showToast('Signed in successfully as ' + (user.email || email), 'success');
+        refreshAllData(true);
+      } catch (err) {
+        msg.textContent = 'Sign-in failed: ' + (err.message || 'Check credentials');
+        msg.style.display = 'block';
+        msg.style.background = '#fef2f2';
+        msg.style.color = '#991b1b';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Sign In to Admin Portal';
+      }
+    }
+
+    /* ─── DIRECT ACCOUNT LOOKUP ─── */
+    function promptDirectEmailLookup() {
+      document.getElementById('lookupModal').style.display = 'flex';
+      setTimeout(() => document.getElementById('lookupEmailInput')?.focus(), 100);
+    }
+
+    function closeLookupModal() {
+      document.getElementById('lookupModal').style.display = 'none';
+    }
+
+    async function executeDirectLookup() {
+      const query = (document.getElementById('lookupEmailInput')?.value || '').trim().toLowerCase();
+      if (!query) return;
+
+      closeLookupModal();
+      showToast(`Searching for "${query}" in MongoDB...`, 'info');
+
+      try {
+        const existing = allUsers.find(u => (u.email && u.email.toLowerCase().includes(query)) || (u.id && String(u.id).toLowerCase().includes(query)));
+        if (existing) {
+          populateUserFilters();
+          inspectUserDeepDive(existing.email || existing.id);
+          showToast(`Found user account "${existing.name}" (${existing.email})!`, 'success');
+          return;
+        }
+
+        // Try querying users from server
+        const res = await window.FPC.apiFetch('/api/auth/users');
+        const usersList = res.data || res.users || [];
+        const matched = usersList.find(u => 
+          (u.email && u.email.toLowerCase().includes(query)) ||
+          (u.foodypayId && u.foodypayId.toLowerCase().includes(query)) ||
+          (u.name && u.name.toLowerCase().includes(query)) ||
+          (u.businessName && u.businessName.toLowerCase().includes(query))
+        );
+
+        if (matched) {
+          const newUser = {
+            id: matched.foodypayId || matched._id,
+            email: matched.email,
+            name: matched.businessName || matched.name || 'Store Account',
+            phone: matched.contactNo || matched.phone || '',
+            allTimeRevenue: 0,
+            allTimeOrdersCount: 0,
+            todayRevenue: 0,
+            lastSyncedAt: matched.updatedAt || matched.createdAt || new Date().toISOString()
+          };
+          allUsers.unshift(newUser);
+          populateUserFilters();
+          inspectUserDeepDive(newUser.email);
+          showToast(`Found user "${newUser.name}" (${newUser.email})!`, 'success');
+        } else {
+          showToast(`No user found matching "${query}".`, 'error');
+        }
+      } catch (err) {
+        showToast('Lookup error: ' + err.message, 'error');
+      }
+    }
+
+    /* ─── EXPORT CSV HELPERS ─── */
+    function exportUsersCSV() {
+      if (!allUsers.length) return showToast('No user data to export.', 'error');
+      const headers = ['Email', 'Restaurant Name', 'Phone', 'UID', 'Lifetime Revenue (INR)', 'Total Orders', 'Today Revenue (INR)', 'Last Synced'];
+      const rows = allUsers.map(u => [
+        `"${u.email}"`,
+        `"${(u.name || '').replace(/"/g, '""')}"`,
+        `"${u.phone || ''}"`,
+        `"${u.id || ''}"`,
+        u.allTimeRevenue || 0,
+        u.allTimeOrdersCount || 0,
+        u.todayRevenue || 0,
+        `"${u.lastSyncedAt || ''}"`
+      ]);
+
+      downloadCSV('FoodyPay_Users_' + new Date().toISOString().split('T')[0] + '.csv', [headers, ...rows]);
+    }
+
+    function exportSalesCSV() {
+      if (!allSales.length) return showToast('No sales data to export.', 'error');
+      const headers = ['Bill ID', 'Date Time', 'User Gmail', 'Store Name', 'Table', 'Order Type', 'Customer Name', 'Customer Phone', 'Payment Mode', 'Status', 'Discount', 'Total Amount'];
+      const rows = allSales.map(s => [
+        `"${s.id || s.start || ''}"`,
+        `"${s.end ? new Date(s.end).toLocaleString('en-IN') : ''}"`,
+        `"${s.userEmail || ''}"`,
+        `"${(s.storeName || '').replace(/"/g, '""')}"`,
+        `"${s.table || ''}"`,
+        `"${s.orderType || 'Dine-In'}"`,
+        `"${(s.cust?.name || '').replace(/"/g, '""')}"`,
+        `"${s.cust?.phone || ''}"`,
+        `"${s.mode || 'Cash'}"`,
+        `"${s.status || 'PAID'}"`,
+        s.disc || 0,
+        s.total || 0
+      ]);
+
+      downloadCSV('FoodyPay_All_Sales_' + new Date().toISOString().split('T')[0] + '.csv', [headers, ...rows]);
+    }
+
+    function exportCurrentUserSalesCSV() {
+      if (!selectedUserId) return;
+      const userSales = allSales.filter(s => s.userEmail === selectedUserId || s.userEmail === selectedUserId);
+      if (!userSales.length) return showToast('No sales for this user.', 'error');
+
+      const headers = ['Bill ID', 'Date Time', 'Table', 'Order Type', 'Customer Name', 'Customer Phone', 'Items', 'Payment Mode', 'Status', 'Total'];
+      const rows = userSales.map(s => [
+        `"${s.id || s.start || ''}"`,
+        `"${s.end ? new Date(s.end).toLocaleString('en-IN') : ''}"`,
+        `"${s.table || ''}"`,
+        `"${s.orderType || 'Dine-In'}"`,
+        `"${(s.cust?.name || '').replace(/"/g, '""')}"`,
+        `"${s.cust?.phone || ''}"`,
+        `"${(s.items || []).map(i => `${i.name} x${i.qty}`).join('; ').replace(/"/g, '""')}"`,
+        `"${s.mode || 'Cash'}"`,
+        `"${s.status || 'PAID'}"`,
+        s.total || 0
+      ]);
+
+      downloadCSV(`Sales_${selectedUserId}_${new Date().toISOString().split('T')[0]}.csv`, [headers, ...rows]);
+    }
+
+    function exportDishesCSV() {
+      const dishMap = new Map();
+      allSales.forEach(s => {
+        (s.items || []).forEach(it => {
+          const name = it.name + (it.var ? ` (${it.var})` : '');
+          const existing = dishMap.get(name) || { qty: 0, revenue: 0 };
+          dishMap.set(name, {
+            qty: existing.qty + (+it.qty || 1),
+            revenue: existing.revenue + ((+it.qty || 1) * (+it.price || 0))
+          });
+        });
+      });
+
+      const headers = ['Dish Name', 'Portions Sold', 'Total Revenue (INR)'];
+      const rows = Array.from(dishMap.entries())
+        .sort((a,b) => b[1].revenue - a[1].revenue)
+        .map(([name, data]) => [`"${name.replace(/"/g, '""')}"`, data.qty, data.revenue]);
+
+      downloadCSV('Dishes_Performance_' + new Date().toISOString().split('T')[0] + '.csv', [headers, ...rows]);
+    }
+
+    function downloadCSV(filename, rows) {
+      const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      showToast('Downloaded ' + filename, 'success');
+    }
+
+    // Startup
+    window.addEventListener('DOMContentLoaded', initAdmin);
+  </script>
+</body>
+</html>

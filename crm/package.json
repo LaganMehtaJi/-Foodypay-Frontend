@@ -1,0 +1,80 @@
+{
+  "name": "foodypay-pos-crm",
+  "productName": "Foodypay.in",
+  "version": "2.0.0",
+  "description": "Foodypay.in POS & Restaurant CRM Desktop Application with In-House Thermal Print Engine",
+  "main": "electron-main.js",
+  "scripts": {
+    "start": "electron .",
+    "electron": "electron .",
+    "printserver": "node PrintServer/server.js",
+    "dist": "electron-builder",
+    "dist:portable": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.foodypay.crmpos",
+    "productName": "Foodypay.in",
+    "copyright": "Copyright © 2026 LAGAN MEHTA",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron-main.js",
+      "electron-preload.js",
+      "printerService.js",
+      "index.html",
+      "package.json",
+      "Logo.png",
+      "Logo.ico",
+      "icon.png",
+      "PrintServer/**/*",
+      "api/**/*",
+      "admin.html"
+    ],
+    "asarUnpack": [
+      "PrintServer/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "Logo.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Foodypay.in",
+      "uninstallDisplayName": "Foodypay.in (Developed by Lagan Mehta)"
+    }
+  },
+  "keywords": [
+    "foodypay",
+    "pos",
+    "crm",
+    "restaurant",
+    "electron",
+    "thermal-printing"
+  ],
+  "author": "LAGAN MEHTA",
+  "license": "ISC",
+  "dependencies": {
+    "pdf-to-printer": "^5.8.1"
+  },
+  "devDependencies": {
+    "electron": "^34.0.0",
+    "electron-builder": "^26.15.3"
+  }
+}

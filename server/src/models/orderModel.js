@@ -1,7 +1,9 @@
 import mongoose from 'mongoose';
 
 const orderItemSchema = new mongoose.Schema({
+  pid: { type: String, default: '' },
   name: { type: String, required: true },
+  v: { type: String, default: 'Regular' },
   qty: { type: Number, required: true, default: 1 },
   price: { type: Number, required: true },
   isVeg: { type: Boolean, default: true },
@@ -14,6 +16,12 @@ const orderSchema = new mongoose.Schema(
       ref: 'User',
       required: true,
       index: true,
+    },
+    foodypayId: {
+      type: String,
+      index: true,
+      trim: true,
+      default: '',
     },
     orderId: {
       type: String,
@@ -38,8 +46,16 @@ const orderSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['new', 'preparing', 'ready', 'out_for_delivery', 'dispatched', 'delivered', 'served', 'completed', 'cancelled'],
+      enum: ['new', 'ordering', 'kot_printed', 'bill_printed', 'billed', 'settled', 'preparing', 'ready', 'out_for_delivery', 'dispatched', 'delivered', 'served', 'completed', 'cancelled'],
       default: 'new',
+    },
+    kotPrinted: {
+      type: Boolean,
+      default: false,
+    },
+    billPrinted: {
+      type: Boolean,
+      default: false,
     },
     address: {
       type: String,
@@ -48,6 +64,21 @@ const orderSchema = new mongoose.Schema(
     paymentMode: {
       type: String,
       default: 'Cash',
+    },
+    waiterId: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    waiterName: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    placedBy: {
+      type: String,
+      enum: ['Customer', 'Waiter', 'Counter'],
+      default: 'Customer',
     },
     seen: {
       type: Boolean,

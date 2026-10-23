@@ -1,0 +1,12 @@
+{
+  "name": "foodypay-printserver",
+  "version": "1.0.0",
+  "description": "Local Print Server for FoodyPay CRM & POS",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": ["printing", "thermal", "escpos", "foodypay"],
+  "author": "FoodyPay",
+  "license": "ISC"
+}
