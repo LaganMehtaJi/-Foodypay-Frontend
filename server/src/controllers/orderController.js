@@ -110,6 +110,56 @@ export const createPublicOrder = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Merchant account not found for order placement' });
     }
 
+    const rawT = String(table || 'Table 1').trim();
+    const cleanNum = rawT.replace(/^table\s*/i, '').trim();
+    const tableRegex = new RegExp(`^(table\\s*)?${cleanNum}$`, 'i');
+
+    const formattedItems = (items || []).map(i => ({
+      pid: i.pid || '',
+      name: i.name,
+      v: i.v || 'Regular',
+      price: Number(i.price !== undefined ? i.price : (i.p !== undefined ? i.p : 0)),
+      qty: Number(i.qty || 1),
+      isVeg: i.isVeg !== false,
+    }));
+
+    // Prevent table order overlapping: Merge into existing running order if table is already active
+    if (type !== 'Delivery' && type !== 'Pickup') {
+      const existingActiveOrder = await Order.findOne({
+        user: targetUser._id,
+        table: { $regex: tableRegex },
+        status: { $nin: ['settled', 'completed', 'cancelled'] },
+      }).sort({ createdAt: -1 });
+
+      if (existingActiveOrder) {
+        existingActiveOrder.items.push(...formattedItems);
+        existingActiveOrder.subtotal = (existingActiveOrder.subtotal || 0) + (Number(subtotal) || 0);
+        existingActiveOrder.discount = (existingActiveOrder.discount || 0) + (Number(discount) || 0);
+        existingActiveOrder.tax = (existingActiveOrder.tax || 0) + (Number(tax) || 0);
+        existingActiveOrder.total = (existingActiveOrder.total || 0) + (Number(total) || 0);
+        if (note && note.trim()) {
+          existingActiveOrder.note = existingActiveOrder.note ? `${existingActiveOrder.note} | ${note.trim()}` : note.trim();
+        }
+        if (waiterName) {
+          existingActiveOrder.waiterName = waiterName;
+          existingActiveOrder.waiterId = waiterId || existingActiveOrder.waiterId;
+        }
+        existingActiveOrder.status = (existingActiveOrder.status === 'bill_printed') ? 'bill_printed' : 'kot_printed';
+        existingActiveOrder.seen = false; // Triggers fresh chime on reception POS
+        existingActiveOrder.updatedAt = new Date().toISOString();
+
+        await existingActiveOrder.save();
+
+        return res.status(200).json({
+          success: true,
+          message: `Added ${formattedItems.length} new items to running order on ${rawT}`,
+          data: existingActiveOrder,
+          merged: true,
+          storage: 'mongodb_primary',
+        });
+      }
+    }
+
     const count = await Order.countDocuments({ user: targetUser._id });
     const orderId = `#FP-${1080 + count + 1}`;
 
@@ -128,14 +178,7 @@ export const createPublicOrder = async (req, res, next) => {
       waiterId: waiterId || '',
       waiterName: waiterName || '',
       placedBy: placedBy || (waiterId ? 'Waiter' : 'Customer'),
-      items: (items || []).map(i => ({
-        pid: i.pid || '',
-        name: i.name,
-        v: i.v || 'Regular',
-        price: Number(i.price !== undefined ? i.price : (i.p !== undefined ? i.p : 0)),
-        qty: Number(i.qty || 1),
-        isVeg: i.isVeg !== false,
-      })),
+      items: formattedItems,
       subtotal: Number(subtotal) || 0,
       discount: Number(discount) || 0,
       tax: Number(tax) || 0,

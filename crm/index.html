@@ -3613,10 +3613,10 @@ function newPickup(){$('#modal').innerHTML=`<div class="modal"><div class="box" 
 function savePickup(){const n=$('#dn').value.trim()||'Client',p=normPh($('#dp').value);if(p&&!okPh(p))return alert('Contact number must be exactly 10 digits');const k='d_'+uid();if(p)(S.cust=S.cust||{})[p]={name:n,addr:''};S.orders[k]={start:Date.now(),items:[],printed:false,disc:0,pickup:true,del:{name:n,phone:p||'Walk-in',addr:''}};save();openT(k)}
 function saveDel(){const n=$('#dn').value.trim()||'Client',p=normPh($('#dp').value);if(p&&!okPh(p))return alert('Contact number must be exactly 10 digits (you entered '+p.length+')');const k='d_'+uid();if(p)(S.cust=S.cust||{})[p]={name:n,addr:$('#da').value.trim()};S.orders[k]={start:Date.now(),items:[],printed:false,disc:0,del:{name:n,phone:p||'',addr:$('#da').value.trim()}};save();openT(k)}
 function hd(o,a,t){return o&&o.del?(o.pickup?'Pickup: ':'Delivery: ')+esc(o.del.name)+(o.del.phone?'<br>Ph: '+esc(o.del.phone):'')+(o.del.addr?'<br>'+esc(o.del.addr):''):esc(a.name)+' · Table '+esc(t.name)}
-function addArea(){askText('Category / area name (e.g. Cafe, Family Hall)','',n=>{S.areas.push({name:n,tables:[]});save();render()})}
-function renameArea(i){askText('Rename area',S.areas[i].name,n=>{S.areas[i].name=n;save();render()})}
-function delArea(i){if(S.areas[i].tables.some(t=>S.orders[t.id]))return alert('Close running orders first');if(confirm('Delete area?')){S.areas.splice(i,1);save();render()}}
-function addTable(i){askText('Table name / number','',n=>{S.areas[i].tables.push({id:uid(),name:n});save();render()})}
+function addArea(){askText('Category / area name (e.g. Cafe, Family Hall)','',n=>{S.areas.push({name:n,tables:[]});save();if(window.syncCatalogToCloudDebounced)window.syncCatalogToCloudDebounced();render()})}
+function renameArea(i){askText('Rename area',S.areas[i].name,n=>{S.areas[i].name=n;save();if(window.syncCatalogToCloudDebounced)window.syncCatalogToCloudDebounced();render()})}
+function delArea(i){if(S.areas[i].tables.some(t=>S.orders[t.id]))return alert('Close running orders first');if(confirm('Delete area?')){S.areas.splice(i,1);save();if(window.syncCatalogToCloudDebounced)window.syncCatalogToCloudDebounced();render()}}
+function addTable(i){askText('Table name / number','',n=>{S.areas[i].tables.push({id:uid(),name:n});save();if(window.syncCatalogToCloudDebounced)window.syncCatalogToCloudDebounced();render()})}
 /* ORDER */
 function openT(id){cur=id;q='';dr={name:'',phone:'',note:''};orderUI()}
 function tinfo(id){const od=S.orders[id];if(od&&od.del)return{t:{id,name:od.del.name},a:{name:od.pickup?'Pickup':'Delivery'}};for(const a of S.areas){const t=a.tables.find(t=>t.id==id);if(t)return{t,a}}}
