@@ -1751,14 +1751,15 @@ function playOrderChime() {
 window.onNewCloudOrder = function(order) {
   if (!order || !order.table) return;
   const rawTable = String(order.table).trim();
-  const cleanTable = rawTable.toLowerCase();
+  const normalize = (s) => String(s || '').toLowerCase().replace(/^table\s*/i, '').trim();
+  const orderTableNorm = normalize(rawTable);
 
   let targetTableId = null;
 
   for (const a of (S.areas || [])) {
     for (const t of (a.tables || [])) {
-      const tn = String(t.name).trim().toLowerCase();
-      if (tn === cleanTable || `table ${tn}` === cleanTable || cleanTable === `table ${tn}` || cleanTable.includes(tn)) {
+      const tn = normalize(t.name);
+      if (tn === orderTableNorm || t.id === rawTable || t.id === targetTableId) {
         targetTableId = t.id;
         break;
       }
@@ -1771,12 +1772,14 @@ window.onNewCloudOrder = function(order) {
     if (!S.areas || !S.areas.length) {
       S.areas = [{ name: 'Restaurant', tables: [] }];
     }
-    const newT = { id: uid(), name: rawTable };
+    const newT = { id: uid(), name: orderTableNorm ? `Table ${orderTableNorm}` : rawTable };
     S.areas[0].tables.push(newT);
     targetTableId = newT.id;
   }
 
+  const isWaiter = order.placedBy === 'Waiter' || !!order.waiterName || !!order.waiterId;
   const existingOrd = S.orders[targetTableId] || { items: [] };
+
   const newItems = (order.items || []).map(item => {
     let itemPrice = Number(item.price !== undefined ? item.price : (item.p !== undefined ? item.p : 0));
     let variantName = item.v || 'Regular';
@@ -1804,33 +1807,44 @@ window.onNewCloudOrder = function(order) {
       p: itemPrice,
       qty: Number(item.qty || 1),
       isVeg: item.isVeg !== false,
-      sent: false,
+      sent: isWaiter,
+      kot: isWaiter,
       served: false
     };
   });
 
-  existingOrd.items = [...(existingOrd.items || []), ...newItems];
+  existingOrd.items = newItems;
   existingOrd.cust = {
-    name: order.customer || 'Walk-in Guest',
+    name: order.customer || (isWaiter ? `Diner (Served by ${order.waiterName || 'Waiter'})` : 'Walk-in Guest'),
     phone: order.phone || ''
   };
   if (order.note) {
-    existingOrd.note = existingOrd.note ? `${existingOrd.note} | ${order.note}` : order.note;
+    existingOrd.note = order.note;
   }
-  existingOrd.orderId = order.orderId || existingOrd.orderId;
-  existingOrd.start = existingOrd.start || Date.now();
+  existingOrd.orderId = order.orderId || existingOrd.orderId || ('#FP-' + Math.floor(1000 + Math.random() * 9000));
+  existingOrd.start = existingOrd.start || (order.createdAt ? new Date(order.createdAt).getTime() : Date.now());
   existingOrd.cloudOrder = true;
+  if (isWaiter) {
+    existingOrd.kotPrinted = true;
+    existingOrd.placedBy = 'Waiter';
+    existingOrd.waiterName = order.waiterName || '';
+    existingOrd.waiterId = order.waiterId || '';
+  }
 
   S.orders[targetTableId] = existingOrd;
   save();
 
   playOrderChime();
-  showToast(`🔔 ${rawTable} se naya order aaya: ${order.customer || 'Guest'} (${(order.items||[]).length} items, ₹${order.total || 0})`, 'success');
+  const senderInfo = isWaiter ? `🤵 Waiter ${order.waiterName || ''}` : `👤 ${existingOrd.cust.name}`;
+  showToast(`🔔 ${rawTable} se naya order aaya: ${senderInfo} (${newItems.length} items, ₹${order.total || 0})`, 'success');
 
+  // Trigger instant reactive re-render
   if (typeof cur !== 'undefined' && cur === targetTableId) {
     if (typeof orderUI === 'function') orderUI();
   }
-  if (typeof tab !== 'undefined' && tab === 'tables') {
+  if (typeof render === 'function') {
+    render();
+  } else if (typeof vTables === 'function') {
     vTables();
   }
 };
@@ -1840,7 +1854,7 @@ setTimeout(() => {
   if (window.FPC_Sync && typeof window.FPC_Sync.startLiveOrderPolling === 'function') {
     window.FPC_Sync.startLiveOrderPolling(window.onNewCloudOrder);
   }
-}, 2000);
+}, 500);
 
 /* TABLES */
 function vTables(){

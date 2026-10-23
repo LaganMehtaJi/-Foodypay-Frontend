@@ -10,6 +10,9 @@
     if (window.FOODYPAY_API_URL) return window.FOODYPAY_API_URL.replace(/\/+$/, '');
     const custom = localStorage.getItem('fp_server_url');
     if (custom && custom.trim()) return custom.trim().replace(/\/+$/, '');
+    if (typeof window !== 'undefined' && window.location && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) {
+      return `${window.location.origin}/api`;
+    }
     return 'http://localhost:3000/api';
   }
 
@@ -752,8 +755,8 @@
       }
     };
 
-    liveOrdersInterval = setInterval(checkNewOrders, 3000);
-    setTimeout(checkNewOrders, 1000);
+    liveOrdersInterval = setInterval(checkNewOrders, 1500);
+    setTimeout(checkNewOrders, 500);
   }
 
   /* ─────────────────────────────────────────────
@@ -870,6 +873,7 @@
   window.syncAllToFirebase = syncAll;
   window.fetchAndSyncAllFromFirebase = fetchAndSyncAll;
   window.pullFromFirebase = fetchAndSyncAll;
+  window.initRealtimeSalesListener = initRealtimeListener;
 
   // Initialize on DOM ready
   if (document.readyState === 'loading') {
