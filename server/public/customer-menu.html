@@ -2178,6 +2178,9 @@
           if (ord.status !== 'settled' && ord.status !== 'completed' && ord.status !== 'cancelled' && ord.table) {
             const raw = String(ord.table).toLowerCase().trim();
             const clean = raw.replace(/^table\s*/i, '').trim();
+            // Retain the newest order per table
+            if (liveRunningOrders[clean]) return;
+
             const val = {
               _id: ord._id,
               orderId: ord.orderId,
@@ -2187,8 +2190,10 @@
               total: ord.total || 0,
               subtotal: ord.subtotal || 0,
               status: ord.status || 'ordering',
-              kotPrinted: !!ord.kotPrinted,
-              billPrinted: !!ord.billPrinted,
+              kotPrinted: !!(ord.kotPrinted || ord.placedBy === 'Waiter' || ord.status === 'kot_printed'),
+              billPrinted: !!(ord.billPrinted || ord.status === 'bill_printed'),
+              waiterName: ord.waiterName || '',
+              placedBy: ord.placedBy || '',
               createdAt: ord.createdAt
             };
             liveRunningOrders[raw] = val;
@@ -2204,12 +2209,12 @@
     }
   }
 
-  // Periodic Auto-Sync with POS (every 3.5 seconds)
+  // Periodic Auto-Sync with POS & Other Waiters (every 1.5 seconds)
   setInterval(() => {
     if (isWaiterMode) {
       fetchLiveTableOrders(false);
     }
-  }, 3500);
+  }, 1500);
 
   function renderWaiterTablesDashboard() {
     const container = document.getElementById('waiterTablesCardsContainer');
@@ -2350,7 +2355,7 @@
 
                     <div style="margin:4px 0">
                       <div class="waiter-tb-amount" style="font-size:16px;font-weight:900;color:#0f172a">₹${order.total || 0}</div>
-                      <div style="font-size:11.5px;font-weight:700;color:#334155">${statusLabel}</div>
+                      <div style="font-size:11.5px;font-weight:700;color:#334155">${order.waiterName ? `🤵 ${order.waiterName} · ` : ''}${statusLabel}</div>
                       <div class="waiter-tb-items-count">${itemsCount} items ${itemsNames ? `· <small style="color:#475569">${itemsNames}</small>` : ''}</div>
                     </div>
 
