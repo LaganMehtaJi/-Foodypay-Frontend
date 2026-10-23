@@ -372,12 +372,17 @@
     }
     .waiter-grid-layout {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 12px;
     }
-    @media (min-width: 480px) {
+    @media (min-width: 680px) {
       .waiter-grid-layout {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+    @media (min-width: 1024px) {
+      .waiter-grid-layout {
+        grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
       }
     }
 
@@ -386,7 +391,11 @@
       background: #FFFFFF;
       border: 1.5px solid #E2E8F0;
       border-radius: 14px;
-      padding: 14px 12px;
+      padding: 12px 10px;
+      box-sizing: border-box;
+      width: 100%;
+      min-width: 0;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
@@ -458,13 +467,20 @@
       font-weight: 600;
     }
     .waiter-tb-actions {
+      width: 100%;
+      box-sizing: border-box;
       display: flex;
       gap: 6px;
       margin-top: 8px;
     }
     .waiter-tb-btn {
       flex: 1;
-      padding: 6px 8px;
+      min-width: 0;
+      padding: 7px 4px;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+      box-sizing: border-box;
       font-size: 11px;
       font-weight: 800;
       border-radius: 6px;
@@ -2303,12 +2319,20 @@
       fullOrdersList = [];
       if (json.success && Array.isArray(json.data)) {
         fullOrdersList = json.data;
+        const evaluatedTables = new Set();
         json.data.forEach(ord => {
-          if (ord.status !== 'settled' && ord.status !== 'completed' && ord.status !== 'cancelled' && ord.table) {
+          if (ord && ord.table) {
             const raw = String(ord.table).toLowerCase().trim();
             const clean = raw.replace(/^table\s*/i, '').trim();
-            // Retain the newest order per table
-            if (liveRunningOrders[clean]) return;
+
+            if (evaluatedTables.has(clean)) return;
+            evaluatedTables.add(clean);
+
+            const isSettled = (ord.status === 'settled' || ord.status === 'completed' || ord.status === 'cancelled');
+            const hasItems = Array.isArray(ord.items) && ord.items.length > 0 && Number(ord.total || 0) > 0;
+            if (isSettled || !hasItems) return;
+
+
 
             const val = {
               _id: ord._id,
@@ -2380,7 +2404,7 @@
         const norm = rawName.toLowerCase().trim();
         const clean = norm.replace(/^table\s*/i, '').trim();
         const ord = liveRunningOrders[norm] || liveRunningOrders[clean] || liveRunningOrders[`table ${clean}`];
-        if (ord) {
+        if (ord && Array.isArray(ord.items) && ord.items.length > 0 && Number(ord.total || 0) > 0) {
           const rawStatus = String(ord.status || '').toLowerCase();
           const isKot = !!(ord.kotPrinted || rawStatus === 'kot_printed' || rawStatus === 'preparing');
           if (isKot) {
@@ -2443,7 +2467,7 @@
               const clean = norm.replace(/^table\s*/i, '').trim();
 
               const order = liveRunningOrders[norm] || liveRunningOrders[clean] || liveRunningOrders[`table ${clean}`];
-              const isOccupied = !!order;
+              const isOccupied = !!(order && Array.isArray(order.items) && order.items.length > 0 && Number(order.total || 0) > 0);
 
               if (isOccupied) {
                 const orderTime = order.createdAt ? new Date(order.createdAt).getTime() : Date.now();
@@ -2490,7 +2514,7 @@
 
                     <div class="waiter-tb-actions" onclick="event.stopPropagation()">
                       <button class="waiter-tb-btn primary" onclick="showWaiterMenuScreen('${displayName}')">
-                        <span>➕ Add Dishes</span>
+                        <span>➕ Add</span>
                       </button>
                       <button class="waiter-tb-btn" onclick="triggerRemoteKotPrint('${displayName}')" style="background:#FEF08A;color:#854D0E;border:1.5px solid #FACC15;font-weight:900" title="Print KOT on Reception Printer">
                         <span>🖨️ KOT</span>

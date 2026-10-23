@@ -522,6 +522,9 @@ export const updatePublicOrder = async (req, res, next) => {
     if (phone !== undefined) order.phone = phone;
     if (note !== undefined) order.note = note;
     if (status) order.status = status;
+    if (order.items.length === 0 || Number(order.total || 0) === 0) {
+      order.status = 'settled';
+    }
     if (paymentMode) order.paymentMode = paymentMode;
 
     order.updatedAt = new Date().toISOString();
@@ -654,6 +657,16 @@ export const syncPosTableStatus = async (req, res, next) => {
     const assignedStatus = isBill ? 'bill_printed' : (isKot ? 'kot_printed' : (cleanStatus || 'ordering'));
 
     if (activeOrder) {
+      if (formattedItems.length === 0 || Number(total || 0) === 0) {
+        activeOrder.status = 'settled';
+        activeOrder.seen = true;
+        await activeOrder.save();
+        return res.json({
+          success: true,
+          message: 'Table order cleared as blank (0 items)',
+          table: rawT,
+        });
+      }
       activeOrder.status = assignedStatus;
       activeOrder.kotPrinted = isKot;
       activeOrder.billPrinted = isBill;
@@ -674,6 +687,14 @@ export const syncPosTableStatus = async (req, res, next) => {
       });
     } else {
       // Create new active table order if items exist
+      if (formattedItems.length === 0 || Number(total || 0) === 0) {
+        return res.json({
+          success: true,
+          message: 'Table is blank, no order created',
+          table: rawT,
+        });
+      }
+
       const count = await Order.countDocuments({ user: targetUser._id });
       const orderId = `#FP-${1080 + count + 1}`;
 
@@ -803,6 +824,9 @@ export const updateOrder = async (req, res, next) => {
     if (tax !== undefined) order.tax = tax;
     if (total !== undefined) order.total = total;
     if (status) order.status = status;
+    if (order.items.length === 0 || Number(order.total || 0) === 0) {
+      order.status = 'settled';
+    }
 
     await order.save();
     const todayStats = await calculateTodayOrderStats(req.user._id);
@@ -833,6 +857,9 @@ export const updateOrderStatus = async (req, res, next) => {
     }
 
     if (status) order.status = status;
+    if (order.items.length === 0 || Number(order.total || 0) === 0) {
+      order.status = 'settled';
+    }
     if (paymentStatus) order.paymentStatus = paymentStatus;
     if (paymentLabel) order.paymentLabel = paymentLabel;
     if (status === 'completed' || status === 'preparing' || status === 'ready') {

@@ -1748,34 +1748,117 @@ function playOrderChime() {
   } catch (e) {}
 }
 
+// Smart Table Matcher: Maps any table string (e.g. "Table 1", "Restaurant - Table 1", "Cafe Table 1") to an EXISTING table in S.areas
+function findTableInAreas(rawTable) {
+  if (!rawTable || !S || !Array.isArray(S.areas) || !S.areas.length) return null;
+  const str = String(rawTable).trim().toLowerCase();
+
+  // 1. Direct ID or exact name match
+  for (const a of S.areas) {
+    for (const t of (a.tables || [])) {
+      if (t.id === rawTable || String(t.name).trim().toLowerCase() === str) {
+        return t.id;
+      }
+    }
+  }
+
+  // 2. Strip common prefixes like 'table', 'tbl', dashes, whitespace
+  const cleanStr = str.replace(/^table\s*[-:]?\s*/i, '').trim();
+  for (const a of S.areas) {
+    for (const t of (a.tables || [])) {
+      const tClean = String(t.name).toLowerCase().replace(/^table\s*[-:]?\s*/i, '').trim();
+      if (tClean === cleanStr) {
+        return t.id;
+      }
+    }
+  }
+
+  // 3. Extract Area and Table token (e.g. "Restaurant - Table 1" or "Cafe Table 1")
+  for (const a of S.areas) {
+    const aName = String(a.name || '').toLowerCase();
+    if (str.includes(aName)) {
+      for (const t of (a.tables || [])) {
+        const tClean = String(t.name).toLowerCase().replace(/^table\s*[-:]?\s*/i, '').trim();
+        const matchRegex = new RegExp('(^|[^a-z0-9])' + tClean + '([^a-z0-9]|$)', 'i');
+        if (matchRegex.test(str)) {
+          return t.id;
+        }
+      }
+    }
+  }
+
+  // 4. Token digits match (e.g. "1", "2", "T1")
+  const numMatch = str.match(/\b([tT]?\d+)\b/) || str.match(/(\d+)/);
+  if (numMatch) {
+    const token = numMatch[1].toLowerCase();
+    for (const a of S.areas) {
+      for (const t of (a.tables || [])) {
+        const tClean = String(t.name).toLowerCase().replace(/^table\s*[-:]?\s*/i, '').trim();
+        if (tClean === token || tClean === token.replace(/^t/, '')) {
+          return t.id;
+        }
+      }
+    }
+  }
+
+  // 5. Default fallback to first table of first area (NEVER create duplicate tables!)
+  if (S.areas[0] && S.areas[0].tables && S.areas[0].tables.length) {
+    return S.areas[0].tables[0].id;
+  }
+  return null;
+}
+
+// Auto-cleanup any previously created duplicate tables in S.areas
+function cleanupDuplicateTables() {
+  if (!S || !Array.isArray(S.areas)) return;
+  let changed = false;
+
+  S.areas.forEach(a => {
+    if (!Array.isArray(a.tables)) return;
+    const cleanTables = [];
+    const seenSimpleNames = new Set();
+
+    a.tables.forEach(t => {
+      const rawName = String(t.name || '').trim();
+      const norm = rawName.toLowerCase();
+      // Identify unwanted auto-generated duplicate tables like "Table restaurant table 1", "Table cafe table 1"
+      const isAutoDuplicate = norm.includes('restaurant') || norm.includes('cafe');
+
+      if (isAutoDuplicate) {
+        // Migrate running order from duplicate table to canonical table
+        const targetId = findTableInAreas(rawName);
+        if (targetId && targetId !== t.id && S.orders && S.orders[t.id]) {
+          if (!S.orders[targetId]) {
+            S.orders[targetId] = S.orders[t.id];
+          }
+          delete S.orders[t.id];
+        }
+        changed = true;
+        return; // Exclude duplicate table from areas!
+      }
+
+      const simpleName = norm.replace(/^table\s*[-:]?\s*/i, '').trim();
+      if (seenSimpleNames.has(simpleName)) {
+        changed = true;
+        return; // Exclude exact same table in the area
+      }
+      seenSimpleNames.add(simpleName);
+      cleanTables.push(t);
+    });
+
+    a.tables = cleanTables;
+  });
+
+  if (changed) {
+    save();
+  }
+}
+
 window.onNewCloudOrder = function(order) {
   if (!order || !order.table) return;
   const rawTable = String(order.table).trim();
-  const normalize = (s) => String(s || '').toLowerCase().replace(/^table\s*/i, '').trim();
-  const orderTableNorm = normalize(rawTable);
-
-  let targetTableId = null;
-
-  for (const a of (S.areas || [])) {
-    for (const t of (a.tables || [])) {
-      const tn = normalize(t.name);
-      if (tn === orderTableNorm || t.id === rawTable || t.id === targetTableId) {
-        targetTableId = t.id;
-        break;
-      }
-    }
-    if (targetTableId) break;
-  }
-
-  // Fallback: If table not found in S.areas, add table to first area
-  if (!targetTableId) {
-    if (!S.areas || !S.areas.length) {
-      S.areas = [{ name: 'Restaurant', tables: [] }];
-    }
-    const newT = { id: uid(), name: orderTableNorm ? `Table ${orderTableNorm}` : rawTable };
-    S.areas[0].tables.push(newT);
-    targetTableId = newT.id;
-  }
+  const targetTableId = findTableInAreas(rawTable);
+  if (!targetTableId) return;
 
   const isWaiter = order.placedBy === 'Waiter' || !!order.waiterName || !!order.waiterId;
   const existingOrd = S.orders[targetTableId] || { items: [] };
@@ -1862,6 +1945,7 @@ setTimeout(() => {
 
 /* TABLES */
 function vTables(){
+  cleanupDuplicateTables();
   // 0 items wale Delivery aur Pickup orders ko gayab karein
   Object.keys(S.orders).forEach(k => {
     if (k.startsWith('d_')) {
@@ -3945,6 +4029,7 @@ function switchOrderType(targetType) {
 
   if (targetType === 'pickup') {
     if (currentType === 'dinein') {
+      const oldTableKeyToFree = cur;
       const newKey = 'd_' + uid();
       const existingItems = o ? (o.items || []) : [];
       const newOrder = {
@@ -3970,6 +4055,7 @@ function switchOrderType(targetType) {
       save();
       orderUI();
       if (typeof vTables === 'function' && tab === 'tables') vTables();
+      if (window.FPC_Sync && typeof window.FPC_Sync.syncTableStatus === 'function') { window.FPC_Sync.syncTableStatus(oldTableKeyToFree || cur, 'settled', null); }
       showToast('🥡 Order converted to Pickup! Table is now free.', 'success');
     } else if (currentType === 'delivery') {
       if (!o) {
@@ -3988,6 +4074,7 @@ function switchOrderType(targetType) {
 
   if (targetType === 'delivery') {
     if (currentType === 'dinein') {
+      const oldTableKeyToFree = cur;
       const newKey = 'd_' + uid();
       const existingItems = o ? (o.items || []) : [];
       const newOrder = {
@@ -4013,6 +4100,7 @@ function switchOrderType(targetType) {
       save();
       orderUI();
       if (typeof vTables === 'function' && tab === 'tables') vTables();
+      if (window.FPC_Sync && typeof window.FPC_Sync.syncTableStatus === 'function') { window.FPC_Sync.syncTableStatus(oldTableKeyToFree || cur, 'settled', null); }
       showToast('🛵 Order converted to Delivery! Table is now free.', 'success');
     } else if (currentType === 'pickup') {
       if (!o) {
