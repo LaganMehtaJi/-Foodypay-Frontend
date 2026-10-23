@@ -6,9 +6,13 @@ import {
   deleteStaff,
   verifyWaiterPublic,
   staffLogin,
+  syncStaffBulk,
 } from '../controllers/staffController.js';
 
 const router = express.Router();
+
+// Bulk staff sync from POS
+router.post('/sync', syncStaffBulk);
 
 // Public routes for Waiter ordering & login
 router.get('/waiter/:uniqueId/:waiterId', verifyWaiterPublic);

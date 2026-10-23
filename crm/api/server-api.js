@@ -852,6 +852,7 @@
     startLiveOrderPolling: startLiveOrderPolling,
     syncTableStatus: syncTableStatus,
     syncTableStatusDebounced: syncTableStatusDebounced,
+    syncStaffToCloud: (m) => (window.syncStaffToCloud ? window.syncStaffToCloud(m) : Promise.resolve()),
   };
 
   // Backwards-compatible globals used across index.html
@@ -862,6 +863,10 @@
   window.syncTableStatusToCloud = syncTableStatus;
   window.syncTableStatusToCloudDebounced = syncTableStatusDebounced;
   window.syncSettingsToCloud = syncSettings;
+  window.syncStaffToCloud = window.syncStaffToCloud || function(m) {
+    if (typeof syncStaffToCloud === 'function') return syncStaffToCloud(m);
+    console.log('[Staff Sync] syncStaffToCloud fallback called');
+  };
   window.syncAllToFirebase = syncAll;
   window.fetchAndSyncAllFromFirebase = fetchAndSyncAll;
   window.pullFromFirebase = fetchAndSyncAll;

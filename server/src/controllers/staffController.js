@@ -241,3 +241,81 @@ export const staffLogin = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * @desc    Bulk sync staff from CRM to MongoDB Atlas
+ * @route   POST /api/staff/sync
+ * @access  Private / Public with foodypayId
+ */
+export const syncStaffBulk = async (req, res, next) => {
+  try {
+    const { foodypayId, staff } = req.body;
+    let targetUser = req.user;
+    let cleanFoodypayId = (foodypayId || (targetUser && targetUser.foodypayId) || '').trim().toUpperCase();
+
+    if (!targetUser) {
+      if (!cleanFoodypayId) cleanFoodypayId = 'FP-624358';
+      targetUser = await User.findOne({ foodypayId: cleanFoodypayId });
+      if (!targetUser) {
+        targetUser = await User.findOne({});
+      }
+    }
+    if (targetUser && !cleanFoodypayId) {
+      cleanFoodypayId = targetUser.foodypayId || 'FP-624358';
+    }
+
+    if (!targetUser) {
+      return res.status(400).json({ success: false, message: 'Valid foodypayId or authentication required' });
+    }
+
+    const staffArray = Array.isArray(staff) ? staff : [];
+    const validStaff = [];
+
+    for (const s of staffArray) {
+      if (!s || !s.name) continue;
+      const empId = (s.employeeId || s.id || '').trim();
+      if (!empId) continue;
+
+      const record = await Staff.findOneAndUpdate(
+        { foodypayId: cleanFoodypayId, employeeId: empId },
+        {
+          user: targetUser._id,
+          foodypayId: cleanFoodypayId,
+          employeeId: empId,
+          name: s.name.trim(),
+          phone: (s.phone || '').trim(),
+          duty: s.duty || 'Waiter',
+          pin: s.pin ? String(s.pin).trim() : '1234',
+          status: s.status || 'Active',
+          assignedTables: Array.isArray(s.assignedTables) ? s.assignedTables : [],
+          notes: s.notes || '',
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+      validStaff.push(record);
+    }
+
+    // Delete staff that were deleted in CRM
+    const activeEmpIds = staffArray.map(s => (s.employeeId || s.id || '').trim()).filter(Boolean);
+    if (activeEmpIds.length > 0) {
+      await Staff.deleteMany({
+        foodypayId: cleanFoodypayId,
+        employeeId: { $nin: activeEmpIds },
+      });
+    } else if (staffArray.length === 0) {
+      await Staff.deleteMany({
+        foodypayId: cleanFoodypayId,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Synchronized ${validStaff.length} staff member(s) to cloud`,
+      count: validStaff.length,
+      data: validStaff,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+

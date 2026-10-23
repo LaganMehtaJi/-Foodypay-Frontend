@@ -7534,6 +7534,72 @@ function printWaiterBadge() {
   printWin.document.close();
 }
 
+async function syncStaffToCloud(manual = false) {
+  try {
+    initStaffState();
+    const fpId = getUniqueMerchantId();
+    const baseUrl = getStoreMenuBaseUrl();
+    const staffList = (S.staff || []).map(s => ({
+      employeeId: s.employeeId,
+      name: s.name,
+      duty: s.duty || 'Waiter',
+      phone: s.phone || '',
+      pin: s.pin || '1234',
+      status: s.status || 'Active',
+      assignedTables: Array.isArray(s.assignedTables) ? s.assignedTables : [],
+      notes: s.notes || ''
+    }));
+
+    if (manual && typeof showToastSafe === 'function') {
+      showToastSafe('☁️ Syncing staff members with MongoDB Atlas...', 'info');
+    }
+
+    const token = localStorage.getItem('foodypay_token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+
+    const res = await fetch(`${baseUrl}/api/staff/sync`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        foodypayId: fpId,
+        staff: staffList
+      })
+    });
+
+    const data = await res.json();
+    if (data && data.success) {
+      console.log('[Staff Sync] Cloud staff updated:', data.count);
+      if (manual) {
+        if (typeof showToastSafe === 'function') {
+          showToastSafe(`✅ Synced ${data.count} staff members to cloud!`, 'success');
+        } else {
+          alert(`✅ Synced ${data.count} staff members to cloud!`);
+        }
+      }
+    } else {
+      console.warn('[Staff Sync] Server response:', data?.message);
+      if (manual) {
+        if (typeof showToastSafe === 'function') {
+          showToastSafe('⚠️ ' + (data?.message || 'Staff sync notice'), 'warning');
+        } else {
+          alert('⚠️ ' + (data?.message || 'Staff sync notice'));
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Staff Sync] Error syncing staff to cloud:', err);
+    if (manual) {
+      if (typeof showToastSafe === 'function') {
+        showToastSafe('❌ Staff sync failed: ' + err.message, 'error');
+      } else {
+        alert('❌ Staff sync failed: ' + err.message);
+      }
+    }
+  }
+}
+window.syncStaffToCloud = syncStaffToCloud;
+
 async function loadStaffFromCloud() {
   try {
     const fpId = getUniqueMerchantId();
