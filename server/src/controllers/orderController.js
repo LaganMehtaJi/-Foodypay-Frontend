@@ -315,7 +315,7 @@ export const getOrders = async (req, res, next) => {
  */
 export const getPublicOrders = async (req, res, next) => {
   try {
-    const { merchantId, foodypayId, status, seen } = req.query;
+    const { merchantId, foodypayId, table, status, seen } = req.query;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 100;
     const skip = (page - 1) * limit;
@@ -341,6 +341,15 @@ export const getPublicOrders = async (req, res, next) => {
       filter.user = targetUser._id;
     } else if (foodypayId && foodypayId !== 'undefined') {
       filter.foodypayId = foodypayId.toString().trim().toUpperCase();
+    }
+
+    if (table) {
+      const rawT = String(table).trim();
+      const cleanNum = rawT.replace(/^table\s*/i, '').trim();
+      filter.table = { $regex: new RegExp(`^(table\\s*)?${cleanNum}$`, 'i') };
+      if (!status) {
+        filter.status = { $nin: ['settled', 'completed', 'cancelled'] };
+      }
     }
 
     if (status && status !== 'all') {
@@ -377,6 +386,88 @@ export const getPublicOrders = async (req, res, next) => {
  * @route   PUT /api/orders/public/:id
  * @access  Public (QR Customer) / Protected (Waiter JWT required for waiter actions)
  */
+/**
+ * @desc    Claim / Link personal customer details to an active running table order
+ * @route   POST /api/orders/public/claim
+ * @access  Public (Customer Table QR)
+ */
+export const claimPublicOrder = async (req, res, next) => {
+  try {
+    const { foodypayId, table, orderId, customer, phone, note } = req.body;
+
+    if (!customer || !customer.trim()) {
+      return res.status(400).json({ success: false, message: 'Customer name is required to claim this order' });
+    }
+
+    let query = {};
+    if (orderId) {
+      query = { $or: [{ _id: orderId }, { orderId: orderId }] };
+    } else if (table) {
+      const rawT = String(table).trim();
+      const cleanNum = rawT.replace(/^table\s*/i, '').trim();
+      query = {
+        table: { $regex: new RegExp(`^(table\\s*)?${cleanNum}$`, 'i') },
+        status: { $nin: ['settled', 'completed', 'cancelled'] },
+      };
+    } else {
+      return res.status(400).json({ success: false, message: 'Table or orderId is required' });
+    }
+
+    if (foodypayId) {
+      const cleanFp = String(foodypayId).trim().toUpperCase();
+      const targetUser = await User.findOne({ foodypayId: cleanFp });
+      if (targetUser) query.user = targetUser._id;
+    }
+
+    const order = await Order.findOne(query).sort({ createdAt: -1 });
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'No running order found on this table to claim' });
+    }
+
+    order.customer = customer.trim();
+    if (phone) order.phone = phone.trim();
+    if (note && note.trim()) {
+      order.note = order.note ? `${order.note} | ${note.trim()}` : note.trim();
+    }
+    order.seen = false; // Triggers fresh chime on Reception POS
+    order.updatedAt = new Date().toISOString();
+    await order.save();
+
+    // CRM Auto-Sync: Register/update in Customer database
+    if (order.user && customer.trim()) {
+      try {
+        let existingCust = await Customer.findOne({ user: order.user, name: customer.trim() });
+        if (existingCust) {
+          if (phone) existingCust.phone = phone.trim();
+          existingCust.lastOrdered = 'Just now';
+          await existingCust.save();
+        } else {
+          await Customer.create({
+            user: order.user,
+            name: customer.trim(),
+            phone: (phone || '').trim(),
+            ordersCount: 1,
+            totalSales: order.total || 0,
+            lastOrdered: 'Just now',
+            tags: ['QR Table Diner'],
+          });
+        }
+      } catch (custErr) {
+        console.warn('[claimPublicOrder] Customer CRM sync warning:', custErr.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Table order claimed successfully by ${customer.trim()}! Bill will be generated in your name.`,
+      data: order,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const updatePublicOrder = async (req, res, next) => {
   try {
     const { id } = req.params;

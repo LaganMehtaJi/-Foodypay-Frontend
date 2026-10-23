@@ -167,6 +167,17 @@ app.get('/', (req, res) => {
 // Serve static public assets (customer menu, icons, styles)
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Clean modular page routes (Frontend Portal, Waiter Login, Kitchen Display System)
+app.get(['/pages', '/portal'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'pages', 'index.html'));
+});
+app.get(['/login', '/waiter/login'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'pages', 'waiter', 'login.html'));
+});
+app.get(['/kitchen', '/kds'], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'pages', 'kitchen', 'index.html'));
+});
+
 // Public table QR customer self-ordering & Waiter order-taking web routes
 app.get([
   '/menu/:uniqueId/waiter/:waiterId',

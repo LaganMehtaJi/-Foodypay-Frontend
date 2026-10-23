@@ -4,6 +4,7 @@ import {
   getOrderStats,
   createOrder,
   createPublicOrder,
+  claimPublicOrder,
   updatePublicOrder,
   deletePublicOrder,
   getPublicOrders,
@@ -20,6 +21,7 @@ const router = express.Router();
 // Public route for QR code table ordering, Waiter App, and Merchant POS Sync
 router.get('/public', getPublicOrders);
 router.post('/public', optionalWaiterProtect, createPublicOrder);
+router.post('/public/claim', claimPublicOrder);
 router.put('/public/:id', optionalWaiterProtect, updatePublicOrder);
 router.delete('/public/:id', protectWaiter, deletePublicOrder);
 router.post('/pos/sync-table-status', syncPosTableStatus);

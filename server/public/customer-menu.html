@@ -1570,6 +1570,80 @@
     </div>
   </header>
 
+  <!-- LIVE TABLE ORDER TRACKER & CLAIM BANNER (Dine-In Realtime Tracking upon QR Scan) -->
+  <style>
+    .live-pulse-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #EAB308;
+      display: inline-block;
+      box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.7);
+      animation: livePulseAnim 1.8s infinite;
+    }
+    @keyframes livePulseAnim {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(234, 179, 8, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(234, 179, 8, 0); }
+    }
+    .lot-card {
+      margin: 12px 16px 6px;
+      background: #FFFFFF;
+      border: 1.5px solid #E2E8F0;
+      border-radius: 18px;
+      padding: 14px 16px;
+      box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.08);
+      position: relative;
+      overflow: hidden;
+    }
+  </style>
+
+  <div id="customerLiveOrderTracker" class="lot-card" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="live-pulse-dot" id="lotStatusDot"></span>
+          <span style="font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:0.5px;color:#CA8A04" id="lotStatusBadge">👨‍🍳 Cooking in Kitchen</span>
+        </div>
+        <h4 style="margin:4px 0 0;font-size:15px;font-weight:900;color:#0F172A" id="lotGreetingText">
+          Running Order on <span id="lotTableName" style="color:#EA580C">Table 1</span>
+        </h4>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:18px;font-weight:900;color:#0F172A" id="lotTotalAmount">₹0</div>
+        <div style="font-size:11px;color:#64748B;font-weight:700" id="lotItemsSummary">0 items</div>
+      </div>
+    </div>
+
+    <!-- Timeline Progress Bar -->
+    <div style="margin:12px 0 6px;display:flex;align-items:center;gap:4px">
+      <div style="flex:1;height:5px;border-radius:99px;background:#2563EB" id="lotStep1"></div>
+      <div style="flex:1;height:5px;border-radius:99px;background:#EAB308" id="lotStep2"></div>
+      <div style="flex:1;height:5px;border-radius:99px;background:#E2E8F0" id="lotStep3"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:10.5px;font-weight:700;color:#64748B;margin-bottom:12px">
+      <span id="lotLabelStep1" style="color:#2563EB">Order Placed</span>
+      <span id="lotLabelStep2" style="color:#CA8A04">👨‍🍳 Cooking in Kitchen</span>
+      <span id="lotLabelStep3">Ready / Bill</span>
+    </div>
+
+    <!-- Items Quick Preview (Expandable) -->
+    <div id="lotItemsListAccordion" style="max-height:0;overflow:hidden;transition:max-height 0.3s ease;border-top:1px dashed #E2E8F0;padding-top:0;margin-top:0">
+      <div id="lotItemsListContent" style="padding-top:8px;display:flex;flex-direction:column;gap:6px;font-size:12px;color:#334155"></div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+      <button onclick="toggleLotItemsAccordion()" style="flex:1;min-width:110px;background:#F1F5F9;border:1px solid #CBD5E1;color:#334155;padding:8px 10px;border-radius:9px;font-size:11.5px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:4px">
+        <span id="lotToggleItemsText">👁️ View Dishes</span>
+      </button>
+
+      <button id="lotClaimOrderBtn" onclick="openClaimOrderModal()" style="flex:1.4;min-width:140px;background:#EA580C;border:none;color:#fff;padding:8px 12px;border-radius:9px;font-size:11.5px;font-weight:900;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:5px;box-shadow:0 2px 6px rgba(234,88,12,0.25)">
+        <span>👤 Link My Details to Bill</span>
+      </button>
+    </div>
+  </div>
+
   <!-- CATEGORY PILLS BAR -->
   <div class="cats-wrapper" id="catsBar">
     <button class="cat-pill active" onclick="selectCategory('All', this)">☀️ All Items</button>
@@ -1838,6 +1912,43 @@
 </div>
 
 
+
+<!-- CLAIM ORDER & LINK CUSTOMER DETAILS MODAL -->
+<div class="sheet-overlay" id="claimOrderModal" style="display:none" onclick="if(event.target===this)closeClaimOrderModal()">
+  <div class="sheet-modal" style="max-height:85vh;border-top-left-radius:24px;border-top-right-radius:24px">
+    <div class="sheet-drag-handle"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div>
+        <div style="font-size:11px;font-weight:800;color:#EA580C;letter-spacing:0.5px">LINK BILL DETAILS</div>
+        <h3 style="margin:2px 0 0;font-size:18px;font-weight:900;color:#0F172A">Claim Table Order</h3>
+      </div>
+      <button onclick="closeClaimOrderModal()" style="border:none;background:#F1F5F9;width:32px;height:32px;border-radius:50%;font-size:14px;font-weight:800;color:#64748B;cursor:pointer">✕</button>
+    </div>
+
+    <p style="font-size:12.5px;color:#64748B;line-height:1.4;margin:0 0 16px">
+      Ye table order aapke naam par link ho jayega. Bill aur WhatsApp digital receipt aapki details par generate hogi.
+    </p>
+
+    <div class="form-group" style="text-align:left;margin-bottom:12px">
+      <label style="font-size:12px;font-weight:800;color:#334155">Your Full Name *</label>
+      <input type="text" id="claimCustName" placeholder="e.g. Rahul Sharma" style="font-weight:700" required>
+    </div>
+
+    <div class="form-group" style="text-align:left;margin-bottom:12px">
+      <label style="font-size:12px;font-weight:800;color:#334155">Mobile Number (For WhatsApp / SMS Bill Receipt) *</label>
+      <input type="tel" id="claimCustPhone" placeholder="e.g. 9876543210" maxlength="10" style="font-weight:700">
+    </div>
+
+    <div class="form-group" style="text-align:left;margin-bottom:16px">
+      <label style="font-size:12px;font-weight:800;color:#334155">Special Note / Instructions</label>
+      <input type="text" id="claimCustNote" placeholder="e.g. Extra spicy, no onions">
+    </div>
+
+    <button onclick="submitClaimOrder()" class="btn-submit-order" style="background:#EA580C;margin-top:4px">
+      <span>✅ Save My Details &amp; Link Bill</span>
+    </button>
+  </div>
+</div>
 
 <!-- WAITER PIN / ID LOGIN MODAL -->
 <div class="sheet-overlay" id="waiterLoginModal" style="display:none">
@@ -2640,6 +2751,196 @@
     }
   }
 
+  /* ─────────────────────────────────────────────────────────
+     CUSTOMER DINE-IN LIVE ORDER TRACKING & CLAIMING
+  ───────────────────────────────────────────────────────── */
+  let customerActiveTableOrder = null;
+  let lotItemsExpanded = false;
+
+  async function fetchCustomerActiveTableOrder() {
+    if (isWaiterMode || !currentTable || !merchantUniqueId) return;
+
+    try {
+      const res = await fetch(`/api/orders/public?foodypayId=${encodeURIComponent(merchantUniqueId)}&table=${encodeURIComponent(currentTable)}&limit=1`);
+      const data = await res.json();
+      const active = (data && Array.isArray(data.data) && data.data.length > 0) ? data.data[0] : null;
+
+      if (active && active.status !== 'settled' && active.status !== 'completed' && active.status !== 'cancelled') {
+        customerActiveTableOrder = active;
+        renderCustomerLiveOrderTracker(active);
+      } else {
+        customerActiveTableOrder = null;
+        const tracker = document.getElementById('customerLiveOrderTracker');
+        if (tracker) tracker.style.display = 'none';
+      }
+    } catch (err) {
+      console.warn('Customer table order fetch error:', err);
+    }
+  }
+
+  function renderCustomerLiveOrderTracker(order) {
+    const tracker = document.getElementById('customerLiveOrderTracker');
+    if (!tracker || !order) return;
+
+    tracker.style.display = 'block';
+    const tName = document.getElementById('lotTableName');
+    if (tName) tName.textContent = currentTable;
+
+    const totalEl = document.getElementById('lotTotalAmount');
+    if (totalEl) totalEl.textContent = `₹${order.total || 0}`;
+
+    const itemsCount = (order.items || []).reduce((sum, i) => sum + (Number(i.qty) || 1), 0);
+    const summaryEl = document.getElementById('lotItemsSummary');
+    if (summaryEl) summaryEl.textContent = `${itemsCount} item${itemsCount !== 1 ? 's' : ''}`;
+
+    // Timeline & status
+    const isReadyOrBill = (order.status === 'bill_printed' || order.status === 'billed');
+    const isCooking = (order.status === 'kot_printed' || order.kotPrinted || order.status === 'preparing');
+
+    const dot = document.getElementById('lotStatusDot');
+    const badge = document.getElementById('lotStatusBadge');
+    const s1 = document.getElementById('lotStep1');
+    const s2 = document.getElementById('lotStep2');
+    const s3 = document.getElementById('lotStep3');
+    const l1 = document.getElementById('lotLabelStep1');
+    const l2 = document.getElementById('lotLabelStep2');
+    const l3 = document.getElementById('lotLabelStep3');
+
+    if (isReadyOrBill) {
+      if (dot) dot.style.background = '#22C55E';
+      if (badge) { badge.textContent = '🍽️ Food Ready / Bill Generated'; badge.style.color = '#15803D'; }
+      if (s1) s1.style.background = '#22C55E';
+      if (s2) s2.style.background = '#22C55E';
+      if (s3) s3.style.background = '#22C55E';
+      if (l3) l3.style.color = '#15803D';
+    } else if (isCooking) {
+      if (dot) dot.style.background = '#EAB308';
+      if (badge) { badge.textContent = '👨‍🍳 Cooking in Kitchen (KOT Placed)'; badge.style.color = '#CA8A04'; }
+      if (s1) s1.style.background = '#2563EB';
+      if (s2) s2.style.background = '#EAB308';
+      if (s3) s3.style.background = '#E2E8F0';
+      if (l2) l2.style.color = '#CA8A04';
+    } else {
+      if (dot) dot.style.background = '#2563EB';
+      if (badge) { badge.textContent = '📋 Order Placed with Reception'; badge.style.color = '#1D4ED8'; }
+      if (s1) s1.style.background = '#2563EB';
+      if (s2) s2.style.background = '#E2E8F0';
+      if (s3) s3.style.background = '#E2E8F0';
+      if (l1) l1.style.color = '#1D4ED8';
+    }
+
+    // Customer Greeting & Claim state
+    const greeting = document.getElementById('lotGreetingText');
+    const claimBtn = document.getElementById('lotClaimOrderBtn');
+    const hasRealCust = order.customer && order.customer !== 'Walk-in Guest' && !order.customer.startsWith('Diner (Served');
+
+    if (greeting) {
+      if (hasRealCust) {
+        greeting.innerHTML = `👋 Hi <b>${escapeHtml(order.customer)}</b>! Order on <span style="color:#EA580C">${escapeHtml(currentTable)}</span>`;
+      } else {
+        greeting.innerHTML = `Running Order on <span style="color:#EA580C">${escapeHtml(currentTable)}</span>`;
+      }
+    }
+
+    if (claimBtn) {
+      claimBtn.innerHTML = hasRealCust ? '<span>✏️ Edit My Bill Details</span>' : '<span>👤 Link My Details to Bill</span>';
+    }
+
+    // Render dishes accordion content
+    const itemsContent = document.getElementById('lotItemsListContent');
+    if (itemsContent) {
+      itemsContent.innerHTML = (order.items || []).map(i => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0">
+          <span><b>${i.qty}x</b> ${escapeHtml(i.name)} <small style="color:#64748B">${i.v && i.v !== 'Regular' ? '· ' + escapeHtml(i.v) : ''}</small></span>
+          <b>₹${(Number(i.price) || 0) * (Number(i.qty) || 1)}</b>
+        </div>
+      `).join('');
+    }
+  }
+
+  function toggleLotItemsAccordion() {
+    const acc = document.getElementById('lotItemsListAccordion');
+    const btnText = document.getElementById('lotToggleItemsText');
+    if (!acc) return;
+    lotItemsExpanded = !lotItemsExpanded;
+    if (lotItemsExpanded) {
+      acc.style.maxHeight = '300px';
+      acc.style.paddingTop = '8px';
+      acc.style.marginTop = '8px';
+      if (btnText) btnText.textContent = '▲ Hide Dishes';
+    } else {
+      acc.style.maxHeight = '0';
+      acc.style.paddingTop = '0';
+      acc.style.marginTop = '0';
+      if (btnText) btnText.textContent = '👁️ View Dishes';
+    }
+  }
+
+  function openClaimOrderModal() {
+    if (customerActiveTableOrder) {
+      const cName = document.getElementById('claimCustName');
+      const cPhone = document.getElementById('claimCustPhone');
+      const cNote = document.getElementById('claimCustNote');
+      if (cName && customerActiveTableOrder.customer && customerActiveTableOrder.customer !== 'Walk-in Guest') {
+        cName.value = customerActiveTableOrder.customer;
+      }
+      if (cPhone && customerActiveTableOrder.phone) {
+        cPhone.value = customerActiveTableOrder.phone;
+      }
+      if (cNote && customerActiveTableOrder.note) {
+        cNote.value = customerActiveTableOrder.note;
+      }
+    }
+    document.getElementById('claimOrderModal').style.display = 'flex';
+  }
+
+  function closeClaimOrderModal() {
+    document.getElementById('claimOrderModal').style.display = 'none';
+  }
+
+  async function submitClaimOrder() {
+    const nameInput = document.getElementById('claimCustName').value.trim();
+    const phoneInput = document.getElementById('claimCustPhone').value.trim();
+    const noteInput = document.getElementById('claimCustNote').value.trim();
+
+    if (!nameInput) {
+      alert('Please enter your Name so the bill is made in your name');
+      return;
+    }
+
+    try {
+      showToast('Saving your details to table order…');
+      const res = await fetch('/api/orders/public/claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          foodypayId: merchantUniqueId,
+          table: currentTable,
+          orderId: customerActiveTableOrder ? customerActiveTableOrder._id : null,
+          customer: nameInput,
+          phone: phoneInput,
+          note: noteInput
+        })
+      });
+
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message || 'Failed to claim order');
+
+      customerActiveTableOrder = data.data;
+      renderCustomerLiveOrderTracker(customerActiveTableOrder);
+      closeClaimOrderModal();
+      showToast(`✅ Table order linked to ${nameInput}! Bill will be made in your name.`);
+
+      // Also pre-fill customer fields in checkout modal
+      const chCust = document.getElementById('custName');
+      if (chCust) chCust.value = nameInput;
+      const chPhone = document.getElementById('custPhone');
+      if (chPhone) chPhone.value = phoneInput;
+    } catch (err) {
+      alert('Claim Error: ' + err.message);
+    }
+  }
+
   async function printKotFromActiveModal() {
     if (!activeEditingOrder) return;
     const tbl = activeEditingOrder.tableName || activeEditingOrder.table;
@@ -3295,6 +3596,8 @@
   window.addEventListener('DOMContentLoaded', () => {
     checkAppDownloadStatus();
     loadMenu();
+    setTimeout(fetchCustomerActiveTableOrder, 600);
+    setInterval(fetchCustomerActiveTableOrder, 3500);
   });
 </script>
 </body>

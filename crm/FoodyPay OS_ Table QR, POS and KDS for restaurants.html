@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FoodyPay OS: Table QR, POS and KDS for restaurants</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,800;1,9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#FFF5EB;--bg2:#FFEAD8;--card:#fff;--ink:#241512;--mut:#6F5C55;--line:#F0DCCB;--or:#F04A00;--or2:#FF8A1F;--gr:#1F8F45;--dk:#2A130C;--sh:0 10px 30px -12px rgba(120,50,10,.28);box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-behavior:smooth;scroll-padding-top:84px}
+body{margin:0;background:var(--bg);color:var(--ink);font:500 16px/1.6 "Plus Jakarta Sans",system-ui,sans-serif}
+h1,h2,h3{font-family:Fraunces,Georgia,serif;line-height:1.08;margin:0;letter-spacing:-.02em}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+:focus-visible{outline:2px solid var(--or);outline-offset:3px}
+svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.w{max-width:1160px;margin:0 auto;padding:0 22px}
+nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+nav .w{display:flex;align-items:center;gap:26px;height:68px}
+.lg{font:800 22px Fraunces,serif;display:flex;align-items:center;gap:9px}
+.lg b{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--or),var(--or2));display:grid;place-items:center;color:#fff}
+.lg span{color:var(--or)}
+.lk{display:flex;gap:24px;margin-left:auto;font-weight:600;font-size:14.5px;color:var(--mut)}
+.lk a:hover{color:var(--or)}
+.au{display:flex;gap:10px;align-items:center}
+.b{display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:99px;font-weight:700;font-size:14.5px;transition:transform .2s,box-shadow .2s}
+.b:hover{transform:translateY(-2px)}
+.b.p{color:#fff;background:linear-gradient(135deg,var(--or),var(--or2));box-shadow:0 10px 22px -8px rgba(240,74,0,.7)}
+.b.o{border:1.5px solid var(--or);color:var(--or)}
+.b.o:hover{background:var(--or);color:#fff}
+.b.g{background:var(--gr);color:#fff}
+.hero{padding:64px 0 40px}
+.hero .w{display:grid;grid-template-columns:1.05fr .95fr;gap:40px;align-items:center}
+.tagl{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:13px;color:var(--or);background:var(--bg2);padding:6px 14px;border-radius:99px}
+.hero h1{font-size:clamp(40px,6vw,72px);font-weight:800;margin:18px 0}
+.hero h1 em{color:var(--or)}
+.hero p.l{font-size:18px;color:var(--mut);max-width:520px}
+.cta{display:flex;gap:14px;flex-wrap:wrap;margin:28px 0 22px}
+.pts{display:flex;gap:20px;flex-wrap:wrap;color:var(--mut);font-size:14px;font-weight:600}
+.pts span{display:flex;gap:7px;align-items:center}
+.pts .i{color:var(--gr);width:17px;height:17px}
+.stage{position:relative;height:460px}
+.arch{position:absolute;inset:0 0 0 60px;border-radius:200px 200px 24px 24px;background:linear-gradient(160deg,var(--or2),var(--or) 60%,#B52F00);overflow:hidden}
+.arch::before{content:"";position:absolute;inset:0;background:repeating-conic-gradient(from 0deg at 50% 70%,rgba(255,255,255,.08) 0 8deg,transparent 8deg 16deg)}
+.tent{position:absolute;left:104px;top:70px;width:230px;padding:18px;border-radius:18px;background:#fff;color:#241512;text-align:center;box-shadow:0 30px 50px -20px rgba(0,0,0,.5);transform:rotate(-3deg);animation:fl 6s ease-in-out infinite}
+.tent h4{margin:0 0 10px;font:800 17px Fraunces,serif}
+.tent svg.q{width:100%;height:auto;display:block}
+.tent small{display:block;margin-top:8px;font-weight:700;color:var(--or)}
+.ph{position:absolute;right:0;bottom:-10px;width:190px;border-radius:30px;padding:10px;background:#1b0f0a;box-shadow:0 30px 50px -20px rgba(0,0,0,.6);transform:rotate(4deg);animation:fl 7s ease-in-out -2s infinite}
+.ph div.s{background:var(--card);border-radius:22px;padding:12px;color:var(--ink)}
+.ph h5{margin:0 0 8px;font:800 14px Fraunces,serif}
+.dsh{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--line);font-size:12px;font-weight:700}
+.dsh i{width:28px;height:28px;border-radius:9px;background:var(--bg2);color:var(--or);display:grid;place-items:center;font-style:normal}
+.dsh i .i{width:15px;height:15px}
+.dsh em{margin-left:auto;font-style:normal;color:var(--or)}
+.tick{position:absolute;left:0;bottom:60px;background:var(--card);border-radius:16px;padding:12px 16px;box-shadow:var(--sh);display:flex;gap:10px;align-items:center;font-weight:700;font-size:13px;animation:fl 5s ease-in-out -1s infinite}
+.tick .i{color:var(--gr)}
+@keyframes fl{50%{translate:0 -10px}}
+section{padding:84px 0}
+.hd{max-width:640px;margin-bottom:44px}
+.hd h2{font-size:clamp(32px,4.4vw,50px);font-weight:800}
+.hd p{color:var(--mut);margin:14px 0 0;font-size:17px}
+.alt{background:var(--bg2)}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.st{background:var(--card);border-radius:22px;padding:28px;box-shadow:var(--sh);position:relative;transition:transform .25s}
+.st:hover{transform:translateY(-6px)}
+.st .n{font:800 56px Fraunces,serif;color:var(--bg2);position:absolute;right:20px;top:6px}
+.ic{width:50px;height:50px;border-radius:15px;background:linear-gradient(135deg,var(--or),var(--or2));color:#fff;display:grid;place-items:center;margin-bottom:18px}
+.st h3,.ft h3{font-size:22px;margin-bottom:8px}
+.st p,.ft p{margin:0;color:var(--mut);font-size:15px}
+.feat{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.ft{padding:26px;border-radius:20px;background:var(--card);border:1px solid var(--line);transition:border-color .2s,transform .25s}
+.ft:hover{border-color:var(--or);transform:translateY(-4px)}
+.ft .ic{background:var(--bg2);color:var(--or)}
+.ctl{display:grid;grid-template-columns:1fr 1.1fr;gap:44px;align-items:center}
+.ctl ul{list-style:none;padding:0;margin:24px 0 0;display:grid;gap:14px}
+.ctl li{display:flex;gap:12px;font-weight:600}
+.ctl li .i{color:var(--gr);margin-top:3px}
+.dash{background:var(--dk);color:#fff;border-radius:24px;padding:20px;box-shadow:var(--sh)}
+.dr{display:flex;gap:10px;margin-bottom:14px}
+.kp{flex:1;background:rgba(255,255,255,.07);border-radius:14px;padding:14px}
+.kp small{color:#D9BFB0;font-weight:600}
+.kp b{display:block;font:800 24px Fraunces,serif}
+.bars{display:flex;align-items:flex-end;gap:8px;height:130px;background:rgba(255,255,255,.05);border-radius:14px;padding:14px}
+.bars i{flex:1;border-radius:6px 6px 2px 2px;background:linear-gradient(var(--or2),var(--or));height:var(--h);transform-origin:bottom;animation:gr 1.2s ease both}
+@keyframes gr{from{transform:scaleY(0)}}
+.pr{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;align-items:stretch}
+.pl{background:var(--card);border-radius:24px;padding:30px;border:1.5px solid var(--line);display:flex;flex-direction:column;transition:transform .25s}
+.pl:hover{transform:translateY(-6px)}
+.pl.hot{border-color:var(--or);box-shadow:var(--sh);position:relative}
+.pl.hot::before{content:"Most chosen";position:absolute;top:-13px;left:28px;background:var(--or);color:#fff;font-weight:700;font-size:12px;padding:3px 12px;border-radius:99px}
+.pl h3{font-size:24px}
+.amt{font:800 44px Fraunces,serif;margin:12px 0 2px}
+.amt small{font:600 15px "Plus Jakarta Sans";color:var(--mut)}
+.pl ul{list-style:none;padding:0;margin:18px 0 26px;display:grid;gap:10px;font-size:14.5px;flex:1}
+.pl li{display:flex;gap:9px}
+.pl li .i{color:var(--gr);width:18px;height:18px;margin-top:3px}
+.pl .b{justify-content:center}
+.lv{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.lv .st .ic{background:var(--gr)}
+.ct{background:linear-gradient(135deg,#2A130C,#5A1F08);color:#fff;border-radius:30px;padding:54px;display:grid;grid-template-columns:1.2fr 1fr;gap:30px;align-items:center}
+.ct h2{font-size:clamp(30px,4vw,44px);font-weight:800}
+.ct p{color:#E8CFC0}
+.cl{display:grid;gap:14px}
+.cl a{display:flex;gap:14px;align-items:center;background:rgba(255,255,255,.1);padding:16px 18px;border-radius:16px;font-weight:700;transition:background .2s,transform .2s}
+.cl a:hover{background:rgba(255,255,255,.18);transform:translateX(6px)}
+.cl small{display:block;color:#E8CFC0;font-weight:500}
+footer{padding:34px 0;color:var(--mut);font-size:14px;border-top:1px solid var(--line)}
+footer .w{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.md{position:fixed;inset:0;z-index:50;background:rgba(20,8,3,.6);backdrop-filter:blur(6px);display:none;place-items:center;padding:20px}
+.md.on{display:grid}
+.bx{width:100%;max-width:420px;background:var(--card);border-radius:26px;padding:30px;position:relative;animation:pop .3s ease}
+@keyframes pop{from{opacity:0;transform:scale(.94) translateY(10px)}}
+.x{position:absolute;right:16px;top:16px;width:34px;height:34px;border-radius:50%;background:var(--bg2);display:grid;place-items:center}
+.tb{display:flex;background:var(--bg2);border-radius:99px;padding:4px;margin:16px 0 20px}
+.tb button{flex:1;padding:9px;border-radius:99px;font-weight:700;color:var(--mut)}
+.tb button.on{background:var(--card);color:var(--or);box-shadow:var(--sh)}
+label{display:block;font-weight:700;font-size:13px;margin:12px 0 6px}
+input{width:100%;padding:13px 15px;border-radius:13px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+input:focus{outline:0;border-color:var(--or)}
+.err{color:#D92D20;font-size:13px;min-height:20px;margin:10px 0 0;font-weight:600}
+.bx .b{width:100%;justify-content:center;margin-top:8px}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translate(-50%,30px);background:var(--dk);color:#fff;padding:12px 20px;border-radius:14px;font-weight:600;opacity:0;pointer-events:none;transition:.3s;z-index:60}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+@media(max-width:900px){.lk{display:none}.au{margin-left:auto}.hero .w,.ctl,.ct{grid-template-columns:1fr}.steps,.feat,.pr,.lv{grid-template-columns:1fr}.stage{height:420px}.ct{padding:30px}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="leaf" viewBox="0 0 24 24"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.5 19 2c1 2 2 4.2 2 8 0 5.5-4.8 10-10 10zM2 21c0-3 1.9-5.5 6-7"/></symbol>
+<symbol id="qr" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h3M20 17v4"/></symbol>
+<symbol id="ck" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+<symbol id="x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+<symbol id="pho" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/></symbol>
+<symbol id="cook" viewBox="0 0 24 24"><path d="M6 13.9V20h12v-6.1M6 14a4 4 0 0 1 1-7.9 5 5 0 0 1 9.9.5A4 4 0 0 1 18 14zM6 17h12"/></symbol>
+<symbol id="rup" viewBox="0 0 24 24"><path d="M6 3h12M6 8h12M6 13l8.5 8M6 13h3a4 4 0 0 0 0-8"/></symbol>
+<symbol id="bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></symbol>
+<symbol id="star" viewBox="0 0 24 24"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8-6.2-3.2L5.8 21 7 14.2 2 9.3l6.9-1z"/></symbol>
+<symbol id="chart" viewBox="0 0 24 24"><path d="M3 3v18h18M7 15l4-4 3 3 5-6"/></symbol>
+<symbol id="gift" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="4"/><path d="M12 8v13M19 12v9H5v-9M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/></symbol>
+<symbol id="globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20"/></symbol>
+<symbol id="usr" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+<symbol id="wa" viewBox="0 0 24 24"><path d="M3 21l1.7-5A9 9 0 1 1 8 19.3zM9 10c0 3 2.5 5 5 5l1.5-1.5-2-1-1 .7c-.8-.4-1.5-1.1-1.8-1.9l.7-1-1-2z"/></symbol>
+<symbol id="ml" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></symbol>
+<symbol id="pos" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h2M14 10h2M8 14h2M14 14h2M8 18h8"/></symbol>
+<symbol id="arr" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+</defs></svg>
+
+<nav><div class="w">
+  <a href="#top" class="lg"><b><svg class="i"><use href="#leaf"/></svg></b>Foody<span>Pay</span></a>
+  <div class="lk"><a href="#how">How it works</a><a href="#guest">Guests</a><a href="#control">Control</a><a href="#live">Live website in 3 steps</a><a href="#contact">Contact</a></div>
+  <div class="au" id="au"></div>
+</div></nav>
+
+<header class="hero" id="top"><div class="w">
+  <div>
+    <span class="tagl"><svg class="i" style="width:16px;height:16px"><use href="#qr"/></svg>Table QR, POS and KDS in one system</span>
+    <h1>Faster orders. Happier diners. <em>Higher profits.</em></h1>
+    <p class="l">FoodyPay runs your whole restaurant: table QR ordering, quick counter billing, kitchen display and your own ordering website. Create your account and go live today.</p>
+    <div class="cta"><button class="b p" data-auth="register">Create account<svg class="i"><use href="#arr"/></svg></button><button class="b o" data-auth="login">Login</button></div>
+    <div class="pts"><span><svg class="i"><use href="#ck"/></svg>Works on any phone or laptop</span><span><svg class="i"><use href="#ck"/></svg>No special hardware</span><span><svg class="i"><use href="#ck"/></svg>Set up in one afternoon</span></div>
+  </div>
+  <div class="stage">
+    <div class="arch"></div>
+    <div class="tent"><h4>Scan. Order. Enjoy.</h4><svg class="q" id="qrsvg" viewBox="0 0 21 21"></svg><small>Table 4</small></div>
+    <div class="ph"><div class="s"><h5>Menu</h5>
+      <div class="dsh"><i><svg class="i"><use href="#cook"/></svg></i>Masala Dosa<em>₹120</em></div>
+      <div class="dsh"><i><svg class="i"><use href="#cook"/></svg></i>Veg Biryani<em>₹220</em></div>
+      <div class="dsh"><i><svg class="i"><use href="#cook"/></svg></i>Cold Coffee<em>₹110</em></div></div></div>
+    <div class="tick"><svg class="i"><use href="#bell"/></svg>New order, Table 4</div>
+  </div>
+</div></header>
+
+<section id="how" class="alt"><div class="w">
+  <div class="hd"><h2>From scan to settled bill in three moves</h2><p>No app for your guests, no paper tickets for your kitchen.</p></div>
+  <div class="steps">
+    <div class="st"><span class="n">1</span><div class="ic"><svg class="i"><use href="#qr"/></svg></div><h3>Guest scans the table QR</h3><p>The menu opens in the phone browser. They pick dishes, set spice level and place the order.</p></div>
+    <div class="st"><span class="n">2</span><div class="ic"><svg class="i"><use href="#cook"/></svg></div><h3>Kitchen gets the ticket</h3><p>The order lands on the kitchen screen with a sound alert and a live prep timer.</p></div>
+    <div class="st"><span class="n">3</span><div class="ic"><svg class="i"><use href="#rup"/></svg></div><h3>Bill settles by UPI</h3><p>The guest pays from the table or at the counter. Your sales report updates instantly.</p></div>
+  </div>
+</div></section>
+
+<section id="guest"><div class="w">
+  <div class="hd"><h2>A guest experience people come back for</h2><p>Zero downloads and zero sign-up walls for your diners.</p></div>
+  <div class="feat">
+    <div class="ft"><div class="ic"><svg class="i"><use href="#pho"/></svg></div><h3>Interactive menu</h3><p>Photos, veg and non-veg tags, spice levels and live item availability.</p></div>
+    <div class="ft"><div class="ic"><svg class="i"><use href="#bell"/></svg></div><h3>Live order tracking</h3><p>Guests see Placed, Preparing, Ready and Served without asking the staff.</p></div>
+    <div class="ft"><div class="ic"><svg class="i"><use href="#usr"/></svg></div><h3>One-tap waiter call</h3><p>A single button asks for water or help and notifies your team.</p></div>
+    <div class="ft"><div class="ic"><svg class="i"><use href="#gift"/></svg></div><h3>Loyalty and rewards</h3><p>Cashback points, return coupons and happy hour offers sent by WhatsApp.</p></div>
+    <div class="ft"><div class="ic"><svg class="i"><use href="#star"/></svg></div><h3>Reputation shield</h3><p>Unhappy feedback goes privately to the manager. Happy guests are sent to Google.</p></div>
+    <div class="ft"><div class="ic"><svg class="i"><use href="#globe"/></svg></div><h3>Your own website</h3><p>Customers order from home straight from your branded menu page.</p></div>
+  </div>
+</div></section>
+
+<section id="control" class="alt"><div class="w ctl">
+  <div><div class="hd" style="margin:0"><h2>Your command center, on one screen</h2><p>Tables, billing, staff and customers, all in sync across counter, kitchen and phone.</p></div>
+    <ul><li><svg class="i"><use href="#ck"/></svg>Counter POS with cash drawer reconciliation</li><li><svg class="i"><use href="#ck"/></svg>Kitchen display with prep countdowns</li><li><svg class="i"><use href="#ck"/></svg>Customer CRM and repeat-visit campaigns</li><li><svg class="i"><use href="#ck"/></svg>Hourly heatmaps and daily profit reports</li></ul></div>
+  <div class="dash"><div class="dr"><div class="kp"><small>Sales today</small><b>₹48,320</b></div><div class="kp"><small>Orders</small><b>186</b></div><div class="kp"><small>Repeat guests</small><b>38%</b></div></div>
+    <div class="bars"><i style="--h:35%"></i><i style="--h:55%"></i><i style="--h:80%"></i><i style="--h:100%"></i><i style="--h:70%"></i><i style="--h:90%"></i><i style="--h:60%"></i><i style="--h:45%"></i></div></div>
+</div></section>
+
+<section id="live"><div class="w">
+  <div class="hd"><h2>Put your website live in 3 steps</h2><p>Let customers order from home on your own page.</p></div>
+  <div class="lv">
+    <div class="st"><span class="n">1</span><div class="ic"><svg class="i"><use href="#usr"/></svg></div><h3>Register</h3><p>Create your account with your restaurant name and phone number.</p></div>
+    <div class="st"><span class="n">2</span><div class="ic"><svg class="i"><use href="#pos"/></svg></div><h3>Add your menu</h3><p>Enter dishes, prices and photos. It takes a few minutes.</p></div>
+    <div class="st"><span class="n">3</span><div class="ic"><svg class="i"><use href="#globe"/></svg></div><h3>Share the link</h3><p>Post your website link on WhatsApp, Instagram and Google.</p></div>
+  </div>
+</div></section>
+
+<section id="contact"><div class="w"><div class="ct">
+  <div><h2>Questions before you start? Talk to us.</h2><p>We reply on WhatsApp the fastest. Tell us about your restaurant and we will suggest the right plan.</p></div>
+  <div class="cl">
+    <a href="https://wa.me/917417789506" target="_blank" rel="noopener"><svg class="i"><use href="#wa"/></svg><span><small>WhatsApp</small>+91 74177 89506</span></a>
+    <a href="mailto:Contact@foodypay.in"><svg class="i"><use href="#ml"/></svg><span><small>Email</small>Contact@foodypay.in</span></a>
+  </div>
+</div></div></section>
+
+<footer><div class="w"><span>© 2026 FoodyPay. All rights reserved.</span><span>Table QR · POS · KDS</span></div></footer>
+
+<div class="md" id="md"><div class="bx" role="dialog" aria-modal="true">
+  <button class="x" id="cl" aria-label="Close"><svg class="i"><use href="#x"/></svg></button>
+  <h3 style="font-size:28px" id="mt">Welcome back</h3>
+  <div class="tb" id="tb"><button data-m="login" class="on">Login</button><button data-m="register">Register</button></div>
+  <div id="rg" hidden><label for="rn">Restaurant name</label><input id="rn" autocomplete="organization"><label for="ph">Mobile number</label><input id="ph" type="tel" autocomplete="tel"></div>
+  <label for="em">Email</label><input id="em" type="email" autocomplete="email">
+  <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password">
+  <p class="err" id="er"></p>
+  <button class="b p" id="go">Login</button>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+var mode='login',$=function(i){return document.getElementById(i)};
+function store(k,v){try{if(v===undefined)return JSON.parse(localStorage.getItem(k));localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}}
+function toast(t){var e=$('toast');e.textContent=t;e.classList.add('on');setTimeout(function(){e.classList.remove('on')},2400)}
+function hash(s){return crypto.subtle.digest('SHA-256',new TextEncoder().encode(s)).then(function(b){return Array.from(new Uint8Array(b)).map(function(x){return x.toString(16).padStart(2,'0')}).join('')})}
+function nav(){var u=store('fp_session');$('au').innerHTML=u?'<span style="font-weight:700;font-size:14px">Hi, '+u.name.replace(/</g,'')+'</span><button class="b o" id="lo">Logout</button>':'<button class="b o" data-auth="login">Login</button><button class="b p" data-auth="register">Register</button>'}
+function setMode(m){mode=m;$('rg').hidden=m!='register';$('mt').textContent=m=='login'?'Welcome back':'Create your account';$('go').textContent=m=='login'?'Login':'Create account';$('pw').autocomplete=m=='login'?'current-password':'new-password';[].forEach.call($('tb').children,function(b){b.classList.toggle('on',b.dataset.m==m)});$('er').textContent=''}
+function open(m){setMode(m);$('md').classList.add('on');setTimeout(function(){$(m=='login'?'em':'rn').focus()},50)}
+function close(){$('md').classList.remove('on')}
+document.addEventListener('click',function(e){var a=e.target.closest('[data-auth]');if(a){open(a.dataset.auth)}if(e.target.id=='lo'){try{localStorage.removeItem('fp_session')}catch(x){}nav();toast('You are logged out')}if(e.target==$('md'))close()});
+document.addEventListener('keydown',function(e){if(e.key=='Escape')close()});
+$('cl').onclick=close;$('tb').onclick=function(e){var b=e.target.closest('button');if(b)setMode(b.dataset.m)};
+$('go').onclick=function(){
+ var em=$('em').value.trim().toLowerCase(),pw=$('pw').value,er=$('er');
+ if(!/^\S+@\S+\.\S+$/.test(em)){er.textContent='Enter a valid email address.';return}
+ if(pw.length<6){er.textContent='Password must be at least 6 characters.';return}
+ var users=store('fp_users')||{};
+ hash(pw).then(function(h){
+  if(mode=='register'){
+   var rn=$('rn').value.trim(),ph=$('ph').value.trim();
+   if(!rn){er.textContent='Enter your restaurant name.';return}
+   if(!/^[6-9]\d{9}$/.test(ph.replace(/\D/g,'').slice(-10))){er.textContent='Enter a valid 10-digit mobile number.';return}
+   if(users[em]){er.textContent='This email is already registered. Please login.';return}
+   users[em]={name:rn,phone:ph,h:h};store('fp_users',users);store('fp_session',{name:rn,email:em});
+   close();nav();toast('Account created. Welcome, '+rn)
+  }else{
+   if(!users[em]||users[em].h!==h){er.textContent='Email or password is incorrect.';return}
+   store('fp_session',{name:users[em].name,email:em});close();nav();toast('Logged in successfully')
+  }
+ });
+};
+(function(){var s=7,svg=$('qrsvg'),h='',r=17;function f(x,y){var a=x<7&&y<7,b=x>13&&y<7,c=x<7&&y>13;if(a||b||c){var cx=x<7?x:x-14,cy=y<7?y:y-14;return cx==0||cx==6||cy==0||cy==6||(cx>1&&cx<5&&cy>1&&cy<5)}return((x*7+y*13+x*y*5)%11)<5}
+for(var y=0;y<21;y++)for(var x=0;x<21;x++)if(f(x,y))h+='<rect x="'+x+'" y="'+y+'" width="1" height="1"/>';svg.innerHTML='<g fill="#241512">'+h+'</g>'})();
+nav();
+</script>
+</body>
+</html>
