@@ -1597,8 +1597,8 @@ const SVG_ICONS = {
 /* ─── TABLE QR CODES & DIGITAL MENU SYSTEM ─── */
 function getUniqueMerchantId() {
   const user = window.FPC?.currentUser || {};
-  const stored = user.foodypayId || localStorage.getItem('fp_foodypay_id') || localStorage.getItem('fp_system_code');
-  if (stored && stored !== 'FP-DEMO' && !stored.startsWith('FP-SNACKR')) {
+  const stored = user.foodypayId || localStorage.getItem('fp_foodypay_id');
+  if (stored && stored !== 'FP-DEMO' && !stored.startsWith('FP-SNACKR') && !stored.startsWith('SYS-')) {
     return stored;
   }
   // Default active merchant outlet ID
