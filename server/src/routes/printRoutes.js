@@ -4,6 +4,10 @@ import { exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import Order from '../models/orderModel.js';
+import Setting from '../models/settingModel.js';
+import User from '../models/userModel.js';
+import { optionalWaiterProtect } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
@@ -190,6 +194,143 @@ function createKotText(order, storeInfo = {}) {
   text += `================================\n\n\n\n\n`;
   return text;
 }
+
+/**
+ * Direct KOT Execution Engine:
+ * Spools KOT text silently to Windows Out-Printer on the Reception machine
+ * and optionally dispatches to LAN socket if configured.
+ */
+export async function executeDirectKotPrint(order, storeInfo = {}, printerName = '') {
+  const isWindows = process.platform === 'win32';
+  const pName = printerName || storeInfo?.printers?.kot?.name || '';
+  const textContent = createKotText(order, storeInfo);
+
+  let windowsResult = { success: false, message: 'Non-windows' };
+
+  if (isWindows) {
+    const tempFile = path.join(os.tmpdir(), `kot_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.txt`);
+    try {
+      fs.writeFileSync(tempFile, textContent, 'utf-8');
+      const printerArg = (pName && pName.toLowerCase() !== 'default') ? `-Name '${pName.replace(/'/g, "''")}'` : '';
+      const psCommand = `powershell -NoProfile -Command "$ErrorActionPreference='Stop'; try { $p = if ('${printerArg}') { Get-Printer ${printerArg} -ErrorAction SilentlyContinue } else { Get-Printer | Where-Object Default -eq $true }; if ($p -and $p.PortName -like '*PORTPROMPT*') { Remove-Item -Path '${tempFile}' -Force; exit 0 }; Get-Content -Path '${tempFile}' | Out-Printer ${printerArg}; Remove-Item -Path '${tempFile}' -Force; exit 0 } catch { Remove-Item -Path '${tempFile}' -Force; exit 0 }"`;
+
+      await new Promise((resolve) => {
+        exec(psCommand, { timeout: 3500 }, (err) => {
+          if (err) {
+            console.warn('[executeDirectKotPrint] Windows spool warning:', err.message);
+            windowsResult = { success: false, message: err.message };
+          } else {
+            console.log(`[executeDirectKotPrint] KOT ticket spooled to ${pName || 'Default Windows Printer'}`);
+            windowsResult = { success: true, message: `Spooled to ${pName || 'Default'}` };
+          }
+          resolve();
+        });
+      });
+    } catch (e) {
+      console.warn('[executeDirectKotPrint] File write error:', e.message);
+    }
+  }
+
+  // Also check if LAN thermal printer is configured
+  const lanIp = storeInfo?.printers?.kot?.ip;
+  if (lanIp) {
+    try {
+      const escPosBuf = createEscPosKot(order, storeInfo);
+      const port = Number(storeInfo?.printers?.kot?.port) || 9100;
+      const sock = new net.Socket();
+      sock.setTimeout(3000);
+      sock.connect(port, lanIp, () => {
+        sock.write(escPosBuf, () => sock.end());
+      });
+      sock.on('error', (e) => console.warn('[executeDirectKotPrint] LAN print socket:', e.message));
+    } catch (lanErr) {
+      console.warn('[executeDirectKotPrint] LAN write error:', lanErr.message);
+    }
+  }
+
+  return windowsResult;
+}
+
+/**
+ * POST /api/print/remote-kot
+ * Remote KOT Print Triggered from Waiter Mobile Terminal to Reception PC
+ * Protected by optionalWaiterProtect (verifies JWT token from Waiter if present)
+ */
+router.post('/remote-kot', optionalWaiterProtect, async (req, res) => {
+  try {
+    const { foodypayId, table, orderId, waiterName, printerName, order: directOrder } = req.body;
+
+    let targetOrder = directOrder;
+    let targetUser = null;
+
+    if (!targetOrder) {
+      let query = {};
+      if (orderId) {
+        query = { $or: [{ _id: orderId }, { orderId: orderId }] };
+      } else if (table) {
+        const rawT = String(table).trim();
+        const cleanNum = rawT.replace(/^table\s*/i, '').trim();
+        query = {
+          table: { $regex: new RegExp(`^(table\\s*)?${cleanNum}$`, 'i') },
+          status: { $nin: ['settled', 'completed', 'cancelled'] },
+        };
+      }
+
+      if (foodypayId) {
+        targetUser = await User.findOne({ foodypayId: String(foodypayId).toUpperCase() });
+        if (targetUser) query.user = targetUser._id;
+      }
+
+      targetOrder = await Order.findOne(query).sort({ createdAt: -1 });
+    }
+
+    if (!targetOrder) {
+      return res.status(404).json({ success: false, message: 'No active running order found for this table' });
+    }
+
+    // Determine verified Waiter name from JWT token or request
+    const verifiedWaiterName = req.waiter?.name || waiterName || targetOrder.waiterName || 'Waiter';
+    const verifiedWaiterId = req.waiter?.employeeId || targetOrder.waiterId || '';
+
+    // Mark Order as KOT Printed in MongoDB
+    targetOrder.kotPrinted = true;
+    targetOrder.status = 'kot_printed';
+    targetOrder.seen = false; // Triggers chime on Reception POS
+    targetOrder.printKotRequested = true;
+    targetOrder.kotPrintRequestedAt = new Date().toISOString();
+    targetOrder.waiterName = verifiedWaiterName;
+    if (verifiedWaiterId) targetOrder.waiterId = verifiedWaiterId;
+
+    if (typeof targetOrder.save === 'function') {
+      await targetOrder.save();
+    }
+
+    // Fetch store profile
+    let storeInfo = {};
+    if (targetOrder.user) {
+      const setting = await Setting.findOne({ user: targetOrder.user });
+      const user = await User.findById(targetOrder.user);
+      storeInfo = {
+        restName: setting?.restName || user?.businessName || targetOrder.restaurantName || 'FoodyPay Restaurant',
+        restPhone: setting?.phone || user?.contactNo || '',
+      };
+    }
+
+    // Direct physical print execution on Reception Windows machine
+    const printResult = await executeDirectKotPrint(targetOrder, storeInfo, printerName);
+
+    res.json({
+      success: true,
+      message: `KOT printed successfully on Reception printer for ${targetOrder.table}!`,
+      waiter: { name: verifiedWaiterName, employeeId: verifiedWaiterId },
+      printResult,
+      order: targetOrder,
+    });
+  } catch (error) {
+    console.error('[remote-kot] Error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 /**
  * 2. POST /api/print/windows

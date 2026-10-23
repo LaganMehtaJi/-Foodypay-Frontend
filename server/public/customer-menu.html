@@ -1751,13 +1751,16 @@
     </div>
 
     <div style="padding:14px 18px;background:#fff;border-top:1px solid #E2E8F0;display:flex;gap:8px;flex-wrap:wrap">
-      <button onclick="startAddingMoreDishesToTable()" style="flex:1;background:#EA580C;color:#fff;border:none;padding:11px 14px;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px">
-        <span>➕ Add More Dishes</span>
+      <button onclick="startAddingMoreDishesToTable()" style="flex:1;min-width:130px;background:#EA580C;color:#fff;border:none;padding:11px 12px;border-radius:10px;font-size:12.5px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px">
+        <span>➕ Add Dishes</span>
       </button>
-      <button onclick="saveActiveOrderChanges()" style="background:#0F172A;color:#fff;border:none;padding:11px 14px;border-radius:10px;font-size:13px;font-weight:800;cursor:pointer">
-        💾 Save Changes
+      <button onclick="printKotFromActiveModal()" style="flex:1;min-width:130px;background:#FEF08A;color:#854D0E;border:1.5px solid #FACC15;padding:11px 12px;border-radius:10px;font-size:12.5px;font-weight:900;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;box-shadow:0 1px 3px rgba(234,179,8,0.2)">
+        <span>🖨️ Print KOT</span>
       </button>
-      <button onclick="cancelActiveTableOrder()" style="background:#FEE2E2;color:#EF4444;border:1px solid #FECACA;padding:11px 12px;border-radius:10px;font-size:12.5px;font-weight:800;cursor:pointer" title="Cancel this order">
+      <button onclick="saveActiveOrderChanges()" style="background:#0F172A;color:#fff;border:none;padding:11px 13px;border-radius:10px;font-size:12.5px;font-weight:800;cursor:pointer">
+        💾 Save
+      </button>
+      <button onclick="cancelActiveTableOrder()" style="background:#FEE2E2;color:#EF4444;border:1px solid #FECACA;padding:11px 12px;border-radius:10px;font-size:12px;font-weight:800;cursor:pointer" title="Cancel this order">
         🗑️ Clear
       </button>
     </div>
@@ -1842,20 +1845,25 @@
     <div class="sheet-drag-handle"></div>
     <div style="font-size:42px;margin:8px 0">🤵</div>
     <h3 style="font-size:18px;font-weight:900;color:#0F172A">Waiter Terminal Login</h3>
-    <p style="font-size:13px;color:#64748B;margin:6px 0 16px">Enter your Employee ID &amp; 4-digit PIN to take table orders</p>
+    <p style="font-size:13px;color:#64748B;margin:6px 0 16px">Enter Merchant ID, Employee ID &amp; PIN to securely unlock</p>
 
     <div class="form-group" style="text-align:left">
-      <label>Waiter / Employee ID</label>
-      <input type="text" id="inputWaiterId" placeholder="e.g. W-101 or waiter-rahul" autocomplete="username">
+      <label style="font-size:12px;font-weight:800;color:#334155">Merchant / Restaurant ID</label>
+      <input type="text" id="inputMerchantId" placeholder="e.g. FP-624358 or SYS-007KX1" style="font-weight:700">
     </div>
 
     <div class="form-group" style="text-align:left">
-      <label>Passcode / PIN</label>
-      <input type="password" id="inputWaiterPin" placeholder="Enter PIN (e.g. 1234)" maxlength="6" autocomplete="current-password">
+      <label style="font-size:12px;font-weight:800;color:#334155">Unique Waiter / Employee ID</label>
+      <input type="text" id="inputWaiterId" placeholder="e.g. W-01, waiter-rahul, or FP-624358-W-Rahul" autocomplete="username">
+    </div>
+
+    <div class="form-group" style="text-align:left">
+      <label style="font-size:12px;font-weight:800;color:#334155">Passcode / PIN</label>
+      <input type="password" id="inputWaiterPin" placeholder="Enter PIN / Passcode" maxlength="20" autocomplete="current-password">
     </div>
 
     <button class="btn-submit-order" style="background:#4F46E5;margin-top:10px" onclick="submitWaiterLogin()">
-      <span>🔓 Unlock Waiter Terminal</span>
+      <span>🔓 Secure Login (JWT Verified)</span>
     </button>
   </div>
 </div>
@@ -1905,6 +1913,7 @@
   let isWaiterMode = false;
   let currentWaiterId = '';
   let currentWaiterName = '';
+  let currentWaiterJwt = localStorage.getItem('fp_waiter_jwt') || '';
 
   // Selected variant index per dish: dishId -> variantIndex
   const selectedVariants = new Map();
@@ -2049,7 +2058,33 @@
     const btmDock = document.getElementById('bottomDockNav');
     if (btmDock) btmDock.style.display = 'none';
 
+    // 1. Try restoring session from saved Waiter JWT
+    if (currentWaiterJwt) {
+      try {
+        const meRes = await fetch('/api/staff/waiter/me', {
+          headers: { 'Authorization': 'Bearer ' + currentWaiterJwt }
+        });
+        const meData = await meRes.json();
+        if (meData.success && meData.waiter) {
+          currentWaiterId = meData.waiter.employeeId;
+          currentWaiterName = meData.waiter.name;
+          currentWaiterAssignedTables = meData.waiter.assignedTables || [];
+          showToast(`🤵 Welcome, ${currentWaiterName}! (JWT Verified)`);
+          showWaiterTablesScreen();
+          return;
+        } else {
+          // Token invalid or expired
+          currentWaiterJwt = '';
+          localStorage.removeItem('fp_waiter_jwt');
+        }
+      } catch (err) {
+        console.warn('JWT verification error:', err);
+      }
+    }
+
     if (!currentWaiterId) {
+      const mInput = document.getElementById('inputMerchantId');
+      if (mInput) mInput.value = merchantUniqueId;
       document.getElementById('waiterLoginModal').style.display = 'flex';
       return;
     }
@@ -2062,26 +2097,9 @@
         currentWaiterId = json.data.employeeId;
         currentWaiterAssignedTables = Array.isArray(json.data.assignedTables) ? json.data.assignedTables : [];
       } else {
-        // STRICT MULTI-TENANT LOCKOUT: Prevent foreign waiter from accessing another merchant's tables
-        const lockoutEl = document.createElement('div');
-        lockoutEl.id = 'waiterUnauthorizedLockout';
-        lockoutEl.style.cssText = 'position:fixed;inset:0;background:#0f172a;z-index:999999;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:system-ui,-apple-system,sans-serif';
-        lockoutEl.innerHTML = `
-          <div style="background:#1e293b;border:1px solid #334155;border-radius:20px;padding:32px 24px;max-width:380px;width:100%;box-shadow:0 25px 50px rgba(0,0,0,0.5)">
-            <div style="font-size:48px;margin-bottom:16px">⛔</div>
-            <h2 style="color:#ef4444;font-size:20px;font-weight:800;margin:0 0 10px 0">Unauthorized Access</h2>
-            <p style="color:#94a3b8;font-size:14px;line-height:1.5;margin:0 0 20px 0">
-              Waiter ID <b style="color:#f8fafc">${escapeHtml(currentWaiterId)}</b> does not belong to restaurant <b style="color:#f59e0b">${escapeHtml(merchantUniqueId)}</b>.
-            </p>
-            <div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:12px;color:#fca5a5;font-size:12px;margin-bottom:20px">
-              Cross-merchant access is prohibited. Please check your assigned employee ID or contact your manager.
-            </div>
-            <button onclick="window.location.href='/menu/${encodeURIComponent(merchantUniqueId)}'" style="background:#ea580c;color:#fff;border:none;font-weight:700;font-size:14px;padding:12px 20px;border-radius:10px;width:100%;cursor:pointer">
-              Back to Customer Menu
-            </button>
-          </div>
-        `;
-        document.body.appendChild(lockoutEl);
+        const mInput = document.getElementById('inputMerchantId');
+        if (mInput) mInput.value = merchantUniqueId;
+        document.getElementById('waiterLoginModal').style.display = 'flex';
         return;
       }
     } catch (e) {
@@ -2363,8 +2381,11 @@
                       <button class="waiter-tb-btn primary" onclick="showWaiterMenuScreen('${displayName}')">
                         <span>➕ Add Dishes</span>
                       </button>
+                      <button class="waiter-tb-btn" onclick="triggerRemoteKotPrint('${displayName}')" style="background:#FEF08A;color:#854D0E;border:1.5px solid #FACC15;font-weight:900" title="Print KOT on Reception Printer">
+                        <span>🖨️ KOT</span>
+                      </button>
                       <button class="waiter-tb-btn blue" onclick="openTableOrderDetailsModal('${displayName}')">
-                        <span>✏️ View / Edit</span>
+                        <span>✏️ View</span>
                       </button>
                     </div>
                   </div>
@@ -2507,9 +2528,12 @@
 
     try {
       showToast('Saving order updates...');
+      const headers = { 'Content-Type': 'application/json' };
+      if (currentWaiterJwt) headers['Authorization'] = 'Bearer ' + currentWaiterJwt;
+
       const res = await fetch(`/api/orders/public/${activeEditingOrder._id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           items: activeEditingOrder.items,
           total: activeEditingOrder.total,
@@ -2518,6 +2542,15 @@
           waiterName: currentWaiterName
         })
       });
+
+      if (res.status === 401) {
+        showToast('🔒 Please login with your PIN to save order updates', 'error');
+        const mInput = document.getElementById('inputMerchantId');
+        if (mInput) mInput.value = merchantUniqueId;
+        document.getElementById('waiterLoginModal').style.display = 'flex';
+        return;
+      }
+
       const data = await res.json();
       if (!data.success) throw new Error(data.message || 'Update failed');
 
@@ -2534,9 +2567,22 @@
     if (!confirm(`Are you sure you want to clear/cancel order on ${activeEditingOrder.tableName}?`)) return;
 
     try {
+      const headers = {};
+      if (currentWaiterJwt) headers['Authorization'] = 'Bearer ' + currentWaiterJwt;
+
       const res = await fetch(`/api/orders/public/${activeEditingOrder._id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers
       });
+
+      if (res.status === 401) {
+        showToast('🔒 Please login with your PIN to cancel order', 'error');
+        const mInput = document.getElementById('inputMerchantId');
+        if (mInput) mInput.value = merchantUniqueId;
+        document.getElementById('waiterLoginModal').style.display = 'flex';
+        return;
+      }
+
       const data = await res.json();
       if (!data.success) throw new Error(data.message || 'Cancel failed');
 
@@ -2549,6 +2595,58 @@
     }
   }
 
+  async function triggerRemoteKotPrint(tableName) {
+    const rawT = String(tableName || currentTable || '').trim();
+    const clean = rawT.replace(/^table\s*/i, '').trim();
+    const order = liveRunningOrders[rawT.toLowerCase()] || liveRunningOrders[clean.toLowerCase()] || liveRunningOrders[`table ${clean.toLowerCase()}`];
+
+    if (!order) {
+      showToast(`No running order found on ${rawT}`);
+      return;
+    }
+
+    try {
+      showToast(`🖨️ Sending KOT to Reception printer for ${rawT}...`);
+      const headers = { 'Content-Type': 'application/json' };
+      if (currentWaiterJwt) headers['Authorization'] = 'Bearer ' + currentWaiterJwt;
+
+      const res = await fetch('/api/print/remote-kot', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          table: rawT,
+          orderId: order.orderId || order._id,
+          foodypayId: merchantUniqueId,
+          waiterId: currentWaiterId,
+          waiterName: currentWaiterName
+        })
+      });
+
+      if (res.status === 401) {
+        showToast('🔒 Please login with your PIN to print KOT', 'error');
+        const mInput = document.getElementById('inputMerchantId');
+        if (mInput) mInput.value = merchantUniqueId;
+        document.getElementById('waiterLoginModal').style.display = 'flex';
+        return;
+      }
+
+      const data = await res.json();
+      if (!data.success) throw new Error(data.message || 'KOT print failed');
+
+      showToast(`✅ KOT printed at Reception for ${rawT}!`);
+      await fetchLiveTableOrders(false);
+    } catch (err) {
+      alert('KOT Print Error: ' + err.message);
+    }
+  }
+
+  async function printKotFromActiveModal() {
+    if (!activeEditingOrder) return;
+    const tbl = activeEditingOrder.tableName || activeEditingOrder.table;
+    await triggerRemoteKotPrint(tbl);
+    closeTableOrderDetailsModal();
+  }
+
   function startAddingMoreDishesToTable() {
     if (!activeEditingOrder) return;
     const tbl = activeEditingOrder.tableName;
@@ -2557,6 +2655,8 @@
   }
 
   async function submitWaiterLogin() {
+    const mInput = document.getElementById('inputMerchantId');
+    const merchantId = (mInput ? mInput.value.trim() : '') || merchantUniqueId;
     const waiterIdInput = document.getElementById('inputWaiterId').value.trim();
     const pinInput = document.getElementById('inputWaiterPin').value.trim();
 
@@ -2569,22 +2669,28 @@
       const res = await fetch('/api/staff/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ foodypayId: merchantUniqueId, employeeId: waiterIdInput, pin: pinInput })
+        body: JSON.stringify({ foodypayId: merchantId, employeeId: waiterIdInput, pin: pinInput })
       });
       const data = await res.json();
       if (!data.success) {
-        alert(data.message || 'Login failed');
+        alert(data.message || 'Login failed. Please verify Employee ID & PIN.');
         return;
       }
+
+      if (data.token) {
+        currentWaiterJwt = data.token;
+        localStorage.setItem('fp_waiter_jwt', data.token);
+      }
+
       currentWaiterId = data.data.employeeId;
       currentWaiterName = data.data.name;
+      currentWaiterAssignedTables = Array.isArray(data.data.assignedTables) ? data.data.assignedTables : [];
+
       document.getElementById('waiterLoginModal').style.display = 'none';
+      showToast(`🔓 Waiter Logged In: ${currentWaiterName} (JWT Active)`);
       initWaiterMode();
     } catch (e) {
-      currentWaiterId = waiterIdInput;
-      currentWaiterName = waiterIdInput;
-      document.getElementById('waiterLoginModal').style.display = 'none';
-      initWaiterMode();
+      alert('Login error: ' + e.message);
     }
   }
 
@@ -3018,13 +3124,17 @@
       paymentLabel: 'Cash on Table / Counter',
       waiterId: isWaiterMode ? currentWaiterId : '',
       waiterName: isWaiterMode ? currentWaiterName : '',
-      placedBy: isWaiterMode ? 'Waiter' : 'Customer'
+      placedBy: isWaiterMode ? 'Waiter' : 'Customer',
+      printKot: isWaiterMode
     };
 
     try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (currentWaiterJwt) headers['Authorization'] = 'Bearer ' + currentWaiterJwt;
+
       const res = await fetch('/api/orders/public', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload)
       });
 
@@ -3044,7 +3154,7 @@
       updateCartBar();
 
       if (isWaiterMode) {
-        showToast(`✅ Order placed for ${currentTable}! Sending to kitchen.`);
+        showToast(`✅ Order punched & KOT printed at Reception for ${currentTable}!`);
         setTimeout(() => {
           showWaiterTablesScreen();
         }, 500);

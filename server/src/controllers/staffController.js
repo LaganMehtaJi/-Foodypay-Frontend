@@ -1,3 +1,4 @@
+import jwt from 'jsonwebtoken';
 import Staff from '../models/staffModel.js';
 import User from '../models/userModel.js';
 
@@ -208,7 +209,7 @@ export const verifyWaiterPublic = async (req, res, next) => {
 };
 
 /**
- * @desc    Staff / Waiter PIN Login
+ * @desc    Staff / Waiter PIN Login with JWT Token Generation
  * @route   POST /api/staff/login
  * @access  Public
  */
@@ -219,29 +220,111 @@ export const staffLogin = async (req, res, next) => {
     const cleanId = (employeeId || '').trim();
     const cleanPin = (pin || '').trim();
 
-    const staff = await Staff.findOne({
-      foodypayId: cleanUniqueId,
-      employeeId: { $regex: new RegExp(`^${cleanId}$`, 'i') },
+    if (!cleanId) {
+      return res.status(400).json({ success: false, message: 'Employee ID or Waiter name is required' });
+    }
+
+    // Flexible matching query:
+    // Supports:
+    // 1. Direct employeeId match (e.g., 'W-01' or 'waiter-rahul')
+    // 2. Name match (e.g., 'Rahul' or 'Ramesh')
+    // 3. Composite ID (e.g., 'FP-624358-waiter-rahul' -> matches 'waiter-rahul')
+    const strippedId = cleanId.replace(new RegExp(`^${cleanUniqueId}[-_]?`, 'i'), '').trim();
+
+    const idRegex = new RegExp(`^${cleanId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+    const strippedRegex = new RegExp(`^${strippedId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+    const nameRegex = new RegExp(`^${cleanId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+
+    const searchConditions = [
+      { employeeId: { $regex: idRegex } },
+      { employeeId: { $regex: strippedRegex } },
+      { name: { $regex: nameRegex } },
+    ];
+
+    let query = {
       status: 'Active',
-    });
+      $or: searchConditions,
+    };
+
+    if (cleanUniqueId) {
+      query.foodypayId = cleanUniqueId;
+    }
+
+    let staff = await Staff.findOne(query);
+
+    // Fallback if uniqueId was a machine ID like SYS-007KX1 or FP-624358
+    if (!staff && cleanUniqueId) {
+      staff = await Staff.findOne({
+        status: 'Active',
+        $or: searchConditions,
+      });
+    }
 
     if (!staff) {
-      return res.status(401).json({ success: false, message: 'Invalid Employee ID or account inactive' });
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid Employee ID or account inactive for this restaurant',
+      });
     }
 
     if (staff.pin && staff.pin !== cleanPin) {
-      return res.status(401).json({ success: false, message: 'Incorrect PIN' });
+      return res.status(401).json({ success: false, message: 'Incorrect PIN / Passcode' });
     }
+
+    // Issue Cryptographically Signed Waiter JWT Token (7 Days valid)
+    const token = jwt.sign(
+      {
+        waiterId: staff._id,
+        employeeId: staff.employeeId,
+        name: staff.name,
+        duty: staff.duty,
+        foodypayId: staff.foodypayId,
+        merchantId: staff.user,
+      },
+      process.env.JWT_SECRET || 'foodypay_jwt_super_secret_key_2026_change_in_production',
+      { expiresIn: '7d' }
+    );
 
     res.json({
       success: true,
       message: `Welcome, ${staff.name}!`,
+      token,
       data: {
+        id: staff._id,
         employeeId: staff.employeeId,
         name: staff.name,
         duty: staff.duty,
         assignedTables: staff.assignedTables,
         foodypayId: staff.foodypayId,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Get Current Waiter Session Info from JWT
+ * @route   GET /api/staff/waiter/me
+ * @access  Private (Waiter JWT Protected)
+ */
+export const getWaiterMe = async (req, res, next) => {
+  try {
+    if (!req.waiter) {
+      return res.status(401).json({ success: false, message: 'No active waiter session' });
+    }
+
+    const staff = await Staff.findById(req.waiter.waiterId || req.waiter.id).select('-pin');
+
+    res.json({
+      success: true,
+      waiter: {
+        id: staff ? staff._id : req.waiter.waiterId,
+        employeeId: staff ? staff.employeeId : req.waiter.employeeId,
+        name: staff ? staff.name : req.waiter.name,
+        duty: staff ? staff.duty : req.waiter.duty,
+        foodypayId: staff ? staff.foodypayId : req.waiter.foodypayId,
+        assignedTables: staff ? staff.assignedTables : [],
       },
     });
   } catch (error) {

@@ -738,7 +738,7 @@
             if (order.status === 'settled' || order.status === 'completed' || order.status === 'cancelled') return;
             const oid = String(order.orderId || order._id);
             const itemsHash = (order.items || []).map(i => `${i.name}:${i.qty}:${i.price}`).join('|');
-            const sig = `${oid}__${itemsHash}__${order.total}`;
+            const sig = `${oid}__${itemsHash}__${order.total}__${order.status || ''}__${order.kotPrintRequestedAt || ''}`;
 
             if (!seenOrderIds.has(sig)) {
               seenOrderIds.add(sig);

@@ -1824,9 +1824,9 @@ window.onNewCloudOrder = function(order) {
   existingOrd.orderId = order.orderId || existingOrd.orderId || ('#FP-' + Math.floor(1000 + Math.random() * 9000));
   existingOrd.start = existingOrd.start || (order.createdAt ? new Date(order.createdAt).getTime() : Date.now());
   existingOrd.cloudOrder = true;
-  if (isWaiter) {
+  if (isWaiter || order.kotPrinted || order.status === 'kot_printed') {
     existingOrd.kotPrinted = true;
-    existingOrd.placedBy = 'Waiter';
+    existingOrd.placedBy = order.placedBy || 'Waiter';
     existingOrd.waiterName = order.waiterName || '';
     existingOrd.waiterId = order.waiterId || '';
   }
@@ -1835,8 +1835,12 @@ window.onNewCloudOrder = function(order) {
   save();
 
   playOrderChime();
-  const senderInfo = isWaiter ? `🤵 Waiter ${order.waiterName || ''}` : `👤 ${existingOrd.cust.name}`;
-  showToast(`🔔 ${rawTable} se naya order aaya: ${senderInfo} (${newItems.length} items, ₹${order.total || 0})`, 'success');
+  const senderInfo = (order.waiterName || isWaiter) ? `🤵 Waiter ${order.waiterName || ''}` : `👤 ${existingOrd.cust.name}`;
+  if (order.printKotRequested || order.status === 'kot_printed') {
+    showToast(`🖨️ ${rawTable} ka KOT print hua: ${senderInfo} (${newItems.length} items, ₹${order.total || 0})`, 'info');
+  } else {
+    showToast(`🔔 ${rawTable} se naya order aaya: ${senderInfo} (${newItems.length} items, ₹${order.total || 0})`, 'success');
+  }
 
   // Trigger instant reactive re-render
   if (typeof cur !== 'undefined' && cur === targetTableId) {

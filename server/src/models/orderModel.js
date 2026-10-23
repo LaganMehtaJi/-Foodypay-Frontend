@@ -53,6 +53,14 @@ const orderSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    printKotRequested: {
+      type: Boolean,
+      default: false,
+    },
+    kotPrintRequestedAt: {
+      type: String,
+      default: '',
+    },
     billPrinted: {
       type: Boolean,
       default: false,

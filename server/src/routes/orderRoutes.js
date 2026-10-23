@@ -13,15 +13,15 @@ import {
   markOrderSeen,
   deleteOrder,
 } from '../controllers/orderController.js';
-import { protect } from '../middlewares/authMiddleware.js';
+import { protect, optionalWaiterProtect, protectWaiter } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
 // Public route for QR code table ordering, Waiter App, and Merchant POS Sync
 router.get('/public', getPublicOrders);
-router.post('/public', createPublicOrder);
-router.put('/public/:id', updatePublicOrder);
-router.delete('/public/:id', deletePublicOrder);
+router.post('/public', optionalWaiterProtect, createPublicOrder);
+router.put('/public/:id', optionalWaiterProtect, updatePublicOrder);
+router.delete('/public/:id', protectWaiter, deletePublicOrder);
 router.post('/pos/sync-table-status', syncPosTableStatus);
 
 router.use(protect);

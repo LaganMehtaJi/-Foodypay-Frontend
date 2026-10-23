@@ -6,8 +6,10 @@ import {
   deleteStaff,
   verifyWaiterPublic,
   staffLogin,
+  getWaiterMe,
   syncStaffBulk,
 } from '../controllers/staffController.js';
+import { protectWaiter } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
 
@@ -15,6 +17,7 @@ const router = express.Router();
 router.post('/sync', syncStaffBulk);
 
 // Public routes for Waiter ordering & login
+router.get('/waiter/me', protectWaiter, getWaiterMe);
 router.get('/waiter/:uniqueId/:waiterId', verifyWaiterPublic);
 router.post('/login', staffLogin);
 

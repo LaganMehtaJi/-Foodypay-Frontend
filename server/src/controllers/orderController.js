@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import Order from '../models/orderModel.js';
 import Customer from '../models/customerModel.js';
 import User from '../models/userModel.js';
+import Setting from '../models/settingModel.js';
+import { executeDirectKotPrint } from '../routes/printRoutes.js';
 
 /**
  * MongoDB Aggregation Pipeline to calculate Today's Sales & Today's Orders
@@ -110,6 +112,18 @@ export const createPublicOrder = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Merchant account not found for order placement' });
     }
 
+    let finalWaiterId = waiterId || '';
+    let finalWaiterName = waiterName || '';
+    let finalPlacedBy = placedBy || (waiterId ? 'Waiter' : 'Customer');
+
+    if (req.waiter) {
+      finalWaiterId = req.waiter.employeeId || req.waiter.waiterId;
+      finalWaiterName = req.waiter.name;
+      finalPlacedBy = 'Waiter';
+    }
+
+    const shouldPrintKot = req.body.printKot === true || finalPlacedBy === 'Waiter';
+
     const rawT = String(table || 'Table 1').trim();
     const cleanNum = rawT.replace(/^table\s*/i, '').trim();
     const tableRegex = new RegExp(`^(table\\s*)?${cleanNum}$`, 'i');
@@ -140,15 +154,30 @@ export const createPublicOrder = async (req, res, next) => {
         if (note && note.trim()) {
           existingActiveOrder.note = existingActiveOrder.note ? `${existingActiveOrder.note} | ${note.trim()}` : note.trim();
         }
-        if (waiterName) {
-          existingActiveOrder.waiterName = waiterName;
-          existingActiveOrder.waiterId = waiterId || existingActiveOrder.waiterId;
+        if (finalWaiterName) {
+          existingActiveOrder.waiterName = finalWaiterName;
+          existingActiveOrder.waiterId = finalWaiterId || existingActiveOrder.waiterId;
         }
-        existingActiveOrder.status = (existingActiveOrder.status === 'bill_printed') ? 'bill_printed' : 'kot_printed';
+        if (shouldPrintKot) {
+          existingActiveOrder.kotPrinted = true;
+          existingActiveOrder.printKotRequested = true;
+          existingActiveOrder.kotPrintRequestedAt = new Date().toISOString();
+        }
+        existingActiveOrder.status = (existingActiveOrder.status === 'bill_printed') ? 'bill_printed' : (shouldPrintKot ? 'kot_printed' : existingActiveOrder.status);
         existingActiveOrder.seen = false; // Triggers fresh chime on reception POS
         existingActiveOrder.updatedAt = new Date().toISOString();
 
         await existingActiveOrder.save();
+
+        if (shouldPrintKot) {
+          Setting.findOne({ user: targetUser._id }).then(setting => {
+            const storeInfo = {
+              restName: setting?.restName || targetUser.businessName || 'FoodyPay Restaurant',
+              restPhone: setting?.phone || targetUser.contactNo || '',
+            };
+            executeDirectKotPrint(existingActiveOrder, storeInfo).catch(() => {});
+          }).catch(() => {});
+        }
 
         return res.status(200).json({
           success: true,
@@ -167,17 +196,20 @@ export const createPublicOrder = async (req, res, next) => {
       orderId,
       type: type || 'Dine-In',
       table: table || 'Table 1',
-      customer: customer || (waiterName ? `Diner (Served by ${waiterName})` : 'Walk-in Guest'),
+      customer: customer || (finalWaiterName ? `Diner (Served by ${finalWaiterName})` : 'Walk-in Guest'),
       phone: phone || '',
       address: address || '',
       paymentMode: paymentMode || 'Cash',
-      status: 'new',
+      status: shouldPrintKot ? 'kot_printed' : 'new',
+      kotPrinted: shouldPrintKot,
+      printKotRequested: shouldPrintKot,
+      kotPrintRequestedAt: shouldPrintKot ? new Date().toISOString() : '',
       seen: false, // Unseen by merchant -> triggers sound notification
       paymentStatus: paymentStatus || 'cash',
       note: note || '',
-      waiterId: waiterId || '',
-      waiterName: waiterName || '',
-      placedBy: placedBy || (waiterId ? 'Waiter' : 'Customer'),
+      waiterId: finalWaiterId,
+      waiterName: finalWaiterName,
+      placedBy: finalPlacedBy,
       items: formattedItems,
       subtotal: Number(subtotal) || 0,
       discount: Number(discount) || 0,
@@ -195,6 +227,16 @@ export const createPublicOrder = async (req, res, next) => {
       foodypayId: targetUser.foodypayId || (foodypayId || '').toUpperCase(),
       ...orderData,
     });
+
+    if (shouldPrintKot) {
+      Setting.findOne({ user: targetUser._id }).then(setting => {
+        const storeInfo = {
+          restName: setting?.restName || targetUser.businessName || 'FoodyPay Restaurant',
+          restPhone: setting?.phone || targetUser.contactNo || '',
+        };
+        executeDirectKotPrint(mongoOrder, storeInfo).catch(() => {});
+      }).catch(() => {});
+    }
 
     // Auto CRM Sync for Customer in MongoDB
     if (customer && customer !== 'Walk-in Guest') {
@@ -333,7 +375,7 @@ export const getPublicOrders = async (req, res, next) => {
 /**
  * @desc    Update public/waiter order (add/edit/delete items or update table/customer)
  * @route   PUT /api/orders/public/:id
- * @access  Public / Waiter
+ * @access  Public (QR Customer) / Protected (Waiter JWT required for waiter actions)
  */
 export const updatePublicOrder = async (req, res, next) => {
   try {
@@ -343,6 +385,32 @@ export const updatePublicOrder = async (req, res, next) => {
     const order = await Order.findById(id);
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    // Security Verification: If modifying a table order with Waiter identity or Bearer token
+    const isWaiterOperation = req.headers.authorization || waiterId || waiterName || req.waiter;
+    if (isWaiterOperation) {
+      if (!req.waiter) {
+        return res.status(401).json({
+          success: false,
+          message: 'Unauthorized: Valid Waiter JWT token required to modify running table orders',
+        });
+      }
+
+      // Check merchant match to prevent tampering
+      if (
+        req.waiter.foodypayId &&
+        order.foodypayId &&
+        req.waiter.foodypayId.toUpperCase() !== order.foodypayId.toUpperCase()
+      ) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Waiter does not belong to this restaurant',
+        });
+      }
+
+      order.waiterName = req.waiter.name;
+      order.waiterId = req.waiter.employeeId || req.waiter.waiterId;
     }
 
     if (items && Array.isArray(items)) {
@@ -364,14 +432,14 @@ export const updatePublicOrder = async (req, res, next) => {
     if (note !== undefined) order.note = note;
     if (status) order.status = status;
     if (paymentMode) order.paymentMode = paymentMode;
-    if (waiterId) order.waiterId = waiterId;
-    if (waiterName) order.waiterName = waiterName;
 
+    order.updatedAt = new Date().toISOString();
     await order.save();
 
     res.json({
       success: true,
       message: 'Order updated successfully',
+      waiter: req.waiter ? { name: req.waiter.name, employeeId: req.waiter.employeeId } : null,
       data: order,
     });
   } catch (error) {
@@ -382,7 +450,7 @@ export const updatePublicOrder = async (req, res, next) => {
 /**
  * @desc    Delete/Cancel public/waiter order
  * @route   DELETE /api/orders/public/:id
- * @access  Public / Waiter
+ * @access  Protected (Waiter JWT required)
  */
 export const deletePublicOrder = async (req, res, next) => {
   try {
@@ -391,10 +459,31 @@ export const deletePublicOrder = async (req, res, next) => {
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
+
+    // Require valid Waiter JWT token
+    if (!req.waiter) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized: Valid Waiter JWT token required to cancel or clear table orders',
+      });
+    }
+
+    // Merchant verification
+    if (
+      req.waiter.foodypayId &&
+      order.foodypayId &&
+      req.waiter.foodypayId.toUpperCase() !== order.foodypayId.toUpperCase()
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: Waiter does not belong to this restaurant',
+      });
+    }
+
     await order.deleteOne();
     res.json({
       success: true,
-      message: 'Order deleted successfully',
+      message: `Order cleared successfully by Waiter ${req.waiter.name}`,
       id,
     });
   } catch (error) {

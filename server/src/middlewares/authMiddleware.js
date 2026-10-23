@@ -65,3 +65,71 @@ export const optionalProtect = async (req, res, next) => {
 
   next();
 };
+
+/**
+ * Protect Waiter Middleware:
+ * Verifies JWT token for Waiter operations (taking orders, editing running tables, printing KOT)
+ * Attaches req.waiter = decoded.
+ */
+export const protectWaiter = async (req, res, next) => {
+  let token;
+
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith('Bearer')
+  ) {
+    try {
+      token = req.headers.authorization.split(' ')[1];
+      const decoded = jwt.verify(
+        token,
+        process.env.JWT_SECRET || 'foodypay_jwt_super_secret_key_2026_change_in_production'
+      );
+
+      if (!decoded || (!decoded.waiterId && !decoded.employeeId && !decoded.id)) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid Waiter token: missing waiter credentials',
+        });
+      }
+
+      req.waiter = decoded;
+      return next();
+    } catch {
+      return res.status(401).json({
+        success: false,
+        message: 'Waiter session expired or invalid token. Please log in again.',
+      });
+    }
+  }
+
+  return res.status(401).json({
+    success: false,
+    message: 'Authentication required: Waiter JWT token missing',
+  });
+};
+
+/**
+ * Optional Waiter Protect Middleware:
+ * If Authorization Bearer is provided, verifies waiter JWT and attaches req.waiter.
+ * If not provided, continues without error (for walk-in diners / QR customers).
+ */
+export const optionalWaiterProtect = async (req, res, next) => {
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith('Bearer')
+  ) {
+    try {
+      const token = req.headers.authorization.split(' ')[1];
+      const decoded = jwt.verify(
+        token,
+        process.env.JWT_SECRET || 'foodypay_jwt_super_secret_key_2026_change_in_production'
+      );
+      if (decoded && (decoded.waiterId || decoded.employeeId || decoded.id)) {
+        req.waiter = decoded;
+      }
+    } catch {
+      // Ignored for optional
+    }
+  }
+  next();
+};
