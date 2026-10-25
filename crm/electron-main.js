@@ -74,6 +74,12 @@ function createWindow() {
     mainWindow.webContents.focus();
   });
 
+  mainWindow.on('focus', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.focus();
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -149,6 +155,12 @@ ipcMain.handle('kick-drawer', async (event, printer) => {
 });
 
 // App Lifecycle
+ipcMain.on('restore-focus', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.focus();
+  }
+});
+
 app.whenReady().then(() => {
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.foodypay.poscrm');

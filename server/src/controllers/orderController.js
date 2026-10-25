@@ -103,9 +103,12 @@ export const createPublicOrder = async (req, res, next) => {
     }
     if (!targetUser && foodypayId && foodypayId !== 'undefined') {
       targetUser = await User.findOne({ foodypayId });
+      if (!targetUser && foodypayId.toString().trim().toUpperCase() === 'FP-9896') {
+        targetUser = (await User.findOne({ email: 'laganmehta.in@gmail.com' })) || (await User.findOne({ foodypayId: 'FP-445920' }));
+      }
     }
     if (!targetUser) {
-      targetUser = await User.findOne(); // Fallback to primary account
+      return res.status(404).json({ success: false, message: 'Valid merchant identifier (merchantId or foodypayId) is required for order placement' });
     }
 
     if (!targetUser) {
@@ -263,6 +266,22 @@ export const createPublicOrder = async (req, res, next) => {
       }
     }
 
+    // Auto-transition to kitchen KOT after 10 seconds for customer orders
+    if (!shouldPrintKot && finalPlacedBy !== 'Waiter') {
+      setTimeout(async () => {
+        try {
+          const fresh = await Order.findById(mongoOrder._id);
+          if (fresh && fresh.status === 'new') {
+            fresh.status = 'kot_printed';
+            fresh.kotPrinted = true;
+            await fresh.save();
+          }
+        } catch (e) {
+          console.warn('Auto-KOT transition error:', e.message);
+        }
+      }, 10000);
+    }
+
     res.status(201).json({
       success: true,
       data: mongoOrder,
@@ -329,12 +348,17 @@ export const getPublicOrders = async (req, res, next) => {
     if (!targetUser && foodypayId && foodypayId !== 'undefined') {
       const cleanFp = foodypayId.toString().trim().toUpperCase();
       targetUser = await User.findOne({ foodypayId: cleanFp }).catch(() => null);
+      if (!targetUser && cleanFp === 'FP-9896') {
+        targetUser = (await User.findOne({ email: 'laganmehta.in@gmail.com' })) || (await User.findOne({ foodypayId: 'FP-445920' }));
+      }
       if (!targetUser && cleanFp.startsWith('SYS-')) {
-        targetUser = (await User.findOne({ foodypayId: 'FP-624358' })) || (await User.findOne({}));
+        targetUser = await User.findOne({ $or: [{ foodypayId: cleanFp }, { merchantId: cleanFp }] }).catch(() => null);
       }
     }
-    if (!targetUser) {
-      targetUser = (await User.findOne({ foodypayId: 'FP-624358' })) || (await User.findOne({}));
+    if (req.user) {
+      targetUser = req.user;
+    } else if (!targetUser) {
+      return res.status(400).json({ success: false, message: 'Authentication or valid merchant identifier is required' });
     }
 
     if (targetUser) {
@@ -609,6 +633,30 @@ export const syncPosTableStatus = async (req, res, next) => {
     const tableRegex = new RegExp(`^(table\\s*)?${cleanNum}$`, 'i');
 
     const cleanStatus = (status || '').toLowerCase().trim();
+
+    // If order was cancelled from dashboard, mark all running orders on table as cancelled
+    if (cleanStatus === 'cancelled') {
+      const cancelResult = await Order.updateMany(
+        {
+          user: targetUser._id,
+          table: { $regex: tableRegex },
+          status: { $nin: ['settled', 'completed'] },
+        },
+        {
+          $set: {
+            status: 'cancelled',
+            seen: true,
+            updatedAt: new Date(),
+          },
+        }
+      );
+      return res.json({
+        success: true,
+        message: 'Table orders marked cancelled',
+        modifiedCount: cancelResult.modifiedCount,
+        table: rawT,
+      });
+    }
 
     // If order is settled or table cleared, close running orders on this table
     if (cleanStatus === 'settled' || cleanStatus === 'completed' || cleanStatus === 'blank') {

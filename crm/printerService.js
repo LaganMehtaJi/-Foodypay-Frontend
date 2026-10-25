@@ -193,7 +193,7 @@ class PrinterService {
       const cleanup = () => {
         clearTimeout(timeoutId);
         if (!printWindow.isDestroyed()) {
-          printWindow.close();
+          try { printWindow.destroy(); } catch (e) { printWindow.close(); }
         }
       };
 
@@ -230,7 +230,7 @@ class PrinterService {
         });
 
         // Wait a short tick for layout, CSS, and fonts to render
-        await new Promise(r => setTimeout(r, options.delayMs || 300));
+        await new Promise(r => setTimeout(r, options.delayMs !== undefined ? options.delayMs : 10));
 
         // 1. Virtual PDF Printer Handling (e.g. "Microsoft Print to PDF")
         // Windows Print to PDF cancels silent prints because it expects a save file dialog.

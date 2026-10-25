@@ -5,15 +5,14 @@
 (function () {
   'use strict';
 
-  // Configurable Server Base URL with smart auto-detection
+  // Configurable Server Base URL with production default (api.foodypay.online/api)
   function getApiBaseUrl() {
     if (window.FOODYPAY_API_URL) return window.FOODYPAY_API_URL.replace(/\/+$/, '');
     const custom = localStorage.getItem('fp_server_url');
-    if (custom && custom.trim()) return custom.trim().replace(/\/+$/, '');
-    if (typeof window !== 'undefined' && window.location && (window.location.protocol === 'http:' || window.location.protocol === 'https:')) {
-      return `${window.location.origin}/api`;
+    if (custom && custom.trim() && !custom.includes('localhost') && !custom.includes('127.0.0.1')) {
+      return custom.trim().replace(/\/+$/, '');
     }
-    return 'http://localhost:3000/api';
+    return 'https://api.foodypay.online/api';
   }
 
   // Token & User Persistence
@@ -97,6 +96,71 @@
   window.FPC.syncState = syncState;
   window.FPC.apiFetch = apiFetch;
 
+  // Upload file or blob to Cloudinary
+  async function uploadImage(fileOrBlob) {
+    const baseUrl = getApiBaseUrl();
+    const formData = new FormData();
+    formData.append('image', fileOrBlob);
+
+    // 1. Backend /api/crm/upload-image
+    try {
+      const res = await fetch(`${baseUrl}/crm/upload-image`, {
+        method: 'POST',
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && (data.url || data.secure_url)) {
+          return data.secure_url || data.url;
+        }
+      }
+    } catch (e) {
+      console.warn('[Upload] /crm/upload-image error:', e.message);
+    }
+
+    // 2. Backend /api/dishes/upload-image
+    try {
+      const res = await fetch(`${baseUrl}/dishes/upload-image`, {
+        method: 'POST',
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && (data.url || data.secure_url)) {
+          return data.secure_url || data.url;
+        }
+      }
+    } catch (e) {
+      console.warn('[Upload] /dishes/upload-image error:', e.message);
+    }
+
+    // 3. Direct Cloudinary unsigned fallback
+    try {
+      const cldData = new FormData();
+      cldData.append('file', fileOrBlob);
+      cldData.append('upload_preset', 'foodypay_dishes');
+      const cldRes = await fetch('https://api.cloudinary.com/v1_1/dwpkcq6gu/image/upload', {
+        method: 'POST',
+        body: cldData,
+      });
+      if (cldRes.ok) {
+        const cldJson = await cldRes.json();
+        if (cldJson && cldJson.secure_url) {
+          return cldJson.secure_url;
+        }
+      }
+    } catch (e) {
+      console.warn('[Upload] Direct Cloudinary error:', e.message);
+    }
+
+    throw new Error('Image upload failed. Please verify server connection.');
+  }
+
+  window.FPC.uploadImage = uploadImage;
+  window.uploadToCloudinary = uploadImage;
+
   /* ─────────────────────────────────────────────
      AUTHENTICATION MODULE
   ───────────────────────────────────────────── */
@@ -106,12 +170,12 @@
     const user = currentUser;
     if (user && authToken) {
       const name = (user.name || user.businessName || (user.email || 'User').split('@')[0]);
-      btn.innerHTML = `✅ <span title="${escH(user.email || '')}" style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escH(name)}</span>`;
+      btn.innerHTML = `<span title="${escH(user.email || '')}" style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escH(name)}</span>`;
       btn.style.background = 'rgba(22,163,74,0.3)';
       btn.style.borderColor = 'rgba(74,222,128,0.5)';
       btn.onclick = openAccountPanel;
     } else {
-      btn.innerHTML = `🔒 <span>Login</span>`;
+      btn.innerHTML = `<span>Login</span>`;
       btn.style.background = 'rgba(255,255,255,0.18)';
       btn.style.borderColor = 'rgba(255,255,255,0.35)';
       btn.onclick = openLoginPopup;
@@ -144,10 +208,10 @@
       <div style="background:#fff;border-radius:16px;padding:26px 22px;width:360px;max-width:94vw;box-shadow:0 16px 48px rgba(0,0,0,.3);font-family:system-ui,-apple-system,sans-serif">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
           <div>
-            <div style="font-size:20px;font-weight:800;color:#0f172a;display:flex;align-items:center;gap:6px">🍔 FoodyPay</div>
+            <div style="font-size:20px;font-weight:800;color:#0f172a;display:flex;align-items:center;gap:6px">FoodyPay</div>
             <div style="font-size:12px;color:#64748b;margin-top:2px">${isRegisterMode ? 'New Merchant Registration' : 'Node.js & MongoDB Cloud Sign In'}</div>
           </div>
-          <button onclick="document.getElementById('fpcLoginModal').remove()" style="border:0;background:none;font-size:22px;cursor:pointer;color:#94a3b8;line-height:1">✕</button>
+          <button onclick="document.getElementById('fpcLoginModal').remove()" style="border:0;background:none;font-size:22px;cursor:pointer;color:#94a3b8;line-height:1"><svg style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
         </div>
 
         <div id="fpcLoginErr" style="display:none;background:#fef2f2;border:1px solid #fecdd3;color:#b91c1c;padding:9px 12px;border-radius:8px;font-size:12.5px;margin-bottom:12px"></div>
@@ -253,15 +317,17 @@
 
       localStorage.setItem('fp_auth_token', authToken);
       localStorage.setItem('fp_auth_user', JSON.stringify(currentUser));
-      if (currentUser.foodypayId) {
-        localStorage.setItem('fp_foodypay_id', currentUser.foodypayId);
-        localStorage.setItem('fp_system_code', currentUser.foodypayId);
+      const mId = currentUser.merchantId || currentUser.foodypayId;
+      if (mId) {
+        localStorage.setItem('fp_merchant_id', mId);
+        localStorage.setItem('fp_foodypay_id', mId);
+        localStorage.setItem('fp_system_code', mId);
       }
       window.FPC.currentUser = currentUser;
 
       updateHeaderBtn();
       closeAnyModal();
-      showToastSafe(`✅ Connected to Cloud: ${currentUser.businessName || currentUser.name || currentUser.email}`, 'success');
+      showToastSafe(`Connected to Cloud: ${currentUser.businessName || currentUser.name || currentUser.email}`, 'success');
 
       // Auto-sync / restore data from MongoDB
       setTimeout(() => {
@@ -291,27 +357,27 @@
     m.innerHTML = `
       <div style="background:#fff;border-radius:16px;padding:24px;width:360px;max-width:94vw;box-shadow:0 16px 48px rgba(0,0,0,.3);font-family:system-ui,-apple-system,sans-serif">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-          <h3 style="margin:0;font-size:17px">☁️ FoodyPay Account</h3>
-          <button onclick="document.getElementById('fpcLoginModal').remove()" style="border:0;background:none;font-size:22px;cursor:pointer;color:#94a3b8">✕</button>
+          <h3 style="margin:0;font-size:17px">FoodyPay Account</h3>
+          <button onclick="document.getElementById('fpcLoginModal').remove()" style="border:0;background:none;font-size:22px;cursor:pointer;color:#94a3b8"><svg style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
         </div>
         <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px;font-size:13px;margin-bottom:14px">
-          <div style="margin-bottom:5px">🏢 <b>Business:</b> ${escH(user.businessName || user.name || 'Store')}</div>
-          <div style="margin-bottom:5px">✉️ <b>Email:</b> ${escH(user.email || '')}</div>
-          <div style="margin-bottom:5px">🔑 <b>Merchant ID:</b> <span style="font-weight:700">${escH(user.foodypayId || user._id || '')}</span></div>
-          <div>🗄 <b>Database:</b> <span style="color:#16a34a;font-weight:700">MongoDB Atlas Connected</span></div>
+          <div style="margin-bottom:5px"><b>Business:</b> ${escH(user.businessName || user.name || 'Store')}</div>
+          <div style="margin-bottom:5px"><b>Email:</b> ${escH(user.email || '')}</div>
+          <div style="margin-bottom:5px"><b>Merchant ID:</b> <span style="font-weight:700">${escH(user.foodypayId || user._id || '')}</span></div>
+          <div><b>Database:</b> <span style="color:#16a34a;font-weight:700">MongoDB Atlas Connected</span></div>
         </div>
         <div style="display:flex;flex-direction:column;gap:8px">
           <button onclick="document.getElementById('fpcLoginModal').remove();window.FPC_Sync.syncAll(true)"
             style="background:#16a34a;color:#fff;border:none;border-radius:9px;padding:11px;font-size:14px;font-weight:700;cursor:pointer">
-            🚀 Sync All to Cloud Now
+            Sync All to Cloud Now
           </button>
           <button onclick="document.getElementById('fpcLoginModal').remove();window.FPC_Sync.fetchAndSyncAll(true)"
             style="background:#e11d48;color:#fff;border:none;border-radius:9px;padding:11px;font-size:14px;font-weight:700;cursor:pointer">
-            📥 Fetch &amp; Sync All (Catalog + Sales)
+            Fetch &amp; Sync All (Catalog + Sales)
           </button>
           <button onclick="document.getElementById('fpcLoginModal').remove();goTab('mysaleday')"
             style="border:1.5px solid #e2e8f0;border-radius:9px;padding:10px;font-size:14px;cursor:pointer;background:#fff">
-            📊 My Sales Day
+            My Sales Day
           </button>
           <button onclick="window.FPC_Auth._logout()"
             style="border:1.5px solid #fecdd3;color:#dc2626;border-radius:9px;padding:10px;font-size:13px;cursor:pointer;background:#fff">
@@ -330,6 +396,10 @@
     currentUser = null;
     localStorage.removeItem('fp_auth_token');
     localStorage.removeItem('fp_auth_user');
+    localStorage.removeItem('fp_foodypay_id');
+    localStorage.removeItem('fp_merchant_id');
+    localStorage.removeItem('fp_session');
+    setTimeout(() => { window.location.replace('/'); }, 600);
     window.FPC.currentUser = null;
     updateHeaderBtn();
     updateCloudStatusBadge();
@@ -385,15 +455,15 @@
     if (syncState.status === 'syncing') {
       el.innerHTML = '<span style="color:#fef08a">⏳ Syncing</span>';
     } else if (pendingCount > 0) {
-      el.innerHTML = `<span style="color:#93c5fd" title="${pendingCount} settlements queued for next batch">🟢 ${pendingCount}/5 Batch</span>`;
+      el.innerHTML = `<span style="color:#93c5fd" title="${pendingCount} settlement syncing"><span class="fp-status-dot fp-dot-green"></span>Syncing Live</span>`;
     } else if (syncState.status === 'synced') {
-      el.innerHTML = '<span style="color:#bbf7d0">🟢 Synced</span>';
+      el.innerHTML = '<span style="color:#bbf7d0"><span class="fp-status-dot fp-dot-green"></span>Live Synced</span>';
     } else if (syncState.status === 'error') {
-      el.innerHTML = '<span style="color:#fca5a5" title="' + escH(syncState.error || 'Error') + '">🔴 Error</span>';
+      el.innerHTML = '<span style="color:#fca5a5" title="' + escH(syncState.error || 'Error') + '"><span class="fp-status-dot fp-dot-red"></span>Error</span>';
     } else if (currentUser && authToken) {
-      el.innerHTML = '<span>🟢 Cloud</span>';
+      el.innerHTML = '<span><span class="fp-status-dot fp-dot-green"></span>Cloud</span>';
     } else {
-      el.innerHTML = '<span>☁️ Cloud</span>';
+      el.innerHTML = '<span>Cloud</span>';
     }
   }
 
@@ -409,25 +479,15 @@
 
     updateCloudStatusBadge();
 
-    if (pendingSettlements.length >= BATCH_TARGET) {
-      if (batchFlushTimer) { clearTimeout(batchFlushTimer); batchFlushTimer = null; }
-      flushSettlementBatch(false);
-    } else {
-      if (!batchFlushTimer) {
-        batchFlushTimer = setTimeout(() => {
-          batchFlushTimer = null;
-          if (pendingSettlements.length > 0) {
-            flushSettlementBatch(false);
-          }
-        }, 60000); // 1 min auto-flush
-      }
-    }
+    // Real-time Instant Sync: Never wait for 5 batch, sync every single sale immediately
+    if (batchFlushTimer) { clearTimeout(batchFlushTimer); batchFlushTimer = null; }
+    flushSettlementBatch(false);
   }
 
   async function flushSettlementBatch(manual = false) {
     if (!authToken || !currentUser) {
       if (manual) {
-        showToastSafe('🔒 Sign in to sync sales to MongoDB.', 'info');
+        showToastSafe('Sign in to sync sales to MongoDB.', 'info');
         openLoginPopup();
       }
       return;
@@ -477,20 +537,22 @@
       syncState.error = null;
       updateCloudStatusBadge();
 
-      if (manual) showToastSafe('✅ Sales synced to MongoDB successfully!', 'success');
+      if (manual) showToastSafe('Sales synced to MongoDB successfully!', 'success');
       if (typeof tab !== 'undefined' && tab === 'mysaleday' && typeof render === 'function') render();
     } catch (err) {
       console.error('[Sync] Batch flush error:', err);
       syncState.status = 'error';
       syncState.error = err.message || String(err);
       updateCloudStatusBadge();
-      if (manual) showToastSafe('❌ Sync error: ' + (err.message || 'Check connection'), 'error');
+      if (manual) showToastSafe('Sync error: ' + (err.message || 'Check connection'), 'error');
     }
   }
 
   async function syncCatalog(manual = false) {
     if (typeof S === 'undefined') return;
     const fpId = (currentUser && currentUser.foodypayId) || localStorage.getItem('fp_foodypay_id') || (typeof getUniqueMerchantId === 'function' ? getUniqueMerchantId() : 'FP-624358');
+    const storeName = (S && S.name) ? S.name : (currentUser?.businessName || '');
+    const storePhone = (S && S.phone) ? S.phone : (currentUser?.contactNo || '');
 
     try {
       const cleanProducts = (S.products || []).map(p => ({
@@ -500,23 +562,26 @@
         diet: p.diet || 'veg',
         vars: p.vars || [],
         price: Array.isArray(p.vars) && p.vars.length > 0 ? Number(p.vars[0]?.p || 0) : Number(p.price || 0),
-        img: (p.img && p.img.length > 50000) ? '' : (p.img || ''),
+        img: p.img || '',
       }));
 
       await apiFetch('/api/crm/catalog', {
         method: 'POST',
         body: JSON.stringify({
           foodypayId: fpId,
+          businessName: storeName,
+          name: storeName,
+          phone: storePhone,
           categories: S.cats || [],
           products: cleanProducts,
           areas: S.areas || [],
         }),
       });
 
-      if (manual) showToastSafe('✅ Catalog saved to MongoDB!', 'success');
+      if (manual) showToastSafe('Catalog saved to MongoDB!', 'success');
     } catch (err) {
       console.error('[Sync] Catalog sync error:', err);
-      if (manual) showToastSafe('❌ Catalog sync failed: ' + err.message, 'error');
+      if (manual) showToastSafe('Catalog sync failed: ' + err.message, 'error');
     }
   }
 
@@ -529,37 +594,41 @@
   }
 
   async function syncSettings(manual = false) {
-    if (!authToken || !currentUser || typeof S === 'undefined') return;
+    if (typeof S === 'undefined') return;
+    const fpId = (currentUser && currentUser.foodypayId) || localStorage.getItem('fp_foodypay_id') || (typeof getUniqueMerchantId === 'function' ? getUniqueMerchantId() : '');
 
     try {
       await apiFetch('/api/crm/settings', {
         method: 'POST',
         body: JSON.stringify({
+          foodypayId: fpId,
           name: S.name || '',
+          businessName: S.name || '',
           phone: S.phone || '',
+          upiId: S.upiId || '',
           gst: S.gst || {},
           billDesign: S.billDesign || {},
           printers: S.printers || {},
         }),
       });
 
-      if (manual) showToastSafe('✅ Settings saved to MongoDB!', 'success');
+      if (manual) showToastSafe('Settings saved to MongoDB!', 'success');
     } catch (err) {
       console.error('[Sync] Settings sync error:', err);
-      if (manual) showToastSafe('❌ Settings sync failed: ' + err.message, 'error');
+      if (manual) showToastSafe('Settings sync failed: ' + err.message, 'error');
     }
   }
 
   async function syncAll(manual = false) {
     if (!authToken || !currentUser) {
       if (manual) {
-        showToastSafe('🔒 Sign in to sync data to MongoDB.', 'info');
+        showToastSafe('Sign in to sync data to MongoDB.', 'info');
         openLoginPopup();
       }
       return;
     }
 
-    if (manual) showToastSafe('🚀 Syncing Catalog, Sales, and Settings to MongoDB...', 'info');
+    if (manual) showToastSafe('Syncing Catalog, Sales, and Settings to MongoDB...', 'info');
     await flushSettlementBatch(manual);
     await syncCatalog(manual);
     await syncSettings(manual);
@@ -568,7 +637,7 @@
   async function fetchAndSyncAll(manual = false) {
     if (!authToken || !currentUser) {
       if (manual) {
-        showToastSafe('🔒 Sign in to fetch cloud data.', 'info');
+        showToastSafe('Sign in to fetch cloud data.', 'info');
         openLoginPopup();
       }
       return;
@@ -576,7 +645,7 @@
 
     syncState.status = 'syncing';
     updateCloudStatusBadge();
-    if (manual) showToastSafe('📥 Fetching latest data from MongoDB...', 'info');
+    if (manual) showToastSafe('Fetching latest data from MongoDB...', 'info');
 
     try {
       const resp = await apiFetch('/api/crm/sync-all');
@@ -644,7 +713,7 @@
         if (typeof render === 'function') render();
         if (typeof updateNameUI === 'function') updateNameUI();
         const rn = document.getElementById('rn');
-        if (rn && S.name) rn.textContent = '🏠 ' + S.name;
+        if (rn && S.name) rn.textContent = '' + S.name;
       }
 
       syncState.status = 'synced';
@@ -654,13 +723,13 @@
 
       const prodCount = (typeof S !== 'undefined' && S.products ? S.products.length : 0);
       const salesCount = (typeof S !== 'undefined' && S.history ? S.history.length : 0);
-      showToastSafe(`✅ Cloud Sync Complete: ${prodCount} Items & ${salesCount} Sales synced!`, 'success');
+      showToastSafe(`Cloud Sync Complete: ${prodCount} Items & ${salesCount} Sales synced!`, 'success');
     } catch (err) {
       console.error('[Sync] Full fetch error:', err);
       syncState.status = 'error';
       syncState.error = err.message || String(err);
       updateCloudStatusBadge();
-      if (manual) showToastSafe('❌ Cloud fetch failed: ' + (err.message || 'Check connection'), 'error');
+      if (manual) showToastSafe('Cloud fetch failed: ' + (err.message || 'Check connection'), 'error');
     }
   }
 
@@ -776,8 +845,9 @@
 
       const ord = orderData || (typeof S !== 'undefined' && S.orders ? S.orders[tableId] : null);
       const isSettled = (status === 'settled' || status === 'completed' || status === 'blank');
+      const isCancelled = (status === 'cancelled');
 
-      const items = (!isSettled && ord && ord.items) ? ord.items.map(i => ({
+      const items = (!isSettled && !isCancelled && ord && ord.items) ? ord.items.map(i => ({
         pid: i.pid || i.id || '',
         name: i.name,
         v: i.v || 'Regular',
@@ -805,7 +875,8 @@
           foodypayId: fpId,
           table: tableId,
           tableName: tableName,
-          status: status || (isBill ? 'bill_printed' : (isKot ? 'kot_printed' : 'ordering')),
+          status: isCancelled ? 'cancelled' : (status || (isBill ? 'bill_printed' : (isKot ? 'kot_printed' : 'ordering'))),
+          orderId: ord?.orderId || ord?._id || '',
           kotPrinted: isKot,
           billPrinted: isBill,
           items: items,
@@ -822,10 +893,9 @@
 
   let tableSyncDebounceTimer = null;
   function syncTableStatusDebounced(tableId, status, orderData) {
-    if (tableSyncDebounceTimer) clearTimeout(tableSyncDebounceTimer);
-    tableSyncDebounceTimer = setTimeout(() => {
-      syncTableStatus(tableId, status, orderData);
-    }, 1000);
+    if (tableSyncDebounceTimer) { clearTimeout(tableSyncDebounceTimer); tableSyncDebounceTimer = null; }
+    // Instant Real-time API hit on every single table/item change
+    syncTableStatus(tableId, status, orderData);
   }
 
   /* ─────────────────────────────────────────────

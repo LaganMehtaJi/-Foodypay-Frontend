@@ -13,6 +13,9 @@ import {
   updateOrderStatus,
   markOrderSeen,
   deleteOrder,
+  callWaiter,
+  getWaiterCalls,
+  dismissWaiterCall,
 } from '../controllers/orderController.js';
 import { protect, optionalWaiterProtect, protectWaiter } from '../middlewares/authMiddleware.js';
 
@@ -22,6 +25,9 @@ const router = express.Router();
 router.get('/public', getPublicOrders);
 router.post('/public', optionalWaiterProtect, createPublicOrder);
 router.post('/public/claim', claimPublicOrder);
+router.post('/public/call-waiter', callWaiter);
+router.get('/public/waiter-calls', getWaiterCalls);
+router.post('/public/dismiss-waiter-call', dismissWaiterCall);
 router.put('/public/:id', optionalWaiterProtect, updatePublicOrder);
 router.delete('/public/:id', protectWaiter, deletePublicOrder);
 router.post('/pos/sync-table-status', syncPosTableStatus);

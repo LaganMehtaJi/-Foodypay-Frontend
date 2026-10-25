@@ -8,7 +8,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   kickDrawer: (printerName) => ipcRenderer.invoke('kick-drawer', printerName),
   minimize: () => ipcRenderer.send('window-minimize'),
   maximize: () => ipcRenderer.send('window-maximize'),
-  close: () => ipcRenderer.send('window-close')
+  close: () => ipcRenderer.send('window-close'),
+  restoreFocus: () => ipcRenderer.send('restore-focus')
 });
 
 // Remove all "Download Desktop App" links inside Desktop Application and ensure inputs are always focusable
@@ -23,4 +24,11 @@ window.addEventListener('DOMContentLoaded', () => {
       e.target.focus();
     }
   }, true);
+
+  // Focus restoration on any window click
+  window.addEventListener('click', () => {
+    try {
+      ipcRenderer.send('restore-focus');
+    } catch (e) {}
+  });
 });

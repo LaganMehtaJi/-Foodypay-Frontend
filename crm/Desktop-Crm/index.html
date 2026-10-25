@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Download FoodyPay Desktop App · Silent Thermal Print Engine</title>
+  <link rel="icon" type="image/x-icon" href="../Logo.ico">
+  <style>
+    :root {
+      --pri: #ea580c;
+      --pri-dark: #c2410c;
+      --bg: #0b0f19;
+      --card-bg: #151c2e;
+      --card-border: #242f48;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent-green: #22c55e;
+      --accent-blue: #38bdf8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 32px;
+      border-bottom: 1px solid var(--card-border);
+      background: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: #fff;
+    }
+    .brand img {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+    }
+    .brand-title {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+    .badge-ver {
+      background: rgba(234, 88, 12, 0.2);
+      color: #fb923c;
+      border: 1px solid rgba(234, 88, 12, 0.4);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 99px;
+    }
+    .btn-back {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .btn-back:hover {
+      background: rgba(255, 255, 255, 0.16);
+    }
+    .container {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 40px 24px;
+      flex: 1;
+    }
+    .hero {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(34, 197, 94, 0.15);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.3);
+      padding: 5px 14px;
+      border-radius: 99px;
+      font-size: 12.5px;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+    .hero h1 {
+      font-size: 38px;
+      font-weight: 900;
+      letter-spacing: -1px;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, #ffffff 40%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero p {
+      font-size: 17px;
+      color: var(--text-muted);
+      max-width: 680px;
+      margin: 0 auto;
+    }
+    .features-pill-row {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 24px;
+      flex-wrap: wrap;
+    }
+    .feat-pill {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      padding: 6px 14px;
+      border-radius: 99px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #cbd5e1;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+      margin-bottom: 48px;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .card:hover {
+      transform: translateY(-3px);
+      border-color: #3b82f6;
+    }
+    .card.primary {
+      border-color: #ea580c;
+      background: linear-gradient(180deg, rgba(234, 88, 12, 0.08) 0%, var(--card-bg) 100%);
+      box-shadow: 0 10px 30px rgba(234, 88, 12, 0.15);
+    }
+    .card-top {
+      margin-bottom: 24px;
+    }
+    .card-tag {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: #ea580c;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 3px 10px;
+      border-radius: 99px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .card-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+    .card h3 {
+      font-size: 20px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      color: #fff;
+    }
+    .card p {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: 18px;
+    }
+    .feature-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+    .feature-list li {
+      font-size: 13.5px;
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .feature-list li svg {
+      width: 16px;
+      height: 16px;
+      color: var(--accent-green);
+      flex-shrink: 0;
+    }
+    .btn-download {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 13px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 800;
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+    .btn-download.primary {
+      background: linear-gradient(135deg, #ea580c, #c2410c);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(234, 88, 12, 0.4);
+    }
+    .btn-download.primary:hover {
+      background: linear-gradient(135deg, #f97316, #ea580c);
+      transform: translateY(-1px);
+    }
+    .btn-download.secondary {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    .btn-download.secondary:hover {
+      background: rgba(255, 255, 255, 0.18);
+    }
+    /* Live Scanner Box */
+    .scanner-box {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 48px;
+    }
+    .scanner-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .scanner-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 17px;
+      font-weight: 800;
+    }
+    .live-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      box-shadow: 0 0 10px var(--accent-green);
+    }
+    .printer-chip-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      min-height: 48px;
+      align-items: center;
+    }
+    .printer-chip {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #38bdf8;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .printer-chip.default {
+      border-color: #22c55e;
+      background: rgba(34, 197, 94, 0.12);
+      color: #4ade80;
+    }
+    /* Steps */
+    .steps-section {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 32px;
+    }
+    .steps-section h3 {
+      font-size: 20px;
+      font-weight: 800;
+      margin-bottom: 20px;
+      color: #fff;
+    }
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px;
+    }
+    .step-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .step-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #ea580c;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+    .step-item h4 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: #f1f5f9;
+    }
+    .step-item p {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    footer {
+      border-top: 1px solid var(--card-border);
+      padding: 24px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <a href="../dashboard.html" class="brand">
+      <img src="../Logo.png" alt="FoodyPay Logo">
+      <div>
+        <div class="brand-title">FoodyPay Desktop App</div>
+        <small style="color:var(--text-muted);font-size:11px">High-Speed Thermal Print Engine</small>
+      </div>
+      <span class="badge-ver">v2.0.0 Stable</span>
+    </a>
+    <a href="../dashboard.html" class="btn-back">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      Back to POS Dashboard
+    </a>
+  </header>
+
+  <div class="container">
+    <div class="hero">
+      <div class="hero-badge">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+        Zero Dialog Box · Zero Print Delay · Windows 10 &amp; 11 Ready
+      </div>
+      <h1>Download FoodyPay Desktop POS &amp; Silent Print Engine</h1>
+      <p>Print KOTs &amp; customer bills instantly without annoying browser print popups. Seamlessly scans all USB, Bluetooth, LAN, and Network thermal receipt printers.</p>
+
+      <div class="features-pill-row">
+        <div class="feat-pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Zero-Dialog Silent Printing</div>
+        <div class="feat-pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> 0ms Instant Print Spooling</div>
+        <div class="feat-pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Auto-Scan Connected Printers</div>
+        <div class="feat-pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Auto Cash Drawer Kick</div>
+        <div class="feat-pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> 58mm &amp; 80mm ESC/POS Support</div>
+      </div>
+    </div>
+
+    <!-- Live Scanner Box -->
+    <div class="scanner-box">
+      <div class="scanner-head">
+        <div class="scanner-title">
+          <div class="live-dot" id="scannerDot"></div>
+          <span>Connected Printers Live Status: <b id="scannerStatusText" style="color:#38bdf8">Checking...</b></span>
+        </div>
+        <button onclick="scanPrintersNow()" style="background:rgba(255,255,255,0.08);color:#fff;border:1px solid rgba(255,255,255,0.15);padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          Scan Printers Now
+        </button>
+      </div>
+      <div class="printer-chip-grid" id="printersList">
+        <span style="font-size:13px;color:var(--text-muted)">Scanning Windows print spooler and USB devices...</span>
+      </div>
+    </div>
+
+    <!-- Cards Grid -->
+    <div class="cards-grid">
+      <!-- Option 1: Desktop App -->
+      <div class="card primary">
+        <span class="card-tag">Recommended</span>
+        <div class="card-top">
+          <div class="card-icon" style="background:rgba(234,88,12,0.2)">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          </div>
+          <h3>FoodyPay Desktop POS</h3>
+          <p>Complete standalone Windows application. Launches FoodyPay POS with zero dialog boxes, instant hardware printing, and automatic restart resilience.</p>
+          <ul class="feature-list">
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> 100% Zero-Dialog Silent Printing</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Autonomous In-House Print Server (Port 19090)</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Full Offline Billing &amp; Fast Keyboard Navigation</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Auto-detects USB, LAN &amp; Thermal printers</li>
+          </ul>
+        </div>
+        <a href="FoodyPay-Desktop-POS.bat" download="FoodyPay-Desktop-POS.bat" class="btn-download primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          Download Desktop POS Launcher (.bat)
+        </a>
+      </div>
+
+      <!-- Option 2: Silent Print Service -->
+      <div class="card">
+        <div class="card-top">
+          <div class="card-icon" style="background:rgba(56,189,248,0.15)">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          </div>
+          <h3>Silent Print Bridge (Agent)</h3>
+          <p>For restaurants billing inside Google Chrome or Microsoft Edge. Runs quietly in the background and prints any receipt instantly without a print dialog.</p>
+          <ul class="feature-list">
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Ultra-Lightweight Background Service</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Listens on Port 19090 with CORS Allowed</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Direct Windows Spooler ESC/POS Raster</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Zero-Delay instant execution</li>
+          </ul>
+        </div>
+        <a href="FoodyPay-Silent-Printer.bat" download="FoodyPay-Silent-Printer.bat" class="btn-download secondary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          Download Silent Print Agent (.bat)
+        </a>
+      </div>
+
+      <!-- Option 3: Chrome Kiosk Silent Print -->
+      <div class="card">
+        <div class="card-top">
+          <div class="card-icon" style="background:rgba(234,179,8,0.15)">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+          </div>
+          <h3>1-Click Chrome Kiosk Mode</h3>
+          <p>Automatically creates a special "FoodyPay POS (Silent Print)" icon on your Windows Desktop. Opens Chrome in kiosk printing mode with zero popups.</p>
+          <ul class="feature-list">
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> No software installation needed</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Configures --kiosk-printing shortcut</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Works directly with Google Chrome &amp; Edge</li>
+            <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Instantly creates Desktop Shortcut</li>
+          </ul>
+        </div>
+        <a href="Setup-Chrome-Silent-Print.bat" download="Setup-Chrome-Silent-Print.bat" class="btn-download secondary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          Download Kiosk Shortcut Setup (.bat)
+        </a>
+      </div>
+    </div>
+
+    <!-- Quick Setup Guide -->
+    <div class="steps-section">
+      <h3>Quick 3-Step Setup Guide</h3>
+      <div class="steps-grid">
+        <div class="step-item">
+          <div class="step-num">1</div>
+          <h4>Download &amp; Run</h4>
+          <p>Click "Download Desktop POS Launcher" or "Silent Print Agent" above. Once downloaded, double-click to launch.</p>
+        </div>
+        <div class="step-item">
+          <div class="step-num">2</div>
+          <h4>Plug In USB/LAN Printer</h4>
+          <p>Connect your thermal receipt printer via USB or Wi-Fi/LAN. FoodyPay will automatically scan and detect the printer name.</p>
+        </div>
+        <div class="step-item">
+          <div class="step-num">3</div>
+          <h4>Print Instantly (No Popups!)</h4>
+          <p>Click "Print Bill" or "Send to KOT" in FoodyPay. The receipt prints immediately without opening any print dialog box!</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    FoodyPay Restaurant POS &amp; CRM · Developed by Lagan Mehta · Licensed Software © 2026
+  </footer>
+
+  <script>
+    async function scanPrintersNow() {
+      const dot = document.getElementById('scannerDot');
+      const text = document.getElementById('scannerStatusText');
+      const listEl = document.getElementById('printersList');
+
+      text.textContent = 'Scanning Windows Spooler...';
+      dot.style.background = '#eab308';
+      dot.style.boxShadow = '0 0 10px #eab308';
+
+      // 1. Check native electron if running inside app
+      if (window.electronAPI && window.electronAPI.getPrinters) {
+        try {
+          const list = await window.electronAPI.getPrinters();
+          renderPrinters(list, 'Electron Native Engine');
+          return;
+        } catch(e) {}
+      }
+
+      // 2. Check Local PrintServer port 19090
+      try {
+        const res = await fetch('http://127.0.0.1:19090/api/printers', { timeout: 1500 });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.printers) {
+            renderPrinters(data.printers, 'Local PrintServer (Port 19090)');
+            return;
+          }
+        }
+      } catch(e) {}
+
+      // 3. Check Main Backend /api/print/printers
+      try {
+        const res = await fetch('https://api.foodypay.online/api/print/printers', { timeout: 1500 });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.printers) {
+            renderPrinters(data.printers, 'Node.js Backend Server');
+            return;
+          }
+        }
+      } catch(e) {}
+
+      // Fallback
+      dot.style.background = '#94a3b8';
+      dot.style.boxShadow = 'none';
+      text.textContent = 'Print Engine Offline';
+      listEl.innerHTML = `
+        <div style="font-size:13px;color:#94a3b8">
+          Print Engine abhi chalu nahi hai. Upar diye gaye <b>FoodyPay-Desktop-POS.bat</b> ya <b>FoodyPay-Silent-Printer.bat</b> par click karke download karein aur run karein.
+        </div>
+      `;
+    }
+
+    function renderPrinters(list, engineName) {
+      const dot = document.getElementById('scannerDot');
+      const text = document.getElementById('scannerStatusText');
+      const listEl = document.getElementById('printersList');
+
+      dot.style.background = '#22c55e';
+      dot.style.boxShadow = '0 0 10px #22c55e';
+      text.textContent = `Online (${engineName})`;
+
+      if (!list || !list.length) {
+        listEl.innerHTML = '<span style="font-size:13px;color:#f59e0b">Koi printer detect nahi hua. Thermal printer ko USB se jodein.</span>';
+        return;
+      }
+
+      listEl.innerHTML = list.map(p => {
+        const name = typeof p === 'string' ? p : (p.name || p.displayName);
+        const isDef = p && p.isDefault;
+        return `
+          <div class="printer-chip ${isDef ? 'default' : ''}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            <span>${name}</span>
+            ${isDef ? '<small style="background:#22c55e;color:#000;font-weight:900;padding:1px 5px;border-radius:4px;font-size:10px">DEFAULT</small>' : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Auto-scan on load
+    scanPrintersNow();
+  </script>
+</body>
+</html>

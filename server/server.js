@@ -160,8 +160,53 @@ const __dirname = path.dirname(__filename);
 const crmDir = path.join(__dirname, '..', 'crm');
 app.use(express.static(crmDir));
 app.use('/crm', express.static(crmDir));
+app.get('/manifest-waiter.json', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'manifest-waiter.json'));
+});
+app.get('/manifest.json', (req, res) => {
+  if (req.headers.referer && req.headers.referer.includes('/waiter')) {
+    return res.sendFile(path.join(__dirname, 'public', 'manifest-waiter.json'));
+  }
+  res.sendFile(path.join(__dirname, 'public', 'manifest.json'));
+});
 app.get('/', (req, res) => {
-  res.sendFile(path.join(crmDir, 'index.html'));
+  if (req.query.mode === 'waiter' || req.query.waiter || (req.headers.referer && req.headers.referer.includes('/waiter'))) {
+    return res.redirect('/waiter');
+  }
+  res.redirect('/client');
+});
+app.get(['/dashboard', '/pos'], (req, res) => {
+  res.sendFile(path.join(crmDir, 'dashboard.html'));
+});
+// Waiter Terminal Routes: domain/waiter/:merchantId/:waiterId, etc.
+app.get([
+  '/waiter/:merchantId/:waiterId',
+  '/waiter/:merchantId',
+  '/waiter.html',
+  '/waiter-app',
+  '/waiter',
+  '/menu/:uniqueId/waiter/:waiterId',
+  '/menu/:uniqueId/:table/waiter/:waiterId',
+  '/:uniqueId/waiter/:waiterId'
+], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'customer-menu.html'));
+});
+
+// Customer / Client Table QR Routes: domain/client/:merchantId/:table or domain/order/:merchantId/:table
+app.get([
+  '/client/:merchantId/:table',
+  '/client/:merchantId',
+  '/client',
+  '/order/:merchantId/:table',
+  '/order/:merchantId',
+  '/order.html',
+  '/table-order.html',
+  '/table-qr',
+  '/order',
+  '/menu/:uniqueId/:table',
+  '/menu/:uniqueId'
+], (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'customer-menu.html'));
 });
 
 // Serve static public assets (customer menu, icons, styles)
@@ -176,21 +221,6 @@ app.get(['/login', '/waiter/login'], (req, res) => {
 });
 app.get(['/kitchen', '/kds'], (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'pages', 'kitchen', 'index.html'));
-});
-
-// Public table QR customer self-ordering & Waiter order-taking web routes
-app.get([
-  '/menu/:uniqueId/waiter/:waiterId',
-  '/menu/:uniqueId/:table/waiter/:waiterId',
-  '/:uniqueId/waiter/:waiterId',
-  '/waiter/:uniqueId/:waiterId',
-  '/waiter/:uniqueId',
-  '/waiter',
-  '/menu/:uniqueId/:table',
-  '/menu/:uniqueId',
-  '/order'
-], (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'customer-menu.html'));
 });
 
 // API Routes
